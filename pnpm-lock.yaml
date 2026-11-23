@@ -46,9 +46,6 @@ importers:
       '@meniscus/core':
         specifier: workspace:*
         version: link:../core
-      '@meniscus/dom':
-        specifier: workspace:*
-        version: link:../dom
 
   packages/react:
     dependencies:

@@ -24,7 +24,7 @@ import {
 } from '@meniscus/dom'
 import { GlassField } from '@meniscus/react'
 import { ControlPanel, SliderControl } from '../components/ControlPanel.tsx'
-import { LiveBackdrop } from '../components/LiveBackdrop.tsx'
+import { TestChart } from '../components/TestChart.tsx'
 import { getMessages, type Locale, type PlaygroundMessages } from '../i18n.ts'
 import {
   DEFAULT_OPTICS_LAB_CONFIG,
@@ -72,18 +72,13 @@ function SdfWireframeOverlay({
           width={p.size.width}
           height={p.size.height}
           rx={p.radius}
-          fill="none"
-          stroke="rgba(236, 72, 153, 0.85)"
-          strokeWidth={1.5}
-          strokeDasharray="5 4"
+          className="pg-wire-prim"
         />
       ))}
       <path
         ref={pathRef}
         d={contourPath}
-        fill="none"
-        stroke="rgba(14, 165, 233, 0.95)"
-        strokeWidth={2}
+        className="pg-wire-contour"
       />
     </svg>
   )
@@ -109,7 +104,22 @@ export function OpticsLab({ theme, locale, reducedMotion }: OpticsLabProps): Rea
   const primaryRectRefs = useRef<Array<SVGRectElement | null>>([])
   const secondaryRectRefs = useRef<Array<SVGRectElement | null>>([])
 
-  const material = useMemo(() => buildOpticsLabMaterial(theme, config), [theme, config])
+  // The primary surface shows the frosted tier whenever it cannot refract, so its material
+  // must carry the fallback blur too; the split view's right pane is always the fallback.
+  const primaryTier =
+    config.renderView === 'frosted' ||
+    tierKey === 'refractDowngraded' ||
+    tierKey === 'splitDowngraded'
+      ? 'frosted'
+      : 'refract'
+  const material = useMemo(
+    () => buildOpticsLabMaterial(theme, config, primaryTier),
+    [theme, config, primaryTier],
+  )
+  const fallbackMaterial = useMemo(
+    () => buildOpticsLabMaterial(theme, config, 'frosted'),
+    [theme, config],
+  )
   const refraction = useMemo<Partial<RefractFilterConfig>>(
     () => ({
       bezel: config.bevelPx,
@@ -130,6 +140,7 @@ export function OpticsLab({ theme, locale, reducedMotion }: OpticsLabProps): Rea
 
   const configRef = useRef(config)
   const materialRef = useRef(material)
+  const fallbackMaterialRef = useRef(fallbackMaterial)
   const refractionRef = useRef(refraction)
   const themeRef = useRef(theme)
   const liveSuffixRef = useRef(op.liveSuffix)
@@ -138,11 +149,12 @@ export function OpticsLab({ theme, locale, reducedMotion }: OpticsLabProps): Rea
   useEffect(() => {
     configRef.current = config
     materialRef.current = material
+    fallbackMaterialRef.current = fallbackMaterial
     refractionRef.current = refraction
     themeRef.current = theme
     liveSuffixRef.current = op.liveSuffix
     sizeRef.current = { single: stageSize, split: splitSize }
-  }, [config, material, refraction, theme, op.liveSuffix, stageSize, splitSize])
+  }, [config, material, fallbackMaterial, refraction, theme, op.liveSuffix, stageSize, splitSize])
 
   useEffect(() => {
     const el = singleStageRef.current
@@ -227,7 +239,7 @@ export function OpticsLab({ theme, locale, reducedMotion }: OpticsLabProps): Rea
       if (cfg.renderView === 'split') {
         secondarySurfaceRef.current?.render({
           field,
-          material: activeMat,
+          material: fallbackMaterialRef.current,
           refraction: activeRefract,
           theme: activeTheme,
         })
@@ -270,6 +282,7 @@ export function OpticsLab({ theme, locale, reducedMotion }: OpticsLabProps): Rea
     config.showWireframe,
     config.renderView,
     material,
+    fallbackMaterial,
     refraction,
     theme,
     stageSize,
@@ -314,15 +327,15 @@ export function OpticsLab({ theme, locale, reducedMotion }: OpticsLabProps): Rea
     config.renderView === 'split' ? 'refract' : config.renderView
 
   return (
-    <div className="pg-lab-grid">
+    <>
       {config.renderView === 'split' ? (
         <div className="pg-stage-split" data-testid="optics-split-stage">
           <div className="pg-split-pane" ref={splitLeftRef}>
-            <div className="pg-split-badge">{op.splitLeftBadge}</div>
-            <LiveBackdrop
+            <TestChart
               title={op.splitLeftTitle}
               caption={op.splitLeftCaption}
-              messages={t.backdrop}
+              messages={t.chart}
+              wordmark={false}
             />
             <GlassField
               className="pg-glass-stage"
@@ -350,11 +363,11 @@ export function OpticsLab({ theme, locale, reducedMotion }: OpticsLabProps): Rea
           </div>
 
           <div className="pg-split-pane">
-            <div className="pg-split-badge">{op.splitRightBadge}</div>
-            <LiveBackdrop
+            <TestChart
               title={op.splitRightTitle}
               caption={op.splitRightCaption}
-              messages={t.backdrop}
+              messages={t.chart}
+              wordmark={false}
             />
             <GlassField
               className="pg-glass-stage"
@@ -364,7 +377,7 @@ export function OpticsLab({ theme, locale, reducedMotion }: OpticsLabProps): Rea
               blendK={config.blendK}
               styleMix={config.rimMode === 'soft' ? 1 : 0}
               primitives={splitField.primitives}
-              material={material}
+              material={fallbackMaterial}
               refraction={refraction}
             />
             {config.showWireframe ? (
@@ -382,10 +395,10 @@ export function OpticsLab({ theme, locale, reducedMotion }: OpticsLabProps): Rea
         </div>
       ) : (
         <div className="pg-stage" ref={singleStageRef} data-testid="optics-single-stage">
-          <LiveBackdrop
+          <TestChart
             title={op.backdropTitle}
             caption={op.backdropCaption}
-            messages={t.backdrop}
+            messages={t.chart}
           />
           <GlassField
             className="pg-glass-stage"
@@ -500,6 +513,16 @@ export function OpticsLab({ theme, locale, reducedMotion }: OpticsLabProps): Rea
           onChange={(v) => updateConfig('saturation', v)}
         />
         <SliderControl
+          id="optics-tint"
+          label={op.tintLabel}
+          value={config.tintAlpha}
+          min={0}
+          max={0.8}
+          step={0.02}
+          precision={2}
+          onChange={(v) => updateConfig('tintAlpha', v)}
+        />
+        <SliderControl
           id="optics-rim-opacity"
           label={op.rimOpacityLabel}
           value={config.rimOpacity}
@@ -519,7 +542,7 @@ export function OpticsLab({ theme, locale, reducedMotion }: OpticsLabProps): Rea
               aria-pressed={config.rimMode === rm}
               onClick={() => updateConfig('rimMode', rm)}
             >
-              {op.rimPrefix}: {op.rimModes[rm]}
+              {op.rimModes[rm]}
             </button>
           ))}
         </div>
@@ -564,6 +587,6 @@ export function OpticsLab({ theme, locale, reducedMotion }: OpticsLabProps): Rea
           </div>
         </div>
       </ControlPanel>
-    </div>
+    </>
   )
 }

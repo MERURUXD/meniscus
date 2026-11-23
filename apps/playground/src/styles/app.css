@@ -1,163 +1,301 @@
-.pg-shell {
-  min-height: 100vh;
-  background: var(--bg-page);
-  color: var(--text-primary);
-  padding: 16px 20px 28px;
-}
-
-.pg-container {
-  max-width: 1320px;
-  margin: 0 auto;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.pg-header {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 12px 16px;
-  background: var(--bg-surface);
-  border: 1px solid var(--border-subtle);
-  border-radius: 16px;
-}
-
-.pg-brand {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-width: 0;
-}
-
-.pg-logo-mark {
-  width: 34px;
-  height: 34px;
-  border-radius: 10px;
-  background: linear-gradient(135deg, #0ea5e9 0%, #6366f1 55%, #ec4899 100%);
+/*
+ * Layout: the stage is a live test chart filling the viewport; the rail on the right is the
+ * instrument. Lab components render their stage and controls as siblings (display: contents),
+ * so the grid places them without portals.
+ *
+ * Nothing that wraps a glass field may set opacity, filter, mask, clip-path, mix-blend-mode or
+ * will-change: any of those forms a Backdrop Root and the glass would stop seeing the chart.
+ */
+.bench {
   display: grid;
-  place-items: center;
-  color: #ffffff;
-  font-weight: 800;
-  font-size: 16px;
-  flex-shrink: 0;
+  grid-template-columns: minmax(0, 1fr) var(--rail-width);
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-areas:
+    'stage nav'
+    'stage controls'
+    'stage meta';
+  height: 100dvh;
+  background: var(--ground);
+  color: var(--ink);
 }
 
-.pg-title {
-  margin: 0;
-  font-size: 17px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
+.bench-lab {
+  display: contents;
 }
 
-.pg-subtitle {
-  margin: 1px 0 0;
-  font-size: 12px;
-  color: var(--text-muted);
+.bench-nav,
+.pg-panel,
+.bench-meta {
+  background: var(--rail);
+  border-left: 1px solid var(--rail-line);
 }
 
-.pg-header-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
+/* ---------- Rail: labs ---------- */
+
+.bench-nav {
+  grid-area: nav;
+  padding: 22px 20px 14px;
 }
 
-.pg-cap-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 10px;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 600;
-  background: var(--badge-ok-bg);
-  color: var(--badge-ok-fg);
+.bench-brand {
+  margin: 0 0 14px 4px;
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
 }
 
-.pg-cap-pill[data-fallback='true'] {
-  background: var(--badge-warn-bg);
-  color: var(--badge-warn-fg);
-}
-
-.pg-btn {
-  appearance: none;
-  border: 1px solid var(--border-subtle);
-  background: var(--bg-surface-muted);
-  color: var(--text-primary);
-  border-radius: 10px;
-  padding: 6px 11px;
+.bench-brand span {
+  display: block;
   font-size: 12.5px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background-color 120ms ease, border-color 120ms ease;
+  font-weight: 450;
+  letter-spacing: 0;
+  color: var(--ink-faint);
 }
 
-.pg-btn:hover:not(:disabled) {
-  border-color: var(--border-strong);
-}
-
-.pg-btn:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
-.pg-btn[aria-pressed='true'],
-.pg-btn[data-active='true'] {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--accent-text);
-}
-
-.pg-nav {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.pg-nav-tab {
-  text-align: left;
-  padding: 10px 13px;
-  border-radius: 14px;
-  border: 1px solid var(--border-subtle);
-  background: var(--bg-surface);
-  color: var(--text-primary);
-  cursor: pointer;
+.bench-labs {
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
 
-.pg-nav-tab[aria-selected='true'] {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-}
-
-.pg-nav-tab-title {
-  font-size: 13.5px;
-  font-weight: 700;
-}
-
-.pg-nav-tab-desc {
-  font-size: 11.5px;
-  color: var(--text-muted);
-}
-
-.pg-lab-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 310px;
-  gap: 14px;
-  align-items: start;
-}
-
-.pg-stage {
+.bench-lab-tab {
   position: relative;
-  min-height: 520px;
-  border-radius: 20px;
-  border: 1px solid var(--border-subtle);
-  background: var(--bg-stage);
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+  font: inherit;
+  padding: 9px 12px 9px 16px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.bench-lab-tab:hover {
+  background: var(--control-fill);
+}
+
+.bench-lab-tab[aria-selected='true'] {
+  background: var(--control-fill);
+}
+
+.bench-lab-tab[aria-selected='true']::before {
+  content: '';
+  position: absolute;
+  left: 5px;
+  top: 10px;
+  bottom: 10px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--sodium);
+}
+
+.bench-lab-title {
+  display: block;
+  font-size: 14.5px;
+  font-weight: 600;
+}
+
+.bench-lab-desc {
+  display: block;
+  margin-top: 1px;
+  font-size: 12.5px;
+  color: var(--ink-faint);
+}
+
+/* ---------- Rail: lab controls ---------- */
+
+.pg-panel {
+  grid-area: controls;
+  overflow-y: auto;
+  padding: 18px 24px 22px;
+  border-top: 1px solid var(--rail-line);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.pg-panel-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 650;
+}
+
+.pg-panel-note {
+  margin: 3px 0 0;
+  font-size: 13px;
+  color: var(--ink-soft);
+  max-width: 38ch;
+}
+
+.pg-slider-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pg-slider-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.pg-slider-value {
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-faint);
+}
+
+.pg-range {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  height: 18px;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.pg-range::-webkit-slider-runnable-track {
+  height: 2px;
+  border-radius: 1px;
+  background: var(--rule-major);
+}
+
+.pg-range::-moz-range-track {
+  height: 2px;
+  border-radius: 1px;
+  background: var(--rule-major);
+}
+
+.pg-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -6px;
+  border-radius: 50%;
+  background: var(--ink);
+  border: 0;
+}
+
+.pg-range::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--ink);
+  border: 0;
+}
+
+.pg-range:active::-webkit-slider-thumb {
+  background: var(--sodium);
+}
+
+.pg-range:active::-moz-range-thumb {
+  background: var(--sodium);
+}
+
+.pg-btn-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.pg-btn {
+  appearance: none;
+  border: 0;
+  background: var(--control-fill);
+  color: var(--ink);
+  border-radius: 8px;
+  padding: 7px 11px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 550;
+  cursor: pointer;
+}
+
+.pg-btn:hover:not(:disabled) {
+  background: var(--control-fill-hover);
+}
+
+.pg-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.pg-btn[aria-pressed='true'],
+.pg-btn[aria-pressed='true']:hover {
+  background: var(--sodium);
+  color: var(--sodium-ink);
+}
+
+.pg-telemetry {
+  margin: 0;
+  padding-top: 14px;
+  border-top: 1px solid var(--rail-line);
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 16px;
+}
+
+.pg-stat-label {
+  font-size: 12px;
+  color: var(--ink-faint);
+}
+
+.pg-stat-value {
+  margin: 1px 0 0;
+  font-size: 15px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Rail: status and preferences ---------- */
+
+.bench-meta {
+  grid-area: meta;
+  padding: 14px 24px 20px;
+  border-top: 1px solid var(--rail-line);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.bench-status {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--ink-soft);
+}
+
+.bench-status strong {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.bench-prefs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+}
+
+.bench-backdrop {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.bench-backdrop-label {
+  font-size: 12px;
+  color: var(--ink-faint);
+}
+
+/* ---------- Stage ---------- */
+
+.pg-stage,
+.pg-stage-split {
+  grid-area: stage;
+  position: relative;
+  min-width: 0;
   overflow: hidden;
   user-select: none;
 }
@@ -165,138 +303,17 @@
 .pg-stage-split {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  min-height: 520px;
-  gap: 12px;
+  gap: 1px;
+  background: var(--rail-line);
 }
 
 .pg-split-pane {
   position: relative;
-  min-height: 520px;
-  border-radius: 20px;
-  border: 1px solid var(--border-subtle);
-  background: var(--bg-stage);
   overflow: hidden;
+  min-height: 0;
+  background: var(--ground);
 }
 
-.pg-split-badge {
-  position: absolute;
-  top: 12px;
-  left: 12px;
-  z-index: 4;
-  padding: 4px 10px;
-  border-radius: 999px;
-  font-size: 11.5px;
-  font-weight: 700;
-  background: var(--bg-surface);
-  border: 1px solid var(--border-subtle);
-  color: var(--text-primary);
-}
-
-.pg-split-pane .pg-backdrop {
-  padding-top: 50px;
-}
-
-/* Vibrant Live-DOM backdrop positioned behind glass layers without creating a Backdrop Root. */
-.pg-backdrop {
-  position: relative;
-  min-height: 520px;
-  padding: 20px;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  gap: 16px;
-  background:
-    radial-gradient(circle at 16% 22%, rgba(244, 63, 94, 0.56), transparent 44%),
-    radial-gradient(circle at 84% 18%, rgba(14, 165, 233, 0.6), transparent 46%),
-    radial-gradient(circle at 52% 82%, rgba(245, 158, 11, 0.52), transparent 48%),
-    radial-gradient(circle at 22% 78%, rgba(16, 185, 129, 0.45), transparent 40%),
-    linear-gradient(180deg, var(--bg-stage) 0%, var(--bg-surface-muted) 100%);
-}
-
-.pg-backdrop-grid {
-  position: absolute;
-  inset: 0;
-  background-image:
-    linear-gradient(to right, var(--backdrop-grid) 1px, transparent 1px),
-    linear-gradient(to bottom, var(--backdrop-grid) 1px, transparent 1px);
-  background-size: 32px 32px;
-  pointer-events: none;
-}
-
-.pg-backdrop-row {
-  position: relative;
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 12px;
-}
-
-.pg-backdrop-card {
-  position: relative;
-  max-width: 290px;
-  padding: 12px 14px;
-  border-radius: 14px;
-  background: var(--backdrop-card-bg);
-  border: 1px solid var(--backdrop-card-border);
-}
-
-.pg-backdrop-kicker {
-  font-size: 10.5px;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--accent);
-}
-
-.pg-backdrop-heading {
-  margin: 4px 0;
-  font-size: 19px;
-  font-weight: 800;
-  letter-spacing: -0.02em;
-  line-height: 1.15;
-}
-
-.pg-backdrop-copy {
-  margin: 0;
-  font-size: 12.5px;
-  line-height: 1.45;
-  color: var(--text-secondary);
-}
-
-.pg-backdrop-stripes {
-  position: relative;
-  display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.pg-stripe-swatch {
-  height: 52px;
-  border-radius: 12px;
-  display: flex;
-  align-items: flex-end;
-  padding: 6px 8px;
-  font-size: 10.5px;
-  font-weight: 800;
-  color: #ffffff;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
-}
-
-.pg-backdrop-ticker {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
-  border-radius: 999px;
-  background: var(--backdrop-card-bg);
-  border: 1px solid var(--backdrop-card-border);
-  font-size: 12px;
-  font-weight: 600;
-}
-
-/* Absolute interactive glass stage overlay mounted after LiveBackdrop. */
 .pg-glass-stage {
   position: absolute;
   inset: 0;
@@ -304,10 +321,228 @@
   pointer-events: none;
 }
 
-.pg-glass-stage[data-interactive='true'] {
-  pointer-events: auto;
-  touch-action: none;
+/* ---------- Test chart ---------- */
+
+.chart {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  container-type: size;
+  background: var(--ground);
+  color: var(--ink);
+  user-select: text;
 }
+
+/* Sized by CSS; the drawing buffer follows clientWidth/Height below device resolution. */
+.wallpaper {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.chart:not([data-backdrop='chart']) .chart-foot {
+  justify-content: flex-end;
+}
+
+/* Scenes are busy behind the heading; the halo keeps it readable on any of them. */
+.chart:not([data-backdrop='chart']) .chart-head,
+.chart:not([data-backdrop='chart']) .chart-clock {
+  text-shadow: var(--glass-halo);
+}
+
+/* Minor pitch sits near the bezel width so every rim crosses several lines at once. */
+.chart-grid {
+  position: absolute;
+  inset: -96px;
+  background-image:
+    linear-gradient(to right, var(--rule-major) 2px, transparent 2px),
+    linear-gradient(to bottom, var(--rule-major) 2px, transparent 2px),
+    linear-gradient(to right, var(--rule) 1.5px, transparent 1.5px),
+    linear-gradient(to bottom, var(--rule) 1.5px, transparent 1.5px);
+  background-size:
+    96px 96px,
+    96px 96px,
+    24px 24px,
+    24px 24px;
+  animation: chart-drift 12s linear infinite;
+}
+
+@keyframes chart-drift {
+  to {
+    transform: translate3d(96px, 96px, 0);
+  }
+}
+
+.chart-star {
+  position: absolute;
+  width: 58cqmin;
+  height: 58cqmin;
+  left: 58%;
+  top: 54%;
+  translate: -50% -50%;
+  overflow: visible;
+}
+
+.chart-star path,
+.chart-star-hub {
+  fill: var(--star);
+}
+
+.chart-star-spin {
+  transform-origin: 0 0;
+  animation: chart-spin 90s linear infinite;
+}
+
+@keyframes chart-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.chart-head {
+  position: absolute;
+  top: 26px;
+  left: 32px;
+  right: 32px;
+  max-width: 46ch;
+}
+
+.chart-wordmark {
+  margin: 0 0 10px -0.04em;
+  font-family: var(--font-specimen);
+  font-optical-sizing: auto;
+  font-size: clamp(56px, 12cqi, 168px);
+  font-weight: 500;
+  line-height: 0.88;
+  letter-spacing: -0.025em;
+}
+
+.chart-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.chart-caption {
+  margin: 4px 0 0;
+  max-width: 42ch;
+  font-size: 14px;
+  color: var(--ink-soft);
+}
+
+.chart-specimen {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 84px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.chart-specimen-track {
+  display: flex;
+  width: max-content;
+  animation: chart-scroll 70s linear infinite;
+}
+
+.chart-specimen-track span {
+  padding-right: 0.6em;
+  font-family: var(--font-specimen);
+  font-optical-sizing: auto;
+  font-style: italic;
+  font-size: clamp(40px, 7cqi, 92px);
+  font-weight: 400;
+  line-height: 1.1;
+}
+
+/* Han glyphs have no true italic; a synthesized oblique Song face looks broken. */
+:lang(zh) .chart-specimen-track span {
+  font-style: normal;
+}
+
+@keyframes chart-scroll {
+  to {
+    transform: translate3d(-50%, 0, 0);
+  }
+}
+
+.chart-foot {
+  position: absolute;
+  left: 32px;
+  right: 32px;
+  bottom: 18px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 16px;
+}
+
+.chart-spectrum {
+  margin: 0;
+  width: min(340px, 52cqi);
+}
+
+.chart-spectrum-band {
+  height: 10px;
+  border-radius: 1px;
+  background: linear-gradient(
+    to right,
+    #7a00b8 0%,
+    #2a2cff 14%,
+    #0090ff 27%,
+    #00c8b4 36%,
+    #3fd400 47%,
+    #d6e600 58%,
+    #ffb000 66%,
+    #ff5a00 77%,
+    #e00000 88%,
+    #8a0000 100%
+  );
+}
+
+.chart-spectrum-ticks {
+  position: relative;
+  height: 16px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-faint);
+}
+
+.chart-spectrum-ticks span {
+  position: absolute;
+  top: 2px;
+  translate: -50% 0;
+}
+
+.chart-spectrum figcaption {
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+
+.chart-clock {
+  margin: 0;
+  font-size: 13px;
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.chart-clock span {
+  display: inline-block;
+  min-width: 5.5ch;
+  text-align: right;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+[data-motion='reduced'] .chart-anim {
+  animation: none;
+}
+
+/* ---------- Lab: drag and merge ---------- */
 
 .pg-blob-label {
   position: absolute;
@@ -319,94 +554,21 @@
   justify-content: center;
   text-align: center;
   color: var(--glass-ink);
+  text-shadow: var(--glass-halo);
   pointer-events: none;
-  font-weight: 700;
-  font-size: 12.5px;
+  font-size: 13.5px;
+  font-weight: 650;
   line-height: 1.15;
   padding: 6px;
 }
 
 .pg-blob-sub {
-  font-size: 10px;
-  font-weight: 600;
-  color: var(--glass-ink-muted);
   margin-top: 2px;
+  font-size: 11.5px;
+  font-weight: 550;
 }
 
-.pg-panel {
-  background: var(--bg-surface);
-  border: 1px solid var(--border-subtle);
-  border-radius: 18px;
-  padding: 14px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.pg-panel-title {
-  margin: 0;
-  font-size: 14px;
-  font-weight: 700;
-}
-
-.pg-panel-note {
-  margin: 0;
-  font-size: 12px;
-  line-height: 1.45;
-  color: var(--text-muted);
-}
-
-.pg-slider-row {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.pg-slider-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.pg-slider-value {
-  font-variant-numeric: tabular-nums;
-  color: var(--text-muted);
-}
-
-.pg-range {
-  width: 100%;
-  accent-color: var(--accent);
-}
-
-.pg-btn-group {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.pg-telemetry {
-  padding: 10px;
-  border-radius: 12px;
-  background: var(--bg-surface-muted);
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.pg-stat-label {
-  font-size: 10.5px;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--text-muted);
-}
-
-.pg-stat-value {
-  font-size: 14px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-}
+/* ---------- Lab: optics ---------- */
 
 .pg-wireframe-svg {
   position: absolute;
@@ -416,6 +578,21 @@
   z-index: 3;
   pointer-events: none;
 }
+
+.pg-wire-prim {
+  fill: none;
+  stroke: var(--wire-prim);
+  stroke-width: 1.5;
+  stroke-dasharray: 5 4;
+}
+
+.pg-wire-contour {
+  fill: none;
+  stroke: var(--wire-contour);
+  stroke-width: 2;
+}
+
+/* ---------- Lab: morphing dock ---------- */
 
 .pg-dock-wrap {
   position: absolute;
@@ -430,10 +607,9 @@
 .pg-dock-field {
   position: relative;
   max-width: 100%;
-  border-radius: 26px;
+  border-radius: 32px;
   padding: 8px;
-  background: rgba(15, 23, 42, 0.08);
-  border: 1px solid var(--border-subtle);
+  box-shadow: inset 0 0 0 1.5px var(--rule-major);
   pointer-events: auto;
 }
 
@@ -447,7 +623,7 @@
 .pg-dock-items[data-orientation='vertical'] {
   flex-direction: column;
   flex-wrap: nowrap;
-  min-width: 176px;
+  min-width: 200px;
 }
 
 .pg-dock-item {
@@ -455,10 +631,12 @@
   border: 0;
   background: transparent;
   color: var(--glass-ink);
-  font-size: 13px;
-  font-weight: 700;
-  padding: 10px 16px;
-  border-radius: 18px;
+  text-shadow: var(--glass-halo);
+  font: inherit;
+  font-size: 16px;
+  font-weight: 600;
+  padding: 13px 22px;
+  border-radius: 24px;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -468,45 +646,29 @@
 }
 
 .pg-dock-badge {
-  font-size: 10.5px;
+  font-size: 11px;
+  font-weight: 650;
   padding: 1px 6px;
   border-radius: 999px;
-  background: var(--accent-soft);
-  color: var(--text-primary);
+  background: var(--sodium);
+  color: var(--sodium-ink);
 }
 
-.pg-popover-stage-layer {
-  position: absolute;
-  inset: 0;
-  z-index: 2;
-}
+/* ---------- Lab: popover and menu ---------- */
 
 .pg-popover-trigger {
   position: absolute;
-  top: 74px;
-  right: 48px;
   height: 44px;
   padding: 0 18px;
   border-radius: 22px;
-  border: 1px solid var(--border-subtle);
+  border: 0;
   background: transparent;
   color: var(--glass-ink);
-  font-size: 13.5px;
-  font-weight: 700;
+  text-shadow: var(--glass-halo);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 650;
   cursor: pointer;
-  z-index: 3;
-}
-
-.pg-popover-trigger-ghost {
-  position: absolute;
-  top: 0;
-  left: 0;
-  display: grid;
-  place-items: center;
-  color: var(--glass-ink);
-  font-size: 13px;
-  font-weight: 700;
-  pointer-events: none;
   z-index: 3;
 }
 
@@ -518,7 +680,7 @@
   padding: 8px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
   transform-origin: center center;
   z-index: 4;
 }
@@ -529,85 +691,106 @@
   width: 100%;
   text-align: left;
   padding: 9px 12px;
-  border-radius: 14px;
+  border-radius: 12px;
   background: transparent;
   color: var(--glass-ink);
-  font-size: 13px;
-  font-weight: 600;
+  text-shadow: var(--glass-halo);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 550;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: space-between;
 }
 
-.pg-menu-item:hover {
-  background: var(--accent-soft);
+.pg-menu-item:hover,
+.pg-menu-item:focus-visible {
+  background: var(--control-fill-hover);
 }
 
 .pg-menu-shortcut {
-  font-size: 11px;
-  color: var(--glass-ink-muted);
-}
-
-.pg-context-hint {
-  position: absolute;
-  left: 20px;
-  bottom: 20px;
-  z-index: 3;
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 12px;
-  border-radius: 12px;
-  background: var(--backdrop-card-bg);
-  border: 1px solid var(--backdrop-card-border);
   font-size: 12px;
+  font-weight: 500;
+  color: var(--glass-ink-soft);
 }
 
-@media (max-width: 960px) {
-  .pg-lab-grid {
+/* ---------- Narrow screens: rail stacks under the stage ---------- */
+
+@media (max-width: 860px) {
+  .bench {
     grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto auto auto;
+    grid-template-areas:
+      'nav'
+      'stage'
+      'controls'
+      'meta';
+    height: auto;
+    min-height: 100dvh;
   }
 
-  .pg-nav {
+  .bench-nav,
+  .pg-panel,
+  .bench-meta {
+    border-left: 0;
+  }
+
+  .bench-nav {
+    padding: 14px 16px 10px;
+    border-bottom: 1px solid var(--rail-line);
+  }
+
+  .bench-brand {
+    margin-bottom: 10px;
+  }
+
+  .bench-labs {
+    display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 4px;
+  }
+
+  .bench-lab-desc {
+    display: none;
+  }
+
+  .pg-stage {
+    height: clamp(540px, 78svh, 760px);
   }
 
   .pg-stage-split {
     grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: repeat(2, 440px);
   }
-}
 
-@media (max-width: 560px) {
-  .pg-dock-wrap {
-    padding: 12px;
+  .pg-panel {
+    overflow: visible;
+    padding: 18px 16px 20px;
+    border-top: 0;
+  }
+
+  .bench-meta {
+    padding: 14px 16px 24px;
+  }
+
+  .chart-head {
+    top: 18px;
+    left: 16px;
+    right: 16px;
+  }
+
+  .chart-foot {
+    left: 16px;
+    right: 16px;
+  }
+
+  .chart-specimen {
+    bottom: 76px;
   }
 
   .pg-dock-item {
-    padding: 8px 11px;
-    font-size: 12px;
-  }
-
-  .pg-shell {
-    padding: 10px 12px 24px;
-  }
-
-  .pg-nav {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .pg-stage,
-  .pg-backdrop,
-  .pg-split-pane {
-    min-height: 520px;
-  }
-
-  .pg-backdrop-stripes {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
-  .pg-popover-trigger {
-    right: 20px;
-    top: 64px;
+    padding: 10px 13px;
+    font-size: 14px;
   }
 }

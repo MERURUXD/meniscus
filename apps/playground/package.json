@@ -6,10 +6,12 @@
   "license": "MPL-2.0",
   "description": "Interactive showcase and optics lab for Meniscus.",
   "dependencies": {
+    "@fontsource-variable/bodoni-moda": "^5.3.0",
+    "@fontsource-variable/schibsted-grotesk": "^5.3.0",
     "@meniscus/core": "workspace:*",
     "@meniscus/dom": "workspace:*",
-    "@meniscus/react": "workspace:*",
     "@meniscus/presets": "workspace:*",
+    "@meniscus/react": "workspace:*",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"
   },

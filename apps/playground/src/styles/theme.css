@@ -1,52 +1,64 @@
+/*
+ * Optical bench palette, after the cyanotype: Prussian-blue ink on cool paper in light,
+ * the inverted print in dark. The single accent is the sodium D line (589 nm), the
+ * reference yellow of optics labs; it marks only the active choice and focus.
+ */
 :root,
 [data-theme='light'] {
   color-scheme: light;
-  --bg-page: #eef2f7;
-  --bg-surface: #ffffff;
-  --bg-surface-muted: #e3e9f2;
-  --bg-stage: #dfe7f4;
-  --border-subtle: rgba(15, 23, 42, 0.12);
-  --border-strong: rgba(15, 23, 42, 0.22);
-  --text-primary: #0f172a;
-  --text-secondary: #334155;
-  --text-muted: #526277;
-  --accent: #0f62fe;
-  --accent-soft: rgba(15, 98, 254, 0.12);
-  --accent-text: #ffffff;
-  --badge-ok-bg: #dcfce7;
-  --badge-ok-fg: #14532d;
-  --badge-warn-bg: #fef3c7;
-  --badge-warn-fg: #78350f;
-  --glass-ink: #0f172a;
-  --glass-ink-muted: #334155;
-  --backdrop-grid: rgba(15, 23, 42, 0.08);
-  --backdrop-card-bg: rgba(255, 255, 255, 0.78);
-  --backdrop-card-border: rgba(15, 23, 42, 0.1);
+  --ground: #eef2f6;
+  --ink: #13315c;
+  --ink-soft: #3d5679;
+  --ink-faint: #6a7f9c;
+  --rule: rgba(19, 49, 92, 0.2);
+  --rule-major: rgba(19, 49, 92, 0.42);
+  --star: rgba(19, 49, 92, 0.5);
+  --rail: #ffffff;
+  --rail-line: rgba(19, 49, 92, 0.12);
+  --control-fill: rgba(19, 49, 92, 0.06);
+  --control-fill-hover: rgba(19, 49, 92, 0.11);
+  --sodium: #f0b429;
+  --sodium-ink: #3b2a00;
+  --focus: #13315c;
+  --glass-ink: #0d2647;
+  --glass-ink-soft: #3d5679;
+  /* Cartographic halo: keeps labels legible over the bent, moving chart behind the glass. */
+  --glass-halo: 0 0 2px rgba(238, 242, 246, 0.95), 0 0 8px rgba(238, 242, 246, 0.9);
+  --wire-prim: #c2410c;
+  --wire-contour: #13315c;
 }
 
 [data-theme='dark'] {
   color-scheme: dark;
-  --bg-page: #090d16;
-  --bg-surface: #111827;
-  --bg-surface-muted: #1b2436;
-  --bg-stage: #0d1424;
-  --border-subtle: rgba(226, 232, 240, 0.12);
-  --border-strong: rgba(226, 232, 240, 0.24);
-  --text-primary: #f8fafc;
-  --text-secondary: #cbd5e1;
-  --text-muted: #94a3b8;
-  --accent: #38bdf8;
-  --accent-soft: rgba(56, 189, 248, 0.16);
-  --accent-text: #082f49;
-  --badge-ok-bg: rgba(34, 197, 94, 0.2);
-  --badge-ok-fg: #86efac;
-  --badge-warn-bg: rgba(245, 158, 11, 0.2);
-  --badge-warn-fg: #fde68a;
-  --glass-ink: #f8fafc;
-  --glass-ink-muted: #cbd5e1;
-  --backdrop-grid: rgba(226, 232, 240, 0.08);
-  --backdrop-card-bg: rgba(15, 23, 42, 0.72);
-  --backdrop-card-border: rgba(226, 232, 240, 0.12);
+  --ground: #102b4c;
+  --ink: #eaf1f9;
+  --ink-soft: #b6c6da;
+  --ink-faint: #8aa0bb;
+  --rule: rgba(234, 241, 249, 0.17);
+  --rule-major: rgba(234, 241, 249, 0.36);
+  --star: rgba(234, 241, 249, 0.42);
+  --rail: #0b2140;
+  --rail-line: rgba(234, 241, 249, 0.12);
+  --control-fill: rgba(234, 241, 249, 0.07);
+  --control-fill-hover: rgba(234, 241, 249, 0.13);
+  --sodium: #f5bd3d;
+  --sodium-ink: #2b1f00;
+  --focus: #f5bd3d;
+  --glass-ink: #f4f8fc;
+  --glass-ink-soft: #c5d3e4;
+  --glass-halo: 0 0 2px rgba(16, 43, 76, 0.95), 0 0 8px rgba(16, 43, 76, 0.9);
+  --wire-prim: #fb923c;
+  --wire-contour: #f5bd3d;
+}
+
+:root {
+  --font-ui:
+    'Schibsted Grotesk Variable', 'PingFang SC', 'HarmonyOS Sans SC', 'Microsoft YaHei UI',
+    'Microsoft YaHei', 'Noto Sans SC', system-ui, sans-serif;
+  --font-specimen:
+    'Bodoni Moda Variable', 'Songti SC', 'STSong', 'Noto Serif SC', 'Source Han Serif SC',
+    'SimSun', serif;
+  --rail-width: 340px;
 }
 
 * {
@@ -57,14 +69,15 @@ html,
 body {
   margin: 0;
   padding: 0;
-  min-height: 100%;
-  font-family:
-    'Inter',
-    ui-sans-serif,
-    system-ui,
-    -apple-system,
-    BlinkMacSystemFont,
-    'Segoe UI',
-    sans-serif;
+  background: var(--ground);
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-size: 14px;
+  line-height: 1.45;
   -webkit-font-smoothing: antialiased;
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
 }

@@ -9,7 +9,6 @@ import {
   type ReactElement,
 } from 'react'
 import {
-  DEFAULT_OPTICAL_MATERIALS,
   type Rect,
   type Size,
   type ThemeMode,
@@ -33,9 +32,13 @@ import {
   type PopoverPlacement,
 } from '@meniscus/presets'
 import { ControlPanel } from '../components/ControlPanel.tsx'
-import { LiveBackdrop } from '../components/LiveBackdrop.tsx'
+import { TestChart } from '../components/TestChart.tsx'
 import { getMessages, type Locale } from '../i18n.ts'
-import { POPOVER_ANCHOR_PLACEMENTS, POPOVER_MENU_ITEMS } from '../labDefaults.ts'
+import {
+  POPOVER_ANCHOR_PLACEMENTS,
+  POPOVER_MENU_ITEMS,
+  SHOWCASE_MATERIALS,
+} from '../labDefaults.ts'
 
 export interface PopoverMenuLabProps {
   theme: ThemeMode
@@ -54,14 +57,16 @@ function computeAnchoredTriggerRect(stageSize: Size, placement: PopoverPlacement
   const h = Math.max(320, stageSize.height)
   const width = 136
   const height = 42
+  // Clear the chart's wordmark and caption, which own the top-left of every stage.
+  const topY = Math.max(68, Math.round(h * 0.34))
 
   switch (placement) {
     case 'overAnchorEnd':
-      return { x: Math.max(20, w - width - 36), y: 68, width, height }
+      return { x: Math.max(20, w - width - 36), y: topY, width, height }
     case 'overAnchorStart':
-      return { x: 28, y: 68, width, height }
+      return { x: 28, y: topY, width, height }
     case 'belowPoint':
-      return { x: (w - width) * 0.5, y: 74, width, height }
+      return { x: (w - width) * 0.5, y: topY, width, height }
     case 'abovePoint':
       return { x: (w - width) * 0.5, y: h - height - 72, width, height }
   }
@@ -151,6 +156,7 @@ export function PopoverMenuLab({
 
   const latestRef = useRef({
     theme,
+    renderMode,
     activeSourceKind,
     stageSize,
     placement,
@@ -192,7 +198,7 @@ export function PopoverMenuLab({
       } else {
         surface.render({
           field: geom.field,
-          material: DEFAULT_OPTICAL_MATERIALS[l.theme].crisp,
+          material: SHOWCASE_MATERIALS[l.renderMode][l.theme],
           theme: l.theme,
           opacity,
           blurBumpPx: motion.blurBumpPx,
@@ -258,6 +264,7 @@ export function PopoverMenuLab({
     reducedMotionRef.current = reducedMotion
     latestRef.current = {
       theme,
+      renderMode,
       activeSourceKind,
       stageSize,
       placement,
@@ -455,7 +462,7 @@ export function PopoverMenuLab({
   ]
 
   return (
-    <div className="pg-lab-grid">
+    <>
       <div
         className="pg-stage"
         ref={stageRef}
@@ -463,10 +470,10 @@ export function PopoverMenuLab({
         onContextMenu={handleStageContextMenu}
         onClick={handleStageClick}
       >
-        <LiveBackdrop
+        <TestChart
           title={pm.backdropTitle}
           caption={pm.backdropCaption}
-          messages={t.backdrop}
+          messages={t.chart}
         />
 
         <GlassField
@@ -477,7 +484,7 @@ export function PopoverMenuLab({
           blendK={POPOVER_MORPH_DEFAULTS.dropletBlendK}
           primitives={restingPrimitives}
           opacity={activeSourceKind === 'point' || bareSource ? 0 : 1}
-          material={DEFAULT_OPTICAL_MATERIALS[theme].crisp}
+          material={SHOWCASE_MATERIALS[renderMode][theme]}
         >
           <button
             ref={triggerBtnRef}
@@ -543,19 +550,6 @@ export function PopoverMenuLab({
           </div>
         </GlassField>
 
-        <div className="pg-context-hint">
-          <span>{pm.contextHint}</span>
-          <button
-            type="button"
-            className="pg-btn"
-            onClick={(e) => {
-              e.stopPropagation()
-              openContextMenuAt(stageSize.width * 0.32, stageSize.height * 0.45)
-            }}
-          >
-            {pm.contextHereButton}
-          </button>
-        </div>
       </div>
 
       <ControlPanel title={pm.panelTitle} description={pm.panelDescription}>
@@ -599,6 +593,13 @@ export function PopoverMenuLab({
           <button type="button" className="pg-btn" onClick={handleRunInterruptSequence}>
             {pm.interruptDemo}
           </button>
+          <button
+            type="button"
+            className="pg-btn"
+            onClick={() => openContextMenuAt(stageSize.width * 0.32, stageSize.height * 0.45)}
+          >
+            {pm.contextHereButton}
+          </button>
           <button type="button" className="pg-btn" onClick={closeCurrentMenu}>
             {pm.closeMenu}
           </button>
@@ -627,6 +628,6 @@ export function PopoverMenuLab({
           </div>
         </div>
       </ControlPanel>
-    </div>
+    </>
   )
 }

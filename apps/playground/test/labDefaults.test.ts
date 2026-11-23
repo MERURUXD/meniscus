@@ -5,6 +5,8 @@ import {
   DEFAULT_OPTICS_LAB_CONFIG,
   DOCK_SEGMENTS,
   POPOVER_MENU_ITEMS,
+  SHOWCASE_FROSTED_BLUR_PX,
+  SHOWCASE_MATERIALS,
   buildOpticsLabMaterial,
   buildOpticsLabPrimitives,
   createExtraDropletInput,
@@ -71,4 +73,25 @@ test('buildOpticsLabPrimitives aligns cleanly with extractFieldContourPath acros
   }
   assert.ok(DOCK_SEGMENTS.length >= 4)
   assert.ok(POPOVER_MENU_ITEMS.length >= 4)
+})
+
+test('showcase materials bend clearly when refracting and stay frosted on the fallback tier', () => {
+  for (const theme of ['light', 'dark'] as const) {
+    const refract = SHOWCASE_MATERIALS.refract[theme]
+    assert.equal(refract, SHOWCASE_MATERIALS.refract[theme])
+    assert.ok(refract.tintRgba[3] <= 0.35, `${theme} refract tint must stay light enough to show bending`)
+    assert.ok(refract.blur <= 1.5, `${theme} refract blur must not wash out the displaced backdrop`)
+    assert.ok(refract.dispersion > 0)
+
+    const frosted = SHOWCASE_MATERIALS.frosted[theme]
+    assert.ok(frosted.blur >= SHOWCASE_FROSTED_BLUR_PX, `${theme} fallback must read as frosted, not clear`)
+    assert.ok(frosted.tintRgba[3] > refract.tintRgba[3])
+  }
+
+  const tinted = buildOpticsLabMaterial('light', { ...DEFAULT_OPTICS_LAB_CONFIG, tintAlpha: 0.6 })
+  assert.equal(tinted.tintRgba[3], 0.6)
+  assert.deepEqual(tinted.tintRgba.slice(0, 3), SHOWCASE_MATERIALS.refract.light.tintRgba.slice(0, 3))
+
+  const fallback = buildOpticsLabMaterial('dark', DEFAULT_OPTICS_LAB_CONFIG, 'frosted')
+  assert.ok(fallback.blur >= SHOWCASE_FROSTED_BLUR_PX)
 })

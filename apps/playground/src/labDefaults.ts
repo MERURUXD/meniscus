@@ -6,38 +6,12 @@ import {
   type Size,
   type ThemeMode,
 } from '@meniscus/core'
+import type { SurfaceRenderMode } from '@meniscus/dom'
 import type { DragMergeNodeInput, PopoverPlacement } from '@meniscus/presets'
 
 export type LabId = 'drag-merge' | 'segmented-dock' | 'optics' | 'popover-menu'
 
-export interface LabTabMeta {
-  id: LabId
-  title: string
-  description: string
-}
-
-export const LAB_TABS: readonly LabTabMeta[] = [
-  {
-    id: 'drag-merge',
-    title: 'Drag & Merge Lab',
-    description: 'Interactive N-primitive liquid bridges & magnetic attraction',
-  },
-  {
-    id: 'segmented-dock',
-    title: 'Morphing Dock',
-    description: 'Continuous-flow segmented pill with mid-flight retargeting',
-  },
-  {
-    id: 'optics',
-    title: 'Optics & Degradation',
-    description: 'Live optical parameters, Route B3 refract vs frosted & SDF contour',
-  },
-  {
-    id: 'popover-menu',
-    title: 'Popover & Context Menu',
-    description: 'Interruptible anchored popover & point-origin context menu',
-  },
-] as const
+export const LAB_IDS: readonly LabId[] = ['drag-merge', 'segmented-dock', 'optics', 'popover-menu']
 
 export interface DockSegmentMeta {
   id: string
@@ -154,6 +128,51 @@ export function createExtraDropletInput(index: number, stageSize: Size): DragMer
   }
 }
 
+/**
+ * Showcase glass for the test chart. Core defaults carry a heavy milky tint tuned for UI
+ * chrome over busy content; here the point is to see the backdrop bend, so on the refract
+ * tier the tint and blur drop and a little dispersion is added. Only the playground uses this.
+ */
+const SHOWCASE_TINT: Record<ThemeMode, OpticalMaterial['tintRgba']> = {
+  light: [0.97, 0.98, 1, 0.22],
+  dark: [0.05, 0.15, 0.28, 0.3],
+}
+
+/**
+ * Without displacement, low blur would leave the fallback tier as clear glass. Frosted keeps a
+ * real blur and a denser tint so Safari and Firefox still read as frosted, per the
+ * progressive-enhancement contract.
+ */
+export const SHOWCASE_FROSTED_BLUR_PX = 10
+const SHOWCASE_FROSTED_TINT_ALPHA: Record<ThemeMode, number> = { light: 0.34, dark: 0.4 }
+
+export type ShowcaseTier = 'refract' | 'frosted'
+
+export function buildShowcaseMaterial(theme: ThemeMode, tier: ShowcaseTier = 'refract'): OpticalMaterial {
+  const [r, g, b, a] = SHOWCASE_TINT[theme]
+  const frosted = tier === 'frosted'
+  return {
+    ...DEFAULT_OPTICAL_MATERIALS[theme].crisp,
+    blur: frosted ? SHOWCASE_FROSTED_BLUR_PX : 0.8,
+    dispersion: frosted ? 0 : 1.2,
+    saturation: theme === 'light' ? 1.5 : 1.7,
+    tintRgba: [r, g, b, frosted ? SHOWCASE_FROSTED_TINT_ALPHA[theme] : a],
+    rimOpacity: 0.42,
+  }
+}
+
+/** Precomputed per render mode and theme so per-frame renders reuse one object instead of allocating. */
+export const SHOWCASE_MATERIALS: Readonly<
+  Record<SurfaceRenderMode, Readonly<Record<ThemeMode, OpticalMaterial>>>
+> = {
+  refract: { light: buildShowcaseMaterial('light'), dark: buildShowcaseMaterial('dark') },
+  frosted: {
+    light: buildShowcaseMaterial('light', 'frosted'),
+    dark: buildShowcaseMaterial('dark', 'frosted'),
+  },
+  solid: { light: buildShowcaseMaterial('light'), dark: buildShowcaseMaterial('dark') },
+}
+
 export type OpticsViewMode = 'refract' | 'frosted' | 'solid' | 'split'
 
 export interface OpticsLabConfig {
@@ -163,6 +182,7 @@ export interface OpticsLabConfig {
   refractionStrength: number
   dispersionPx: number
   saturation: number
+  tintAlpha: number
   rimMode: RimMode
   rimOpacity: number
   gapPx: number
@@ -173,13 +193,14 @@ export interface OpticsLabConfig {
 
 export const DEFAULT_OPTICS_LAB_CONFIG: OpticsLabConfig = {
   blendK: 30,
-  blurPx: 4,
-  bevelPx: 20,
+  blurPx: 0.8,
+  bevelPx: 22,
   refractionStrength: 1.35,
   dispersionPx: 1.4,
-  saturation: 2.08,
+  saturation: 1.5,
+  tintAlpha: 0.22,
   rimMode: 'directional',
-  rimOpacity: 0.34,
+  rimOpacity: 0.42,
   gapPx: 10,
   renderView: 'refract',
   showWireframe: false,
@@ -189,17 +210,21 @@ export const DEFAULT_OPTICS_LAB_CONFIG: OpticsLabConfig = {
 export function buildOpticsLabMaterial(
   theme: ThemeMode,
   config: OpticsLabConfig,
+  tier: ShowcaseTier = 'refract',
 ): OpticalMaterial {
   const base =
     config.rimMode === 'soft'
       ? DEFAULT_OPTICAL_MATERIALS[theme].frosted
-      : DEFAULT_OPTICAL_MATERIALS[theme].crisp
+      : buildShowcaseMaterial(theme, tier)
+  const [r, g, b] = SHOWCASE_TINT[theme]
+  const frosted = tier === 'frosted'
 
   return {
     ...base,
+    tintRgba: [r, g, b, frosted ? Math.max(config.tintAlpha, SHOWCASE_FROSTED_TINT_ALPHA[theme]) : config.tintAlpha],
     bevel: config.bevelPx,
     refraction: config.refractionStrength * 50,
-    blur: config.blurPx,
+    blur: frosted ? Math.max(config.blurPx, SHOWCASE_FROSTED_BLUR_PX) : config.blurPx,
     dispersion: config.dispersionPx,
     saturation: config.saturation,
     rimMode: config.rimMode,
@@ -247,10 +272,10 @@ export interface PopoverMenuActionItem {
 }
 
 export const POPOVER_MENU_ITEMS: readonly PopoverMenuActionItem[] = [
-  { id: 'refract-preset', label: 'Route B3 Refraction', shortcut: 'R' },
-  { id: 'smin-fuse', label: 'Smooth Union Bridge', shortcut: 'K' },
-  { id: 'interrupt', label: 'Interrupt Mid-Flight', shortcut: 'Space' },
-  { id: 'edge-flip', label: 'Clamp & Auto-Flip', shortcut: 'F' },
+  { id: 'refract-preset', label: 'Duplicate', shortcut: 'D' },
+  { id: 'smin-fuse', label: 'Rename', shortcut: 'R' },
+  { id: 'interrupt', label: 'Move to', shortcut: 'M' },
+  { id: 'edge-flip', label: 'Delete', shortcut: 'Del' },
 ] as const
 
 export const POPOVER_ANCHOR_PLACEMENTS: readonly PopoverPlacement[] = [

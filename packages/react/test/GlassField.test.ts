@@ -632,3 +632,114 @@ test('GlassField coalesces multi-primitive updates into one render and isolates 
     await env.restore()
   }
 })
+
+test('GlassField accounts for host scroll offsets and remeasures on host style/className changes', async () => {
+  const env = installDomEnv()
+  try {
+    const spy = createSpyOverlayRenderer()
+    const controllerRef = createRef<GlassSurfaceController | null>()
+    const host = env.document.createElement('div')
+    env.document.body.appendChild(host)
+    const root = createRoot(host)
+
+    const noShadowMaterial = {
+      ...DEFAULT_OPTICAL_MATERIALS.light.frosted,
+      shadowAlpha: 0,
+    }
+
+    let boxLeft = 110
+    await act(async () => {
+      root.render(
+        createElement(
+          GlassField,
+          {
+            env: CHROME_ENV,
+            overlayRenderer: spy.renderer,
+            controllerRef,
+            observeResize: false,
+            blendK: 0,
+            material: noShadowMaterial,
+            className: 'layout-start',
+            style: { justifyContent: 'flex-start' },
+            containerRef: (el) => {
+              if (!el) return
+              Object.defineProperty(el, 'scrollLeft', { configurable: true, value: 30 })
+              Object.defineProperty(el, 'scrollTop', { configurable: true, value: 45 })
+              setElementRect(el, { left: 100, top: 200, width: 400, height: 300 })
+            },
+          },
+          createElement(
+            GlassPrimitive,
+            {
+              id: 'scrolled-box',
+              radius: 12,
+              elementRef: (el) => {
+                if (el) {
+                  setElementRect(el, { left: boxLeft, top: 220, width: 80, height: 40 })
+                }
+              },
+            },
+            createElement('span', null, 'Scrolled'),
+          ),
+        ),
+      )
+    })
+
+    // Viewport delta is (110 - 100, 220 - 200) = (10, 20); adding scroll (30, 45) yields local (40, 65).
+    // With blendK=0 and shadowAlpha=0, computeAutoSurfaceBounds uses exact 24px padding -> bounds (16, 41).
+    const controllerBefore = controllerRef.current!
+    const veil = controllerBefore.getElements().veil!
+    const matchBefore = /translate3d\(([-\d.]+)px,\s*([-\d.]+)px/.exec(veil.style.transform)
+    assert.ok(matchBefore)
+    const boundsXBefore = Number.parseFloat(matchBefore[1]!)
+    const boundsYBefore = Number.parseFloat(matchBefore[2]!)
+    assert.equal(boundsXBefore, 16)
+    assert.equal(boundsYBefore, 41)
+
+    // Move wrapper box due to host layout change (`style` / `className`) with same size and props.
+    boxLeft = 210
+    await act(async () => {
+      root.render(
+        createElement(
+          GlassField,
+          {
+            env: CHROME_ENV,
+            overlayRenderer: spy.renderer,
+            controllerRef,
+            observeResize: false,
+            blendK: 0,
+            material: noShadowMaterial,
+            className: 'layout-end',
+            style: { justifyContent: 'flex-end' },
+          },
+          createElement(
+            GlassPrimitive,
+            {
+              id: 'scrolled-box',
+              radius: 12,
+              elementRef: (el) => {
+                if (el) {
+                  setElementRect(el, { left: boxLeft, top: 220, width: 80, height: 40 })
+                }
+              },
+            },
+            createElement('span', null, 'Scrolled'),
+          ),
+        ),
+      )
+    })
+
+    // Host style/className change must reuse the same controller without disposing/recreating layers.
+    assert.equal(controllerRef.current, controllerBefore)
+    assert.equal(spy.getDisposedCount(), 0)
+    const matchAfter = /translate3d\(([-\d.]+)px,\s*([-\d.]+)px/.exec(veil.style.transform)
+    assert.ok(matchAfter)
+    assert.equal(Number.parseFloat(matchAfter[1]!) - boundsXBefore, 100)
+
+    await act(async () => {
+      root.unmount()
+    })
+  } finally {
+    await env.restore()
+  }
+})

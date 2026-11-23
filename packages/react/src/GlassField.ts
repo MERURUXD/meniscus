@@ -143,9 +143,10 @@ function resolveRegisteredPrimitive(
     measuredH = Math.max(0, elRect.height)
     if (container && positioning !== 'fixed' && needsOrigin) {
       const containerRect = container.getBoundingClientRect()
-      // Align coordinates against the container's padding box where managed `top: 0; left: 0` layers sit.
-      const originX = containerRect.left + (container.clientLeft || 0)
-      const originY = containerRect.top + (container.clientTop || 0)
+      // Align coordinates against the container's scrollable padding-box origin where
+      // `position: absolute; top: 0; left: 0` managed layers sit.
+      const originX = containerRect.left + (container.clientLeft || 0) - (container.scrollLeft || 0)
+      const originY = containerRect.top + (container.clientTop || 0) - (container.scrollTop || 0)
       measuredX = elRect.left - originX
       measuredY = elRect.top - originY
     } else if (needsOrigin) {
@@ -544,6 +545,8 @@ export function GlassField(props: GlassFieldProps): ReactElement {
     overlayRenderer,
     scheduler,
     ResizeObserverCtor,
+    className,
+    style,
   ])
 
   // Isolate React children inside a layout-transparent `display: contents` node so text/number

@@ -6,7 +6,7 @@ import {
   useState,
   type ReactElement,
 } from 'react'
-import { DEFAULT_OPTICAL_MATERIALS, type GlassFieldState, type ThemeMode } from '@meniscus/core'
+import type { GlassFieldState, ThemeMode } from '@meniscus/core'
 import {
   GlassSurfaceController,
   createFrameLoop,
@@ -23,9 +23,9 @@ import {
   type SegmentedPillState,
 } from '@meniscus/presets'
 import { ControlPanel, SliderControl } from '../components/ControlPanel.tsx'
-import { LiveBackdrop } from '../components/LiveBackdrop.tsx'
+import { TestChart } from '../components/TestChart.tsx'
 import { getMessages, type Locale } from '../i18n.ts'
-import { DOCK_SEGMENTS, type DockSegmentMeta } from '../labDefaults.ts'
+import { DOCK_SEGMENTS, SHOWCASE_MATERIALS, type DockSegmentMeta } from '../labDefaults.ts'
 
 export interface SegmentedDockLabProps {
   theme: ThemeMode
@@ -164,7 +164,7 @@ export function SegmentedDockLab({
     if (surface) {
       surface.render({
         field: state.field,
-        material: DEFAULT_OPTICAL_MATERIALS[activeTheme].crisp,
+        material: SHOWCASE_MATERIALS[activeTheme],
         theme: activeTheme,
       })
     }
@@ -217,7 +217,7 @@ export function SegmentedDockLab({
           width: bRect.width,
           height: bRect.height,
         },
-        radius: 18,
+        radius: bRect.height * 0.5,
       })
     }
 
@@ -336,12 +336,12 @@ export function SegmentedDockLab({
     sd.segments[telemetry.activeId as keyof typeof sd.segments] ?? telemetry.activeId
 
   return (
-    <div className="pg-lab-grid">
+    <>
       <div className="pg-stage" data-testid="segmented-dock-stage">
-        <LiveBackdrop
+        <TestChart
           title={sd.backdropTitle}
           caption={sd.backdropCaption}
-          messages={t.backdrop}
+          messages={t.chart}
         />
 
         <div className="pg-dock-wrap">
@@ -353,7 +353,7 @@ export function SegmentedDockLab({
             theme={theme}
             blendK={initialField.blendK}
             primitives={initialField.primitives}
-            material={DEFAULT_OPTICAL_MATERIALS[theme].crisp}
+            material={SHOWCASE_MATERIALS[theme]}
           >
             <div
               className="pg-dock-items"
@@ -453,6 +453,6 @@ export function SegmentedDockLab({
           </div>
         </div>
       </ControlPanel>
-    </div>
+    </>
   )
 }

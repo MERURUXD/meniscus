@@ -8,7 +8,6 @@ import {
   type ReactElement,
 } from 'react'
 import {
-  DEFAULT_OPTICAL_MATERIALS,
   MAX_GPU_PRIMITIVES,
   type GlassFieldState,
   type Size,
@@ -30,10 +29,11 @@ import {
   type DragMergeState,
 } from '@meniscus/presets'
 import { ControlPanel, SliderControl } from '../components/ControlPanel.tsx'
-import { LiveBackdrop } from '../components/LiveBackdrop.tsx'
+import { TestChart } from '../components/TestChart.tsx'
 import { getMessages, type Locale, type PlaygroundMessages } from '../i18n.ts'
 import {
   INITIAL_DRAG_NODE_META,
+  SHOWCASE_MATERIALS,
   createExtraDropletInput,
   createInitialDragMergeNodes,
 } from '../labDefaults.ts'
@@ -190,7 +190,7 @@ export function DragMergeLab({
           rimOpacity: state.field.rimOpacity,
           styleMix: state.field.styleMix,
         },
-        material: DEFAULT_OPTICAL_MATERIALS[activeTheme].crisp,
+        material: SHOWCASE_MATERIALS[activeTheme],
         theme: activeTheme,
       })
     }
@@ -456,12 +456,12 @@ export function DragMergeLab({
   const gapText = Number.isFinite(telemetry.minGap) ? `${telemetry.minGap.toFixed(1)}px` : '—'
 
   return (
-    <div className="pg-lab-grid">
+    <>
       <div className="pg-stage" ref={stageRef} data-testid="drag-merge-stage">
-        <LiveBackdrop
+        <TestChart
           title={dm.backdropTitle}
           caption={dm.backdropCaption}
-          messages={t.backdrop}
+          messages={t.chart}
         />
         <GlassField
           className="pg-glass-stage"
@@ -470,7 +470,7 @@ export function DragMergeLab({
           theme={theme}
           blendK={blendK}
           primitives={initialSeed.field.primitives}
-          material={DEFAULT_OPTICAL_MATERIALS[theme].crisp}
+          material={SHOWCASE_MATERIALS[theme]}
         >
           {nodeIds.map((id) => {
             const meta = resolveNodeDisplay(id, extraIndices, dm)
@@ -588,6 +588,6 @@ export function DragMergeLab({
           </div>
         </div>
       </ControlPanel>
-    </div>
+    </>
   )
 }

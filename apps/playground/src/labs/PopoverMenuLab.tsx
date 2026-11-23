@@ -9,7 +9,6 @@ import {
   type ReactElement,
 } from 'react'
 import {
-  DEFAULT_OPTICAL_MATERIALS,
   type Rect,
   type Size,
   type ThemeMode,
@@ -33,9 +32,13 @@ import {
   type PopoverPlacement,
 } from '@meniscus/presets'
 import { ControlPanel } from '../components/ControlPanel.tsx'
-import { LiveBackdrop } from '../components/LiveBackdrop.tsx'
+import { TestChart } from '../components/TestChart.tsx'
 import { getMessages, type Locale } from '../i18n.ts'
-import { POPOVER_ANCHOR_PLACEMENTS, POPOVER_MENU_ITEMS } from '../labDefaults.ts'
+import {
+  POPOVER_ANCHOR_PLACEMENTS,
+  POPOVER_MENU_ITEMS,
+  SHOWCASE_MATERIALS,
+} from '../labDefaults.ts'
 
 export interface PopoverMenuLabProps {
   theme: ThemeMode
@@ -192,7 +195,7 @@ export function PopoverMenuLab({
       } else {
         surface.render({
           field: geom.field,
-          material: DEFAULT_OPTICAL_MATERIALS[l.theme].crisp,
+          material: SHOWCASE_MATERIALS[l.theme],
           theme: l.theme,
           opacity,
           blurBumpPx: motion.blurBumpPx,
@@ -455,7 +458,7 @@ export function PopoverMenuLab({
   ]
 
   return (
-    <div className="pg-lab-grid">
+    <>
       <div
         className="pg-stage"
         ref={stageRef}
@@ -463,10 +466,10 @@ export function PopoverMenuLab({
         onContextMenu={handleStageContextMenu}
         onClick={handleStageClick}
       >
-        <LiveBackdrop
+        <TestChart
           title={pm.backdropTitle}
           caption={pm.backdropCaption}
-          messages={t.backdrop}
+          messages={t.chart}
         />
 
         <GlassField
@@ -477,7 +480,7 @@ export function PopoverMenuLab({
           blendK={POPOVER_MORPH_DEFAULTS.dropletBlendK}
           primitives={restingPrimitives}
           opacity={activeSourceKind === 'point' || bareSource ? 0 : 1}
-          material={DEFAULT_OPTICAL_MATERIALS[theme].crisp}
+          material={SHOWCASE_MATERIALS[theme]}
         >
           <button
             ref={triggerBtnRef}
@@ -543,19 +546,6 @@ export function PopoverMenuLab({
           </div>
         </GlassField>
 
-        <div className="pg-context-hint">
-          <span>{pm.contextHint}</span>
-          <button
-            type="button"
-            className="pg-btn"
-            onClick={(e) => {
-              e.stopPropagation()
-              openContextMenuAt(stageSize.width * 0.32, stageSize.height * 0.45)
-            }}
-          >
-            {pm.contextHereButton}
-          </button>
-        </div>
       </div>
 
       <ControlPanel title={pm.panelTitle} description={pm.panelDescription}>
@@ -599,6 +589,13 @@ export function PopoverMenuLab({
           <button type="button" className="pg-btn" onClick={handleRunInterruptSequence}>
             {pm.interruptDemo}
           </button>
+          <button
+            type="button"
+            className="pg-btn"
+            onClick={() => openContextMenuAt(stageSize.width * 0.32, stageSize.height * 0.45)}
+          >
+            {pm.contextHereButton}
+          </button>
           <button type="button" className="pg-btn" onClick={closeCurrentMenu}>
             {pm.closeMenu}
           </button>
@@ -627,6 +624,6 @@ export function PopoverMenuLab({
           </div>
         </div>
       </ControlPanel>
-    </div>
+    </>
   )
 }

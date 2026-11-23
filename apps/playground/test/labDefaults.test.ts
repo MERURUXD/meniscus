@@ -5,6 +5,7 @@ import {
   DEFAULT_OPTICS_LAB_CONFIG,
   DOCK_SEGMENTS,
   POPOVER_MENU_ITEMS,
+  SHOWCASE_MATERIALS,
   buildOpticsLabMaterial,
   buildOpticsLabPrimitives,
   createExtraDropletInput,
@@ -71,4 +72,18 @@ test('buildOpticsLabPrimitives aligns cleanly with extractFieldContourPath acros
   }
   assert.ok(DOCK_SEGMENTS.length >= 4)
   assert.ok(POPOVER_MENU_ITEMS.length >= 4)
+})
+
+test('showcase material keeps the chart visible through the glass and is shared across frames', () => {
+  for (const theme of ['light', 'dark'] as const) {
+    const mat = SHOWCASE_MATERIALS[theme]
+    assert.equal(mat, SHOWCASE_MATERIALS[theme])
+    assert.ok(mat.tintRgba[3] <= 0.35, `${theme} tint must stay light enough to show refraction`)
+    assert.ok(mat.blur <= 1.5, `${theme} blur must not wash out the displaced backdrop`)
+    assert.ok(mat.dispersion > 0)
+  }
+
+  const tinted = buildOpticsLabMaterial('light', { ...DEFAULT_OPTICS_LAB_CONFIG, tintAlpha: 0.6 })
+  assert.equal(tinted.tintRgba[3], 0.6)
+  assert.deepEqual(tinted.tintRgba.slice(0, 3), SHOWCASE_MATERIALS.light.tintRgba.slice(0, 3))
 })

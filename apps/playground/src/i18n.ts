@@ -211,19 +211,19 @@ export const MESSAGES: Record<Locale, PlaygroundMessages> = {
     },
     tabs: {
       'drag-merge': {
-        title: 'Drag and merge',
+        title: 'Merging drops',
         description: 'Pull droplets together until they fuse.',
       },
       'segmented-dock': {
-        title: 'Morphing dock',
-        description: 'A selection pill that flows between tabs.',
+        title: 'Segmented control',
+        description: 'The highlight stretches and slides between options.',
       },
       optics: {
-        title: 'Optics bench',
-        description: 'Tune the lens, compare it with the fallback.',
+        title: 'Glass material',
+        description: 'Tune refraction, blur and rim; compare with the fallback.',
       },
       'popover-menu': {
-        title: 'Popover and menu',
+        title: 'Popover menu',
         description: 'A button that melts into a menu and back.',
       },
     },
@@ -233,7 +233,7 @@ export const MESSAGES: Record<Locale, PlaygroundMessages> = {
       clockLabel: 'This chart has been live for',
     },
     dragMerge: {
-      backdropTitle: 'Drag and merge',
+      backdropTitle: 'Merging drops',
       backdropCaption:
         'Drag a droplet toward another. Inside the capture radius they fuse into one surface; pull them apart and the bridge thins until it snaps.',
       nodes: {
@@ -260,7 +260,7 @@ export const MESSAGES: Record<Locale, PlaygroundMessages> = {
       nonePair: 'None',
     },
     segmentedDock: {
-      backdropTitle: 'Morphing dock',
+      backdropTitle: 'Segmented control',
       backdropCaption:
         'Pick a tab. The pill stretches toward it, squeezes and settles. Pick another before it lands and it turns around without a jump.',
       dockAriaLabel: 'Sections',
@@ -287,7 +287,7 @@ export const MESSAGES: Record<Locale, PlaygroundMessages> = {
       motionSettled: 'Settled',
     },
     optics: {
-      backdropTitle: 'Optics bench',
+      backdropTitle: 'Glass material',
       backdropCaption:
         'Two lenses over the moving background. Edges bend inside the rim; widen the bezel or raise refraction to see more of it.',
       splitLeftTitle: 'Refraction',
@@ -300,8 +300,8 @@ export const MESSAGES: Record<Locale, PlaygroundMessages> = {
       views: {
         refract: 'Refract',
         frosted: 'Frosted',
-        solid: 'Solid',
-        split: 'Side by side',
+        solid: 'Opaque',
+        split: 'Compare',
       },
       gapLabel: 'Gap',
       blendKLabel: 'Blend radius',
@@ -325,14 +325,14 @@ export const MESSAGES: Record<Locale, PlaygroundMessages> = {
       tierLabels: {
         refract: 'Refraction',
         frosted: 'Frosted',
-        solid: 'Solid',
+        solid: 'Opaque',
         split: 'Refraction and frosted',
         splitDowngraded: 'Frosted on both sides',
         refractDowngraded: 'Frosted, refraction unavailable',
       },
     },
     popoverMenu: {
-      backdropTitle: 'Popover and menu',
+      backdropTitle: 'Popover menu',
       backdropCaption:
         'Open the menu and the button melts into it. Close it halfway and it reverses from where it is. Right-click the chart for a menu at the pointer.',
       triggerLabel: 'Options',
@@ -402,16 +402,16 @@ export const MESSAGES: Record<Locale, PlaygroundMessages> = {
     },
     tabs: {
       'drag-merge': {
-        title: '拖拽融合',
+        title: '液滴融合',
         description: '把液滴拖到一起，看它们融成一体。',
       },
       'segmented-dock': {
-        title: '流动导航',
-        description: '选中态在标签之间流动。',
+        title: '分段切换',
+        description: '选中块在选项之间拉伸、滑动。',
       },
       optics: {
-        title: '光学台',
-        description: '调节镜片，与降级效果对照。',
+        title: '玻璃材质',
+        description: '调折射、模糊和边缘光，并与降级效果对比。',
       },
       'popover-menu': {
         title: '弹出菜单',
@@ -424,7 +424,7 @@ export const MESSAGES: Record<Locale, PlaygroundMessages> = {
       clockLabel: '图样已实时运行',
     },
     dragMerge: {
-      backdropTitle: '拖拽融合',
+      backdropTitle: '液滴融合',
       backdropCaption:
         '把一颗液滴拖向另一颗。进入捕获半径后两者融成一片；再拉开，中间的液桥会逐渐变细直到断开。',
       nodes: {
@@ -451,7 +451,7 @@ export const MESSAGES: Record<Locale, PlaygroundMessages> = {
       nonePair: '无',
     },
     segmentedDock: {
-      backdropTitle: '流动导航',
+      backdropTitle: '分段切换',
       backdropCaption:
         '选一个标签。选中块会先朝它拉长、挤压，再落定。落定前改选别的标签，它会直接掉头，不会跳变。',
       dockAriaLabel: '分区',
@@ -478,7 +478,7 @@ export const MESSAGES: Record<Locale, PlaygroundMessages> = {
       motionSettled: '已落定',
     },
     optics: {
-      backdropTitle: '光学台',
+      backdropTitle: '玻璃材质',
       backdropCaption:
         '两块镜片压在流动的背景上。边缘内的线条和色块会弯折；加宽镜缘或调高折射能看得更清楚。',
       splitLeftTitle: '折射',
@@ -490,8 +490,8 @@ export const MESSAGES: Record<Locale, PlaygroundMessages> = {
       views: {
         refract: '折射',
         frosted: '磨砂',
-        solid: '实色',
-        split: '并排对照',
+        solid: '不透明',
+        split: '对比',
       },
       gapLabel: '间距',
       blendKLabel: '融合半径',
@@ -515,7 +515,7 @@ export const MESSAGES: Record<Locale, PlaygroundMessages> = {
       tierLabels: {
         refract: '折射',
         frosted: '磨砂',
-        solid: '实色',
+        solid: '不透明',
         split: '折射与磨砂',
         splitDowngraded: '两侧均为磨砂',
         refractDowngraded: '磨砂，不支持折射',

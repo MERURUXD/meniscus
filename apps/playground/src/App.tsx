@@ -8,7 +8,11 @@ import { OpticsLab } from './labs/OpticsLab.tsx'
 import { PopoverMenuLab } from './labs/PopoverMenuLab.tsx'
 import { SegmentedDockLab } from './labs/SegmentedDockLab.tsx'
 import { LAB_IDS, type LabId } from './labDefaults.ts'
-import { BackdropContext, type BackdropKind } from './components/backdropSettings.ts'
+import {
+  BACKDROP_KINDS,
+  BackdropContext,
+  type BackdropKind,
+} from './components/backdropSettings.ts'
 import './styles/theme.css'
 import './styles/app.css'
 
@@ -36,7 +40,7 @@ export function App(): ReactElement {
   const [activeLab, setActiveLab] = useState<LabId>('drag-merge')
   const [theme, setTheme] = useState<ThemeMode>(() => detectInitialTheme())
   const [locale, setLocale] = useState<Locale>(() => detectInitialLocale())
-  const [backdrop, setBackdrop] = useState<BackdropKind>('wallpaper')
+  const [backdrop, setBackdrop] = useState<BackdropKind>('folds')
   const [forceReducedMotion, setForceReducedMotion] = useState<boolean | null>(null)
   const [capabilities] = useState<SurfaceCapabilities>(() => detectSurfaceCapabilities())
   const [hasWebgl2] = useState<boolean>(() => detectWebgl2Support())
@@ -125,9 +129,12 @@ export function App(): ReactElement {
             </strong>{' '}
             {hasWebgl2 ? t.shell.statusRimWebgl2 : t.shell.statusRimCanvas2d}
           </p>
-          <div className="bench-prefs">
-            <div className="pg-btn-group" role="group" aria-label={t.shell.backdropGroupAria}>
-              {(['wallpaper', 'chart'] as const).map((kind) => (
+          <div className="bench-backdrop" role="group" aria-labelledby="bench-backdrop-label">
+            <span id="bench-backdrop-label" className="bench-backdrop-label">
+              {t.shell.backdropLabel}
+            </span>
+            <div className="pg-btn-group">
+              {BACKDROP_KINDS.map((kind) => (
                 <button
                   key={kind}
                   type="button"
@@ -135,10 +142,12 @@ export function App(): ReactElement {
                   aria-pressed={backdrop === kind}
                   onClick={() => setBackdrop(kind)}
                 >
-                  {kind === 'wallpaper' ? t.shell.backdropWallpaper : t.shell.backdropChart}
+                  {t.shell.backdrops[kind]}
                 </button>
               ))}
             </div>
+          </div>
+          <div className="bench-prefs">
             <div className="pg-btn-group" role="group" aria-label={t.shell.themeGroupAria}>
               {(['light', 'dark'] as const).map((mode) => (
                 <button

@@ -278,6 +278,17 @@
   gap: 6px 12px;
 }
 
+.bench-backdrop {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.bench-backdrop-label {
+  font-size: 12px;
+  color: var(--ink-faint);
+}
+
 /* ---------- Stage ---------- */
 
 .pg-stage,
@@ -331,8 +342,14 @@
   display: block;
 }
 
-.chart[data-backdrop='wallpaper'] .chart-foot {
+.chart:not([data-backdrop='chart']) .chart-foot {
   justify-content: flex-end;
+}
+
+/* Scenes are busy behind the heading; the halo keeps it readable on any of them. */
+.chart:not([data-backdrop='chart']) .chart-head,
+.chart:not([data-backdrop='chart']) .chart-clock {
+  text-shadow: var(--glass-halo);
 }
 
 /* Minor pitch sits near the bezel width so every rim crosses several lines at once. */

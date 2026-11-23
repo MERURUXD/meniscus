@@ -1,5 +1,6 @@
 import type { RimMode } from '@meniscus/core'
 import type { PopoverPlacement } from '@meniscus/presets'
+import type { BackdropKind } from './components/backdropSettings.ts'
 import type { LabId, OpticsViewMode } from './labDefaults.ts'
 
 export type Locale = 'en' | 'zh'
@@ -69,9 +70,8 @@ export interface PlaygroundMessages {
     themeDark: string
     themeGroupAria: string
     localeGroupAria: string
-    backdropGroupAria: string
-    backdropWallpaper: string
-    backdropChart: string
+    backdropLabel: string
+    backdrops: Record<BackdropKind, string>
     reduceMotion: string
   }
   tabs: Record<LabId, { title: string; description: string }>
@@ -197,9 +197,16 @@ export const MESSAGES: Record<Locale, PlaygroundMessages> = {
       themeDark: 'Dark',
       themeGroupAria: 'Theme',
       localeGroupAria: 'Language',
-      backdropGroupAria: 'Background',
-      backdropWallpaper: 'Wallpaper',
-      backdropChart: 'Test chart',
+      backdropLabel: 'Background',
+      backdrops: {
+        folds: 'Folds',
+        lava: 'Lava',
+        contours: 'Contours',
+        aurora: 'Aurora',
+        bokeh: 'Bokeh',
+        mesh: 'Gradient',
+        chart: 'Test chart',
+      },
       reduceMotion: 'Reduce motion',
     },
     tabs: {
@@ -286,7 +293,8 @@ export const MESSAGES: Record<Locale, PlaygroundMessages> = {
       splitLeftTitle: 'Refraction',
       splitLeftCaption: 'What Chromium renders: the live page displaced through the rim.',
       splitRightTitle: 'Frosted fallback',
-      splitRightCaption: 'What Safari and Firefox get: the same outline and rim, without the bending.',
+      splitRightCaption:
+        'What Safari and Firefox get: the same outline and rim, without the bending.',
       panelTitle: 'Lens',
       panelDescription: 'Each change reaches the glass on the next frame.',
       views: {
@@ -380,9 +388,16 @@ export const MESSAGES: Record<Locale, PlaygroundMessages> = {
       themeDark: '深色',
       themeGroupAria: '主题',
       localeGroupAria: '语言',
-      backdropGroupAria: '背景',
-      backdropWallpaper: '壁纸',
-      backdropChart: '测试图样',
+      backdropLabel: '背景',
+      backdrops: {
+        folds: '褶皱',
+        lava: '熔岩',
+        contours: '等高线',
+        aurora: '极光',
+        bokeh: '光斑',
+        mesh: '渐变',
+        chart: '测试图样',
+      },
       reduceMotion: '减弱动态',
     },
     tabs: {
@@ -464,7 +479,8 @@ export const MESSAGES: Record<Locale, PlaygroundMessages> = {
     },
     optics: {
       backdropTitle: '光学台',
-      backdropCaption: '两块镜片压在流动的背景上。边缘内的线条和色块会弯折；加宽镜缘或调高折射能看得更清楚。',
+      backdropCaption:
+        '两块镜片压在流动的背景上。边缘内的线条和色块会弯折；加宽镜缘或调高折射能看得更清楚。',
       splitLeftTitle: '折射',
       splitLeftCaption: 'Chromium 的效果：实时页面在镜缘处发生位移。',
       splitRightTitle: '磨砂降级',

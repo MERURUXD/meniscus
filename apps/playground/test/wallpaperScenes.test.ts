@@ -1,10 +1,13 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { BACKDROP_KINDS } from '../src/components/backdropSettings.ts'
 import {
   WALLPAPER_FOLD_COUNT,
+  WALLPAPER_FRAGMENT_SHADERS,
   WALLPAPER_PALETTES,
+  WALLPAPER_SCENES,
   hexToRgb,
-} from '../src/components/backdropSettings.ts'
+} from '../src/components/wallpaperScenes.ts'
 
 test('hexToRgb decodes sRGB hex into unit channels', () => {
   assert.deepEqual(hexToRgb('#ff8000'), [1, 128 / 255, 0])
@@ -30,4 +33,19 @@ test('wallpaper palettes fill every fold and keep neighbouring fold edges distin
       )
     }
   }
+})
+
+test('every scene ships a GLSL ES 3.0 shader driven by the renderer uniforms', () => {
+  for (const scene of WALLPAPER_SCENES) {
+    const source = WALLPAPER_FRAGMENT_SHADERS[scene]
+    assert.match(source, /^#version 300 es\n/, `${scene} must start with the version directive`)
+    assert.match(source, /void main\(\)/, `${scene} has no entry point`)
+    for (const uniform of ['uRes', 'uTime', 'uDark']) {
+      assert.ok(source.includes(uniform), `${scene} ignores ${uniform}`)
+    }
+  }
+})
+
+test('the backdrop picker offers every scene plus the DOM test chart', () => {
+  assert.deepEqual(BACKDROP_KINDS, [...WALLPAPER_SCENES, 'chart'])
 })

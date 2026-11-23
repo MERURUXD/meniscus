@@ -79,7 +79,7 @@ export function TestChart({
           </svg>
         </>
       ) : (
-        <Wallpaper theme={theme} reducedMotion={reducedMotion} />
+        <Wallpaper scene={kind} theme={theme} reducedMotion={reducedMotion} />
       )}
 
       <header className="chart-head">

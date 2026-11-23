@@ -63,14 +63,33 @@ test('createDragMergeController: grab offset, proximity bridge detection, magnet
   assert.equal(mergedStep.links[0]!.merged, true)
   assert.ok(mergedStep.links[0]!.bridgeStrength > 0)
 
-  // Bounds clamp prevents leaving [40..360]
+  // Bounds clamp prevents leaving [40..360] even during underdamped spring frames
   ctrl.moveDrag({ x: 999, y: -200 })
   for (let i = 0; i < 90; i += 1) {
-    ctrl.step(1 / 60)
+    const stepped = ctrl.step(1 / 60)
+    const steppedA = stepped.nodes.find((n) => n.id === 'a')!
+    assert.ok(steppedA.center.x <= 360 + 1e-6, `frame ${i}: x=${steppedA.center.x} exceeded bounds`)
+    assert.ok(steppedA.center.y >= 40 - 1e-6, `frame ${i}: y=${steppedA.center.y} fell below bounds`)
   }
   const clampedA = ctrl.getState().nodes.find((n) => n.id === 'a')!
   assert.ok(Math.abs(clampedA.center.x - 360) < 0.1)
   assert.ok(Math.abs(clampedA.center.y - 40) < 0.1)
+
+  // Pinning active dragged node mid-drag cancels drag and restores tugged neighbors to rest base
+  ctrl.moveDrag({ x: 162, y: 150 })
+  for (let i = 0; i < 20; i += 1) {
+    ctrl.step(1 / 60)
+  }
+  ctrl.updateNode('a', { pinned: true })
+  const pinnedState = ctrl.getState()
+  assert.equal(pinnedState.activeDragId, null)
+  assert.equal(pinnedState.nodes.find((n) => n.id === 'b')!.targetCenter.x, 240)
+  for (let i = 0; i < 90; i += 1) {
+    ctrl.step(1 / 60)
+  }
+  const settledAfterPinB = ctrl.getState().nodes.find((n) => n.id === 'b')!
+  assert.ok(Math.abs(settledAfterPinB.center.x - 240) < 0.1)
+  ctrl.updateNode('a', { pinned: false })
 
   // Releasing relaxes neighbor 'b' back to its rest anchor
   ctrl.endDrag()

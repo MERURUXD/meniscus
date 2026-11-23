@@ -227,9 +227,29 @@ test('createPopoverMorphController: lifecycle, mid-flight reversals, snapshot ca
     notifications += 1
   })
 
-  // Opening mid-flight -> snapshot close preserves exact instantaneous geometry
+  // Full-open -> close -> mid-close open() preserves scalar progress and geometry
   ctrl.open(true)
-  const midOpen = ctrl.step(0.12)
+  ctrl.step(0.6)
+  assert.equal(ctrl.getState().phase, 'open')
+  ctrl.close()
+  ctrl.step(0.14)
+  const midClose = ctrl.getState()
+  assert.equal(midClose.phase, 'closing')
+  const beforeFullReopen = ctrl.evaluateGeometry(anchor, panel)
+  const expectedOpenFraction = Math.min(Math.max(1 - midClose.morphProgress, 0), 0.95)
+  ctrl.open(true)
+  const resumed = ctrl.getState()
+  assert.equal(resumed.phase, 'opening')
+  approx(resumed.morphProgress, expectedOpenFraction, 0.015)
+  assert.ok(resumed.elapsedSec > 0)
+  const afterFullReopen = ctrl.evaluateGeometry(anchor, panel)
+  approx(afterFullReopen.platter.size.width, beforeFullReopen.platter.size.width, 1e-4)
+  approx(afterFullReopen.platter.size.height, beforeFullReopen.platter.size.height, 1e-4)
+
+  // Partial-open (60ms) -> snapshot close -> step(140ms) -> open() preserves instantaneous geometry
+  ctrl.reset('closed')
+  ctrl.open(true)
+  const midOpen = ctrl.step(0.06)
   assert.equal(midOpen.phase, 'opening')
   const midGeom = ctrl.evaluateGeometry(anchor, panel)
   const snapshot = createPopoverMorphSnapshot(midGeom, midOpen)
@@ -243,27 +263,33 @@ test('createPopoverMorphController: lifecycle, mid-flight reversals, snapshot ca
   approx(gClose0.platter.size.width, snapshot.platter.size.width, 1e-4)
   approx(gClose0.droplet.center.x, snapshot.droplet.center.x, 1e-4)
 
-  // Re-opening during closing resumes progress cleanly without jumping back to 0
   ctrl.step(0.14)
-  const midClose = ctrl.getState()
-  assert.equal(midClose.phase, 'closing')
-  const expectedOpenFraction = Math.min(Math.max(1 - midClose.morphProgress, 0), 0.95)
+  const beforeSnapReopen = ctrl.evaluateGeometry(anchor, panel)
   ctrl.open(true)
-  const resumed = ctrl.getState()
-  assert.equal(resumed.phase, 'opening')
-  approx(resumed.morphProgress, expectedOpenFraction, 0.015)
-  assert.ok(resumed.elapsedSec > 0)
+  const afterSnapReopen = ctrl.evaluateGeometry(anchor, panel)
+  approx(afterSnapReopen.platter.size.width, beforeSnapReopen.platter.size.width, 1e-4)
+  approx(afterSnapReopen.platter.size.height, beforeSnapReopen.platter.size.height, 1e-4)
+  approx(afterSnapReopen.platter.center.y, beforeSnapReopen.platter.center.y, 1e-4)
+  approx(afterSnapReopen.platter.radius, beforeSnapReopen.platter.radius, 1e-4)
+  approx(afterSnapReopen.droplet.size.width, beforeSnapReopen.droplet.size.width, 1e-4)
+  approx(afterSnapReopen.blendK, beforeSnapReopen.blendK, 1e-4)
 
   // Stepping past duration settles to open
   ctrl.step(0.6)
   assert.equal(ctrl.getState().phase, 'open')
   assert.equal(ctrl.getState().isAnimating, false)
+  approx(ctrl.evaluateGeometry(anchor, panel).platter.size.width, 220, 1e-4)
 
-  // Point-menu close completes in 200ms
+  // Point-menu snapshot close preserves interrupted bounds instead of expanding to full panel
   ctrl.reset('closed')
   ctrl.open(false)
-  ctrl.step(0.5)
-  ctrl.close()
+  const ptMidOpen = ctrl.step(0.05)
+  const ptMidGeom = ctrl.evaluateGeometry(anchor, panel)
+  const ptSnapshot = createPopoverMorphSnapshot(ptMidGeom, ptMidOpen)
+  ctrl.close(ptSnapshot)
+  const ptClose0 = ctrl.evaluateGeometry(anchor, panel)
+  approx(ptClose0.platter.size.width, ptSnapshot.platter.size.width, 1e-4)
+  approx(ptClose0.platter.size.height, ptSnapshot.platter.size.height, 1e-4)
   assert.equal(ctrl.step(0.1).phase, 'closing')
   assert.equal(ctrl.step(0.11).phase, 'closed')
 

@@ -306,6 +306,42 @@ export function createDragMergeController(
     }
   }
 
+  function clampAxisToBounds(
+    channel: SpringChannel,
+    boundStart: number,
+    boundSpan: number,
+    halfSize: number,
+  ): boolean {
+    const minPos = boundStart + halfSize
+    const maxPos = boundStart + boundSpan - halfSize
+    const state = channel.getState()
+    if (maxPos < minPos) {
+      const mid = boundStart + boundSpan * 0.5
+      if (state.value !== mid || state.velocity !== 0 || state.target !== mid) {
+        channel.setTarget(mid)
+        channel.snap(mid, 0)
+        return true
+      }
+      return false
+    }
+    if (state.value < minPos) {
+      channel.snap(minPos, state.velocity < 0 ? 0 : state.velocity)
+      return true
+    }
+    if (state.value > maxPos) {
+      channel.snap(maxPos, state.velocity > 0 ? 0 : state.velocity)
+      return true
+    }
+    return false
+  }
+
+  function clampNodePositionToBounds(node: InternalNode): boolean {
+    if (!bounds) return false
+    const cx = clampAxisToBounds(node.x, bounds.x, bounds.width, node.size.width * 0.5)
+    const cy = clampAxisToBounds(node.y, bounds.y, bounds.height, node.size.height * 0.5)
+    return cx || cy
+  }
+
   function restoreOtherNodeBases(excludeId: string | null, immediate: boolean): void {
     for (const node of nodes) {
       if (node.id === excludeId) continue
@@ -622,6 +658,7 @@ export function createDragMergeController(
           activeDragId = null
           nearestCandidateId = null
           dragOriginCenter = null
+          restoreOtherNodeBases(node.id, reducedMotion)
         }
       }
       if (patch.weight !== undefined) {
@@ -641,6 +678,7 @@ export function createDragMergeController(
           setNodeTarget(node, clampedCurrent, reducedMotion)
         }
       }
+      clampNodePositionToBounds(node)
       notify()
     },
 
@@ -655,6 +693,7 @@ export function createDragMergeController(
           { x: node.x.getState().target, y: node.y.getState().target },
           reducedMotion,
         )
+        clampNodePositionToBounds(node)
       }
       notify()
     },
@@ -699,6 +738,7 @@ export function createDragMergeController(
         if (!prevX.settled || !prevY.settled) {
           node.x.step(dtSec)
           node.y.step(dtSec)
+          clampNodePositionToBounds(node)
           changed = true
         }
       }

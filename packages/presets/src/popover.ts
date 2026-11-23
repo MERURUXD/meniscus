@@ -85,6 +85,14 @@ export interface PopoverMorphSnapshot {
   elapsedFraction: number
 }
 
+/** Captured closing-phase origin used to blend geometry continuously on mid-close reopen. */
+export interface PopoverReopenOrigin {
+  motion: PopoverMotionState
+  closeSnapshot: PopoverMorphSnapshot | null
+  startElapsedSec: number
+  blendDurationSec: number
+}
+
 /** Anchored optical values captured on mid-flight reversal to keep transitions continuous. */
 export interface PopoverInterruptStart {
   contentOpacity?: number
@@ -94,6 +102,7 @@ export interface PopoverInterruptStart {
   bareGlassOpacity?: number
   startNormalizedT?: number
   startSettled?: number
+  reopenFrom?: PopoverReopenOrigin
 }
 
 /** Options accepted by `evaluatePopoverMotion`. */
@@ -126,6 +135,7 @@ export interface PopoverMotionState {
   pointScale: number
   isAnimating: boolean
   reducedMotion: boolean
+  reopenFrom?: PopoverReopenOrigin
 }
 
 /** Synchronized panel content CSS transform and rounded clip bounds. */
@@ -616,6 +626,7 @@ export function evaluatePopoverMotion(
       pointScale: 1,
       isAnimating: u < 1,
       reducedMotion: false,
+      reopenFrom: interrupt?.reopenFrom,
     }
   }
 
@@ -976,21 +987,30 @@ export function computePopoverMorphGeometry(
       rimOpacity = 1
     }
   } else if (!motion.hasControlSource) {
-    // Point-anchored close fallback: uniform shrink toward clamped anchor point without droplet.
+    // Point-anchored close fallback: uniform shrink from current bounds toward clamped anchor point.
+    const fromPlatter: GlassPrimitive = closeSnapshot?.platter ?? {
+      id: 'platter',
+      center: panelCenter,
+      size: { width: targetRect.width, height: targetRect.height },
+      radius: targetRadius,
+    }
+    const fromRadius = closeSnapshot?.platterRadius ?? targetRadius
     const pointScale =
       motion.phase === 'closed' ? POPOVER_MORPH_DEFAULTS.pointCloseEndScale : motion.pointScale
     const pivot = clampPointToRect(anchorCenter, targetRect)
+    const platterW = Math.max(0, fromPlatter.size.width * pointScale)
+    const platterH = Math.max(0, fromPlatter.size.height * pointScale)
     platter = {
       id: 'platter',
       center: {
-        x: pivot.x + (panelCenter.x - pivot.x) * pointScale,
-        y: pivot.y + (panelCenter.y - pivot.y) * pointScale,
+        x: pivot.x + (fromPlatter.center.x - pivot.x) * pointScale,
+        y: pivot.y + (fromPlatter.center.y - pivot.y) * pointScale,
       },
       size: {
-        width: targetRect.width * pointScale,
-        height: targetRect.height * pointScale,
+        width: platterW,
+        height: platterH,
       },
-      radius: targetRadius * pointScale,
+      radius: Math.max(0, Math.min(fromRadius * pointScale, platterW * 0.5, platterH * 0.5)),
     }
     droplet = {
       id: 'droplet',
@@ -1159,6 +1179,74 @@ export function computePopoverMorphGeometry(
     }
   }
 
+  if (motion.phase === 'opening' && motion.reopenFrom) {
+    const reopen = motion.reopenFrom
+    const blendT = clamp(
+      (motion.elapsedSec - reopen.startElapsedSec) / Math.max(1e-4, reopen.blendDurationSec),
+      0,
+      1,
+    )
+    const blend = smoothstep(0, 1, blendT)
+    if (blend < 1) {
+      const originGeom = computePopoverMorphGeometry(
+        reopen.motion,
+        anchor,
+        panel,
+        reopen.closeSnapshot,
+      )
+      if (blend <= 0) {
+        return originGeom
+      }
+      const nextPlatterW = Math.max(0, lerp(originGeom.platter.size.width, platter.size.width, blend))
+      const nextPlatterH = Math.max(0, lerp(originGeom.platter.size.height, platter.size.height, blend))
+      platter = {
+        id: 'platter',
+        center: lerpPoint(originGeom.platter.center, platter.center, blend),
+        size: { width: nextPlatterW, height: nextPlatterH },
+        radius: Math.max(
+          0,
+          Math.min(
+            lerp(originGeom.platter.radius, platter.radius, blend),
+            nextPlatterW * 0.5,
+            nextPlatterH * 0.5,
+          ),
+        ),
+      }
+      const nextDropletW = Math.max(0, lerp(originGeom.droplet.size.width, droplet.size.width, blend))
+      const nextDropletH = Math.max(0, lerp(originGeom.droplet.size.height, droplet.size.height, blend))
+      droplet = {
+        id: 'droplet',
+        center: lerpPoint(originGeom.droplet.center, droplet.center, blend),
+        size: { width: nextDropletW, height: nextDropletH },
+        radius: Math.max(
+          0,
+          Math.min(
+            lerp(originGeom.droplet.radius, droplet.radius, blend),
+            nextDropletW * 0.5,
+            nextDropletH * 0.5,
+          ),
+        ),
+      }
+      blendK = Math.max(0, lerp(originGeom.blendK, blendK, blend))
+      styleMix = clamp(lerp(originGeom.styleMix, styleMix, blend), 0, 1)
+      if (anchor.externalTrigger || !motion.hasControlSource) {
+        rimOpacity = clamp(lerp(originGeom.rimOpacity, rimOpacity, blend), 0, 1)
+        isMerged = blend >= 0.5 ? isMerged : originGeom.isMerged
+        mergeDepth = lerp(originGeom.mergeDepth, mergeDepth, blend)
+      } else {
+        const merge = computePairMergeStatus(
+          platter,
+          droplet,
+          blendK,
+          POPOVER_MORPH_DEFAULTS.mergeRimFadeDepth,
+        )
+        mergeDepth = merge.mergeDepth
+        isMerged = merge.isMerged
+        rimOpacity = merge.rimOpacity
+      }
+    }
+  }
+
   const primitives: GlassPrimitive[] =
     droplet.size.width > 0 && droplet.size.height > 0 ? [platter, droplet] : [platter]
 
@@ -1312,9 +1400,20 @@ export function createPopoverMorphController(
       let nextInterruptStart: PopoverInterruptStart | undefined
       if (phase === 'closing') {
         const current = buildState()
+        const originDuration = POPOVER_MORPH_DEFAULTS.openDurationSec
+        const snapshotOpenProgress = closeSnapshot
+          ? clamp(
+              evaluateSpring(
+                clamp(closeSnapshot.elapsedFraction, 0, 1) * originDuration,
+                POPOVER_MORPH_DEFAULTS.springs.open,
+              ),
+              0,
+              1,
+            )
+          : 1
         const openFraction = reducedMotion
           ? clamp(current.settled, 0, 0.95)
-          : clamp(1 - current.morphProgress, 0, 0.95)
+          : clamp(snapshotOpenProgress * (1 - current.morphProgress), 0, 0.95)
         if (openFraction > 0) {
           if (reducedMotion) {
             const u = 1 - Math.cbrt(1 - openFraction)
@@ -1330,6 +1429,9 @@ export function createPopoverMorphController(
           const startSettled = reducedMotion
             ? easeOutCubic(startNormalizedT)
             : clamp(evaluateSpring(nextElapsedSec, POPOVER_MORPH_DEFAULTS.springs.open), 0, 1)
+          const blendDurationSec = reducedMotion
+            ? 0
+            : Math.min(0.22, Math.max(1e-4, nextDuration - nextElapsedSec))
           nextInterruptStart = {
             contentOpacity: current.contentOpacity,
             contentBlurPx: current.contentBlurPx,
@@ -1338,6 +1440,14 @@ export function createPopoverMorphController(
             bareGlassOpacity: current.bareGlassOpacity,
             startNormalizedT,
             startSettled,
+            reopenFrom: reducedMotion
+              ? undefined
+              : {
+                  motion: current,
+                  closeSnapshot,
+                  startElapsedSec: nextElapsedSec,
+                  blendDurationSec,
+                },
           }
         }
       }

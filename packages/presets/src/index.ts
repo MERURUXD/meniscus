@@ -26,6 +26,7 @@ export {
   type PopoverMotionState,
   type PopoverPanelConfig,
   type PopoverPlacement,
+  type PopoverReopenOrigin,
 } from './popover.ts'
 
 export {

@@ -262,6 +262,7 @@ test('createPopoverMorphController: lifecycle, mid-flight reversals, snapshot ca
   const gClose0 = ctrl.evaluateGeometry(anchor, panel)
   approx(gClose0.platter.size.width, snapshot.platter.size.width, 1e-4)
   approx(gClose0.droplet.center.x, snapshot.droplet.center.x, 1e-4)
+  approx(gClose0.blendK, midGeom.blendK, 1e-4)
 
   ctrl.step(0.14)
   const beforeSnapReopen = ctrl.evaluateGeometry(anchor, panel)
@@ -293,7 +294,7 @@ test('createPopoverMorphController: lifecycle, mid-flight reversals, snapshot ca
   assert.equal(ctrl.step(0.1).phase, 'closing')
   assert.equal(ctrl.step(0.11).phase, 'closed')
 
-  // Reduced motion settles in 150ms and preserves crossfade on reversal
+  // Reduced motion settles in 150ms, keeps resting trigger glyph geometry, and preserves crossfade
   ctrl.setReducedMotion(true)
   ctrl.open(true)
   ctrl.step(0.2)
@@ -301,6 +302,10 @@ test('createPopoverMorphController: lifecycle, mid-flight reversals, snapshot ca
   ctrl.close()
   const rmMidClose = ctrl.step(0.06)
   assert.ok(rmMidClose.settled > 0.05 && rmMidClose.settled < 0.95)
+  const rmCloseGeom = ctrl.evaluateGeometry(anchor, panel)
+  approx(rmCloseGeom.glyphTransform.centerX, anchor.anchorRect.x + anchor.anchorRect.width * 0.5, 1e-4)
+  approx(rmCloseGeom.glyphTransform.centerY, anchor.anchorRect.y + anchor.anchorRect.height * 0.5, 1e-4)
+  approx(rmCloseGeom.glyphTransform.scale, 1, 1e-4)
   ctrl.open(true)
   approx(ctrl.getState().settled, rmMidClose.settled, 1e-4)
 

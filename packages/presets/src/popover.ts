@@ -83,6 +83,7 @@ export interface PopoverMorphSnapshot {
   platterRadius: number
   blurPx: number
   elapsedFraction: number
+  blendK?: number
 }
 
 /** Captured closing-phase origin used to blend geometry continuously on mid-close reopen. */
@@ -867,7 +868,32 @@ export function computePopoverMorphGeometry(
   let isMerged: boolean
   let rimOpacity: number
 
-  if (motion.phase === 'opening' || motion.phase === 'open') {
+  if (motion.reducedMotion && (motion.phase === 'opening' || motion.phase === 'closing')) {
+    platter = {
+      id: 'platter',
+      center: panelCenter,
+      size: { width: targetRect.width, height: targetRect.height },
+      radius: targetRadius,
+    }
+    droplet = motion.hasControlSource
+      ? {
+          id: 'droplet',
+          center: anchorCenter,
+          size: { width: effectiveAnchor.width, height: effectiveAnchor.height },
+          radius: Math.min(effectiveAnchor.width, effectiveAnchor.height) * 0.5,
+        }
+      : {
+          id: 'droplet',
+          center: clampPointToRect(anchorCenter, targetRect),
+          size: { width: 0, height: 0 },
+          radius: 0,
+        }
+    blendK = 0
+    styleMix = 1
+    mergeDepth = POPOVER_MORPH_DEFAULTS.mergeRimFadeDepth
+    isMerged = !anchor.externalTrigger || !motion.hasControlSource
+    rimOpacity = 1
+  } else if (motion.phase === 'opening' || motion.phase === 'open') {
     const progress = motion.phase === 'open' ? 1 : motion.morphProgress
     const panelW = targetRect.width
     const panelH = targetRect.height
@@ -1145,10 +1171,11 @@ export function computePopoverMorphGeometry(
       }
     }
 
+    const startBlendK = closeSnapshot?.blendK ?? 0
     blendK =
       motion.phase === 'closed'
         ? 0
-        : configuredBlendK * motion.closeBlendRamp * (1 - motion.absorbed)
+        : lerp(startBlendK, configuredBlendK, motion.closeBlendRamp) * (1 - motion.absorbed)
 
     const minClosedW = POPOVER_MORPH_DEFAULTS.minPlatterScaleRatio * anchorShortest
     const startMix = closeSnapshot
@@ -1299,6 +1326,7 @@ export function createPopoverMorphSnapshot(
     platterRadius: geometry.platter.radius,
     blurPx: motion.contentBlurPx,
     elapsedFraction: motion.normalizedT,
+    blendK: geometry.blendK,
   }
 }
 

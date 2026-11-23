@@ -234,3 +234,63 @@ test('useElasticPress ignores secondary mouse clicks, disabled targets, and morp
     await env.restore()
   }
 })
+
+test('useElasticPress reattaches listeners when a conditionally rendered target mounts or swaps', async () => {
+  const env = installDomEnv()
+  try {
+    const clock = createMockFrameScheduler()
+    const container = env.document.createElement('div')
+    env.document.body.appendChild(container)
+    const root = createRoot(container)
+    let firstBtn = null as HTMLButtonElement | null
+    let secondBtn = null as HTMLButtonElement | null
+
+    function ConditionalHarness({ mode }: { mode: 'none' | 'first' | 'second' }) {
+      const ref = useRef<HTMLButtonElement | null>(null)
+      useElasticPress(ref, { scheduler: clock.scheduler, reducedMotion: false })
+      if (mode === 'none') {
+        return createElement('div')
+      }
+      return createElement('button', {
+        key: mode,
+        ref: (node: HTMLButtonElement | null) => {
+          ref.current = node
+          if (node) {
+            mockBox(node, 80, 40)
+            if (mode === 'first') firstBtn = node
+            if (mode === 'second') secondBtn = node
+          }
+        },
+        type: 'button',
+      })
+    }
+
+    // Mount initially with targetRef.current === null, then mount the target later.
+    await act(async () => {
+      root.render(createElement(ConditionalHarness, { mode: 'none' }))
+    })
+    await act(async () => {
+      root.render(createElement(ConditionalHarness, { mode: 'first' }))
+    })
+    assert.ok(firstBtn)
+    firstBtn.dispatchEvent(makePointerEvent('pointerdown'))
+    clock.stepFrame(16)
+    assert.equal(firstBtn.getAttribute('data-meniscus-elastic-press'), 'true')
+
+    // Swapping to a new DOM element cleans up the old node and attaches to the new node.
+    await act(async () => {
+      root.render(createElement(ConditionalHarness, { mode: 'second' }))
+    })
+    assert.equal(firstBtn.hasAttribute('data-meniscus-elastic-press'), false)
+    assert.ok(secondBtn)
+    secondBtn.dispatchEvent(makePointerEvent('pointerdown'))
+    clock.stepFrame(16)
+    assert.equal(secondBtn.getAttribute('data-meniscus-elastic-press'), 'true')
+
+    await act(async () => {
+      root.unmount()
+    })
+  } finally {
+    await env.restore()
+  }
+})

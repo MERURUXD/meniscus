@@ -115,6 +115,7 @@ function parseBorderRadiusPx(rawValue: string | undefined, width: number, height
 function resolveRegisteredPrimitive(
   entry: RegisteredGlassPrimitive,
   container: HTMLDivElement | null,
+  positioning: 'absolute' | 'fixed' = 'absolute',
 ): CoreGlassPrimitive | null {
   if (entry.active === false) {
     return null
@@ -133,7 +134,7 @@ function resolveRegisteredPrimitive(
     const elRect = el.getBoundingClientRect()
     measuredW = Math.max(0, elRect.width)
     measuredH = Math.max(0, elRect.height)
-    if (container && needsOrigin) {
+    if (container && positioning !== 'fixed' && needsOrigin) {
       const containerRect = container.getBoundingClientRect()
       // Align coordinates against the container's padding box where managed `top: 0; left: 0` layers sit.
       const originX = containerRect.left + (container.clientLeft || 0)
@@ -141,6 +142,7 @@ function resolveRegisteredPrimitive(
       measuredX = elRect.left - originX
       measuredY = elRect.top - originY
     } else if (needsOrigin) {
+      // Fixed-positioned surface layers anchor at viewport (0, 0), matching getBoundingClientRect().
       measuredX = elRect.left
       measuredY = elRect.top
     }
@@ -186,6 +188,7 @@ interface FrameConfigSnapshot {
   opacity?: number
   blurBumpPx?: number
   refraction?: Partial<RefractFilterConfig>
+  positioning?: 'absolute' | 'fixed'
   bounds?: Rect
   refractBounds?: Rect
   solidBackground?: string
@@ -197,7 +200,6 @@ interface FrameConfigSnapshot {
 interface FieldCallbacks {
   onResize?: (size: Size) => void
   onCapabilitiesChange?: (capabilities: GlassSurfaceCapabilities) => void
-  controllerRefProp?: Ref<GlassSurfaceController | null>
   resizeObserverCtor?: typeof ResizeObserver
 }
 
@@ -228,7 +230,7 @@ function createFieldStore(): FieldStore {
     }
 
     for (const entry of registered.values()) {
-      const resolved = resolveRegisteredPrimitive(entry, container)
+      const resolved = resolveRegisteredPrimitive(entry, container, frameConfig.positioning)
       if (resolved) {
         combined.push(resolved)
       }
@@ -348,9 +350,9 @@ export function GlassField(props: GlassFieldProps): ReactElement {
   } = props
 
   const [containerEl, setContainerEl] = useState<HTMLDivElement | null>(null)
+  const [activeController, setActiveController] = useState<GlassSurfaceController | null>(null)
   const [store] = useState<FieldStore>(createFieldStore)
 
-  // Keep latest prop-supplied ResizeObserver constructor visible before child layout effects run.
   useIsomorphicLayoutEffect(() => {
     store.syncFrameConfig(
       {
@@ -363,6 +365,7 @@ export function GlassField(props: GlassFieldProps): ReactElement {
         opacity,
         blurBumpPx,
         refraction,
+        positioning,
         bounds,
         refractBounds,
         solidBackground,
@@ -373,7 +376,6 @@ export function GlassField(props: GlassFieldProps): ReactElement {
       {
         onResize,
         onCapabilitiesChange,
-        controllerRefProp,
         resizeObserverCtor: ResizeObserverCtor,
       },
     )
@@ -395,6 +397,18 @@ export function GlassField(props: GlassFieldProps): ReactElement {
     }
   }, [store, containerEl, containerRefProp])
 
+  useIsomorphicLayoutEffect(() => {
+    if (!activeController) return
+    const cleanup = assignRef(controllerRefProp, activeController)
+    return () => {
+      if (cleanup) {
+        cleanup()
+      } else {
+        assignRef(controllerRefProp, null)
+      }
+    }
+  }, [activeController, controllerRefProp])
+
   const zIndexRefract = zIndex?.refract
   const zIndexVeil = zIndex?.veil
   const zIndexOverlay = zIndex?.overlay
@@ -403,12 +417,12 @@ export function GlassField(props: GlassFieldProps): ReactElement {
     if (!containerEl) return
     store.setContainer(containerEl)
 
-    const controller = new GlassSurfaceController({
+    // Material and refraction overrides flow dynamically via flushRender(); avoid
+    // pinning initial overrides as sticky controller defaults if later cleared to undefined.
+    const nextController = new GlassSurfaceController({
       container: containerEl,
       mode,
       theme,
-      material,
-      refraction,
       filterId,
       svgMountTarget,
       positioning,
@@ -433,19 +447,13 @@ export function GlassField(props: GlassFieldProps): ReactElement {
       ResizeObserverCtor,
     })
 
-    store.setController(controller)
-    const activeControllerRefProp = store.getCallbacks().controllerRefProp
-    const controllerCleanup = assignRef(activeControllerRefProp, controller)
+    store.setController(nextController)
+    setActiveController(nextController)
 
     return () => {
-      const teardownRefProp = store.getCallbacks().controllerRefProp ?? activeControllerRefProp
-      if (controllerCleanup) {
-        controllerCleanup()
-      } else {
-        assignRef(teardownRefProp, null)
-      }
       store.setController(null)
-      controller.dispose()
+      setActiveController(null)
+      nextController.dispose()
     }
   }, [
     store,

@@ -10,10 +10,11 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { StrictMode, act, createElement, createRef } from 'react'
 import { createRoot } from 'react-dom/client'
-import type {
-  IGlassOverlayRenderer,
-  OverlayRenderFrame,
-  RendererCapabilities,
+import {
+  DEFAULT_OPTICAL_MATERIALS,
+  type IGlassOverlayRenderer,
+  type OverlayRenderFrame,
+  type RendererCapabilities,
 } from '@meniscus/core'
 import type { CapabilityEnv, GlassSurfaceController } from '@meniscus/dom'
 import { GlassField } from '../src/GlassField.ts'
@@ -383,6 +384,110 @@ test('GlassField handles controlled primitives, React StrictMode, and guards use
       root.unmount()
     })
     assert.equal(controllerRef.current, null)
+    assert.equal(spy.getDisposedCount(), 1)
+  } finally {
+    await env.restore()
+  }
+})
+
+test('GlassField syncs controllerRef changes, clears initial optical overrides, and handles fixed positioning', async () => {
+  const env = installDomEnv()
+  try {
+    const spy = createSpyOverlayRenderer()
+    const refA = createRef<GlassSurfaceController | null>()
+    const refB = createRef<GlassSurfaceController | null>()
+    const host = env.document.createElement('div')
+    env.document.body.appendChild(host)
+    const root = createRoot(host)
+
+    const customMaterial = {
+      ...DEFAULT_OPTICAL_MATERIALS.light.frosted,
+      tintRgba: [0.2, 0.4, 0.8, 0.5] as const,
+    }
+
+    await act(async () => {
+      root.render(
+        createElement(
+          GlassField,
+          {
+            env: CHROME_ENV,
+            overlayRenderer: spy.renderer,
+            controllerRef: refA,
+            mode: 'frosted',
+            theme: 'light',
+            material: customMaterial,
+            positioning: 'fixed',
+            observeResize: false,
+            containerRef: (el) => {
+              if (el) {
+                setElementRect(el, { left: 200, top: 300, width: 400, height: 300 })
+              }
+            },
+          },
+          createElement(
+            GlassPrimitive,
+            {
+              id: 'fixed-box',
+              radius: 12,
+              elementRef: (el) => {
+                if (el) {
+                  setElementRect(el, { left: 240, top: 350, width: 100, height: 50 })
+                }
+              },
+            },
+            createElement('span', null, 'Fixed'),
+          ),
+        ),
+      )
+    })
+
+    const controller = refA.current
+    assert.ok(controller)
+    const veil = controller.getElements().veil!
+    assert.ok(veil.style.background.includes('51'))
+    assert.equal(spy.frames[0]!.primitives[0]!.width, 100)
+    // Fixed positioning resolves against viewport origin (left=240, top=350),
+    // not container-local (40, 50), so veil bounds stay well above container-relative bounds (< 20).
+    const veilTranslateMatch = /translate3d\(([-\d.]+)px,\s*([-\d.]+)px/.exec(veil.style.transform)
+    assert.ok(veilTranslateMatch)
+    assert.ok(Number.parseFloat(veilTranslateMatch[1]!) > 120)
+    assert.ok(Number.parseFloat(veilTranslateMatch[2]!) > 220)
+
+    // Switch controllerRef from refA to refB and clear material override -> reverts to theme default.
+    await act(async () => {
+      root.render(
+        createElement(
+          GlassField,
+          {
+            env: CHROME_ENV,
+            overlayRenderer: spy.renderer,
+            controllerRef: refB,
+            mode: 'frosted',
+            theme: 'light',
+            material: undefined,
+            positioning: 'fixed',
+            observeResize: false,
+          },
+          createElement(
+            GlassPrimitive,
+            {
+              id: 'fixed-box',
+              radius: 12,
+            },
+            createElement('span', null, 'Fixed'),
+          ),
+        ),
+      )
+    })
+
+    assert.equal(refA.current, null)
+    assert.equal(refB.current, controller)
+    assert.ok(!veil.style.background.includes('rgba(51, 102, 204'))
+
+    await act(async () => {
+      root.unmount()
+    })
+    assert.equal(refB.current, null)
     assert.equal(spy.getDisposedCount(), 1)
   } finally {
     await env.restore()

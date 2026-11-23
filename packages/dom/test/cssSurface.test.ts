@@ -138,6 +138,53 @@ test('readElementGlassSurface extracts standard CSS optics and restores morph at
   )
   assert.equal(el.getAttribute('data-meniscus-morphing'), 'true')
   assert.equal(el.style.transition, 'transform 200ms ease')
+
+  // Live CSSStyleDeclaration properties must be snapshotted before `finally` restores the morph attribute.
+  const liveStyleDecl = {
+    get backdropFilter() {
+      return el.hasAttribute('data-meniscus-morphing') ? 'none' : 'blur(18px) saturate(1.6)'
+    },
+    get borderTopWidth() {
+      return el.hasAttribute('data-meniscus-morphing') ? '0px' : '1px'
+    },
+    get borderTopColor() {
+      return el.hasAttribute('data-meniscus-morphing')
+        ? 'transparent'
+        : 'rgba(255, 255, 255, 0.35)'
+    },
+    get backgroundColor() {
+      return el.hasAttribute('data-meniscus-morphing')
+        ? 'rgba(0, 0, 0, 0)'
+        : 'rgba(240, 240, 245, 0.5)'
+    },
+    get borderTopLeftRadius() {
+      return el.hasAttribute('data-meniscus-morphing') ? '0px' : '22px'
+    },
+    get boxShadow() {
+      return el.hasAttribute('data-meniscus-morphing')
+        ? 'none'
+        : '0px 8px 20px 0px rgba(0, 0, 0, 0.2)'
+    },
+    colorScheme: 'light dark',
+    getPropertyValue: () => '',
+  } as unknown as CSSStyleDeclaration
+
+  el.removeAttribute('data-theme')
+  const prevMatchMedia = globalThis.matchMedia
+  const lightPrefMql = createMockMediaQueryList(true)
+  globalThis.matchMedia = (() => lightPrefMql.mediaQueryList) as typeof globalThis.matchMedia
+  try {
+    const liveMeasured = readElementGlassSurface(el, {
+      getComputedStyle: () => liveStyleDecl,
+    })
+    assert.equal(liveMeasured.blurPx, 18)
+    assert.equal(liveMeasured.saturation, 1.6)
+    assert.equal(liveMeasured.borderRadiusPx, 22)
+    assert.ok(Math.abs(liveMeasured.backgroundRgba[3] - 0.5) < 1e-6)
+    assert.equal(liveMeasured.theme, 'light')
+  } finally {
+    globalThis.matchMedia = prevMatchMedia
+  }
 })
 
 test('buildMaterialFromCssSurface preserves signed OpticalMaterial.contrast and honors overrides', () => {

@@ -302,7 +302,11 @@ export function createFrameLoop(
       rafId = 0
 
       const result = tick(dtSec, nowMs)
-      if (!running || token !== runToken || result === false) {
+      if (token !== runToken) {
+        // Tick stopped and/or started a newer loop generation; never clobber the replacement.
+        return
+      }
+      if (!running || result === false) {
         stop()
         return
       }
@@ -427,7 +431,7 @@ export function observeElementResize(
     emitIfChanged(measureElementBorderBox(el, matchedEntry ?? entries[0]))
   })
 
-  observer.observe(el)
+  observer.observe(el, { box: 'border-box' })
 
   return () => {
     if (disposed) return

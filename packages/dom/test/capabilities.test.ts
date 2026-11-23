@@ -263,6 +263,42 @@ test('createFrameLoop clamps dtSec, stops on false return, and blocks stale call
   assert.ok(staleFn !== null)
   staleFn(516)
   assert.equal(staleTicks.length, 0)
+
+  // Interrupting and immediately restarting the loop inside tick must preserve the new generation.
+  let genNextId = 1
+  const genPending = new Map<number, FrameRequestCallback>()
+  const genScheduler: FrameScheduler = {
+    requestAnimationFrame: (cb) => {
+      const id = genNextId++
+      genPending.set(id, cb)
+      return id
+    },
+    cancelAnimationFrame: (id) => {
+      genPending.delete(id)
+    },
+    now: () => 1000,
+  }
+  let genCount = 0
+  const genLoop = createFrameLoop(
+    () => {
+      genCount += 1
+      if (genCount === 1) {
+        genLoop.stop()
+        genLoop.start()
+      }
+      return true
+    },
+    { scheduler: genScheduler },
+  )
+  genLoop.start()
+  const firstEntry = genPending.entries().next()
+  assert.equal(firstEntry.done, false)
+  const [firstId, firstCb] = firstEntry.value!
+  genPending.delete(firstId)
+  firstCb(1016)
+  assert.equal(genLoop.isRunning(), true)
+  assert.equal(genPending.size, 1)
+  genLoop.stop()
 })
 
 test('measureElementBorderBox and observeElementResize deduplicate sub-pixel jitter and clean up', () => {
@@ -292,6 +328,7 @@ test('measureElementBorderBox and observeElementResize deduplicate sub-pixel jit
   assert.equal(MockResizeObserver.records.length, 1)
 
   const record = MockResizeObserver.records[0]!
+  assert.deepEqual(record.observeOptions[0], { box: 'border-box' })
   // Sub-0.01px jitter is suppressed.
   record.trigger([
     {

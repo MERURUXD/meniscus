@@ -221,15 +221,37 @@ export function readElementGlassSurface(
     el.removeAttribute(clearAttr)
   }
 
-  let cs: CSSStyleDeclaration
+  let backdropFilter = ''
+  let webkitBf = ''
+  let borderWidthPx = 0
+  let borderColor = ''
+  let boxShadow = ''
+  let backgroundColor = ''
+  let rawRadius = Number.NaN
   let theme: ThemeMode
   try {
-    cs = getCs(el)
-    theme = resolveElementTheme(el, {
+    const cs = getCs(el)
+    const themeOpts: ResolveElementThemeOptions = {
       fallbackTheme: options?.fallbackTheme,
       getComputedStyle: getCs,
-      matchMedia: options && 'matchMedia' in options ? options.matchMedia : undefined,
-    })
+    }
+    if (options && 'matchMedia' in options) {
+      themeOpts.matchMedia = options.matchMedia
+    }
+    theme = resolveElementTheme(el, themeOpts)
+
+    // Snapshot all computed style fields while the morph attribute is cleared because
+    // browser CSSStyleDeclaration instances are live and update as soon as `finally` restores it.
+    webkitBf =
+      typeof cs.getPropertyValue === 'function'
+        ? cs.getPropertyValue('-webkit-backdrop-filter')
+        : ''
+    backdropFilter = cs.backdropFilter || webkitBf || ''
+    borderWidthPx = Number.parseFloat(cs.borderTopWidth) || 0
+    borderColor = cs.borderTopColor || ''
+    boxShadow = cs.boxShadow || ''
+    backgroundColor = cs.backgroundColor || ''
+    rawRadius = Number.parseFloat(cs.borderTopLeftRadius)
   } finally {
     if (hasClearAttr && clearAttr) {
       el.setAttribute(clearAttr, prevAttrValue ?? 'true')
@@ -239,16 +261,6 @@ export function readElementGlassSurface(
     }
   }
 
-  const webkitBf =
-    typeof cs.getPropertyValue === 'function'
-      ? cs.getPropertyValue('-webkit-backdrop-filter')
-      : ''
-  const backdropFilter = cs.backdropFilter || webkitBf || ''
-  const borderWidthPx = Number.parseFloat(cs.borderTopWidth) || 0
-  const borderColor = cs.borderTopColor || ''
-  const boxShadow = cs.boxShadow || ''
-  const backgroundColor = cs.backgroundColor || ''
-  const rawRadius = Number.parseFloat(cs.borderTopLeftRadius)
   const borderRadiusPx = Number.isFinite(rawRadius) && rawRadius >= 0 ? rawRadius : 0
 
   const surface = parseCssGlassSurface({

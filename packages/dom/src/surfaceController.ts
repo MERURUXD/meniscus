@@ -346,6 +346,8 @@ export class GlassSurfaceController {
   private readonly ownsRefractBackdrop: boolean
   private readonly ownsVeil: boolean
   private readonly ownsOverlayCanvas: boolean
+  private prevContainerPosition: string | null = null
+  private prevContainerZIndex: string | null = null
 
   private readonly overlayRenderer: IGlassOverlayRenderer | null
   private overlayCapabilities: RendererCapabilities
@@ -399,37 +401,43 @@ export class GlassSurfaceController {
     const elements = options.elements ?? {}
     const positioning = options.positioning ?? 'absolute'
     const zIndex = options.zIndex
+    const hasCustomRefractSlot = 'refractBackdrop' in elements
+    const hasCustomVeilSlot = 'veil' in elements
+    const hasCustomOverlaySlot = 'overlayCanvas' in elements
+    const defaultRefractZ = !hasCustomRefractSlot ? -2 : undefined
+    const defaultVeilZ = !hasCustomVeilSlot ? -1 : undefined
+    const defaultOverlayZ = !hasCustomOverlaySlot ? 1 : undefined
 
     let refractEl: HTMLElement | null = null
     let ownsRefract = false
-    if ('refractBackdrop' in elements) {
+    if (hasCustomRefractSlot) {
       refractEl = elements.refractBackdrop ?? null
     } else if (this.container && this.doc) {
       refractEl = this.doc.createElement('div')
       refractEl.setAttribute('data-meniscus-layer', 'refract')
-      applyManagedBaseLayerStyles(refractEl, positioning, zIndex?.refract)
+      applyManagedBaseLayerStyles(refractEl, positioning, zIndex?.refract ?? defaultRefractZ)
       ownsRefract = true
     }
 
     let veilEl: HTMLElement | null = null
     let ownsVeil = false
-    if ('veil' in elements) {
+    if (hasCustomVeilSlot) {
       veilEl = elements.veil ?? null
     } else if (this.container && this.doc) {
       veilEl = this.doc.createElement('div')
       veilEl.setAttribute('data-meniscus-layer', 'veil')
-      applyManagedBaseLayerStyles(veilEl, positioning, zIndex?.veil, true)
+      applyManagedBaseLayerStyles(veilEl, positioning, zIndex?.veil ?? defaultVeilZ, true)
       ownsVeil = true
     }
 
     let canvasEl: HTMLCanvasElement | null = null
     let ownsCanvas = false
-    if ('overlayCanvas' in elements) {
+    if (hasCustomOverlaySlot) {
       canvasEl = elements.overlayCanvas ?? null
     } else if (this.container && this.doc) {
       canvasEl = this.doc.createElement('canvas')
       canvasEl.setAttribute('data-meniscus-layer', 'overlay')
-      applyManagedBaseLayerStyles(canvasEl, positioning, zIndex?.overlay)
+      applyManagedBaseLayerStyles(canvasEl, positioning, zIndex?.overlay ?? defaultOverlayZ)
       ownsCanvas = true
     }
 
@@ -439,6 +447,27 @@ export class GlassSurfaceController {
     this.ownsRefractBackdrop = ownsRefract
     this.ownsVeil = ownsVeil
     this.ownsOverlayCanvas = ownsCanvas
+
+    if (this.container && (ownsRefract || ownsVeil || ownsCanvas)) {
+      // Establish a positioning + z-index stacking context on the host container WITHOUT
+      // `isolation: isolate` (which would form a CSS Backdrop Root and block exterior refraction)
+      // so negative-zIndex backdrops paint behind normal-flow DOM content and overlayCanvas paints on top.
+      const computed =
+        typeof globalThis.getComputedStyle === 'function'
+          ? globalThis.getComputedStyle(this.container)
+          : null
+      const effectivePosition = computed?.position || this.container.style.position || 'static'
+      const effectiveZIndex = computed?.zIndex || this.container.style.zIndex || 'auto'
+
+      if (effectivePosition === 'static') {
+        this.prevContainerPosition = this.container.style.position
+        this.container.style.position = 'relative'
+      }
+      if (effectiveZIndex === 'auto') {
+        this.prevContainerZIndex = this.container.style.zIndex
+        this.container.style.zIndex = '0'
+      }
+    }
 
     if (this.container) {
       const refNode =
@@ -479,7 +508,15 @@ export class GlassSurfaceController {
     this.effectiveMode = resolveEffectiveRenderMode(this.requestedMode, this.surfaceCapabilities, {
       disableRefractOnReducedMotion: this.disableRefractOnReducedMotion,
     })
-    this.activeTheme = options.theme ?? resolveElementTheme(this.container)
+    if (options.theme !== undefined) {
+      this.activeTheme = options.theme
+    } else {
+      const themeOpts =
+        options.env && 'matchMedia' in options.env
+          ? { matchMedia: options.env.matchMedia ?? null }
+          : undefined
+      this.activeTheme = resolveElementTheme(this.container, themeOpts)
+    }
 
     this.stopReducedMotionObserver = observeReducedMotion((reduced) => {
       if (this.disposed || reduced === this.surfaceCapabilities.reducedMotion) {
@@ -835,6 +872,16 @@ export class GlassSurfaceController {
     }
     if (this.ownsOverlayCanvas && this.overlayCanvasEl?.parentNode) {
       this.overlayCanvasEl.parentNode.removeChild(this.overlayCanvasEl)
+    }
+    if (this.container) {
+      if (this.prevContainerPosition !== null) {
+        this.container.style.position = this.prevContainerPosition
+        this.prevContainerPosition = null
+      }
+      if (this.prevContainerZIndex !== null) {
+        this.container.style.zIndex = this.prevContainerZIndex
+        this.prevContainerZIndex = null
+      }
     }
   }
 }

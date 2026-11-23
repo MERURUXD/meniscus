@@ -121,13 +121,20 @@ test('GlassSurfaceController places live content between veil and overlayCanvas 
   assert.ok(elements.overlayCanvas)
   assert.equal(spy.getMountedCanvas(), elements.overlayCanvas)
 
-  // Managed insertion order: [refractBackdrop, veil, content, overlayCanvas].
+  // Managed insertion order: [refractBackdrop, veil, content, overlayCanvas],
+  // with container stacking context (non-Backdrop-Root) placing backdrops below normal-flow content.
   assert.deepEqual(container.childNodes, [
     elements.refractBackdrop as unknown as MockElement,
     elements.veil as unknown as MockElement,
     content,
     elements.overlayCanvas as unknown as MockElement,
   ])
+  assert.equal(container.style.position, 'relative')
+  assert.equal(container.style.zIndex, '0')
+  assert.equal(container.style.isolation, '')
+  assert.equal((elements.refractBackdrop as unknown as MockElement).style.zIndex, '-2')
+  assert.equal((elements.veil as unknown as MockElement).style.zIndex, '-1')
+  assert.equal((elements.overlayCanvas as unknown as MockElement).style.zIndex, '1')
 
   // Lazy SVG filter must NOT be mounted before the first visible refract render.
   assert.equal(doc.body.querySelectorAll('svg').length, 0)
@@ -169,8 +176,10 @@ test('GlassSurfaceController places live content between veil and overlayCanvas 
   controller.dispose()
   assert.equal(spy.getDisposedCount(), 1)
   assert.equal(doc.body.querySelectorAll('svg').length, 0)
-  // Managed sibling layers removed, host container content left intact.
+  // Managed sibling layers removed, host container content and inline styles restored intact.
   assert.deepEqual(container.childNodes, [content])
+  assert.equal(container.style.position, '')
+  assert.equal(container.style.zIndex, '')
 })
 
 test('GlassSurfaceController downgrades Safari to frosted without SVG mount and preserves mode transitions', () => {

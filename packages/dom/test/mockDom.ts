@@ -329,6 +329,7 @@ export function createMockMediaQueryList(
 export interface MockResizeObserverRecord {
   instance: MockResizeObserver
   observed: Set<Element>
+  observeOptions: Array<ResizeObserverOptions | undefined>
   disconnected: boolean
   trigger(entries: Array<Partial<ResizeObserverEntry>>): void
 }
@@ -338,6 +339,7 @@ export class MockResizeObserver implements ResizeObserver {
 
   private readonly callback: ResizeObserverCallback
   readonly observed = new Set<Element>()
+  readonly observeOptions: Array<ResizeObserverOptions | undefined> = []
   disconnected = false
 
   constructor(callback: ResizeObserverCallback) {
@@ -345,6 +347,7 @@ export class MockResizeObserver implements ResizeObserver {
     MockResizeObserver.records.push({
       instance: this,
       observed: this.observed,
+      observeOptions: this.observeOptions,
       get disconnected() {
         return this.instance.disconnected
       },
@@ -355,8 +358,9 @@ export class MockResizeObserver implements ResizeObserver {
     })
   }
 
-  observe(target: Element): void {
+  observe(target: Element, options?: ResizeObserverOptions): void {
     this.observed.add(target)
+    this.observeOptions.push(options)
   }
 
   unobserve(target: Element): void {

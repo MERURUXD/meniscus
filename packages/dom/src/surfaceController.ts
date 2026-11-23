@@ -357,6 +357,7 @@ export class GlassSurfaceController {
   private effectiveMode: SurfaceRenderMode
   private activeTheme: ThemeMode
   private containerSize: Size | null = null
+  private lastRenderedFrame: GlassSurfaceFrame | null = null
   private disposed = false
 
   private refractFilterController: RefractFilterController | null = null
@@ -533,7 +534,9 @@ export class GlassSurfaceController {
       )
       if (nextEffective !== this.effectiveMode) {
         this.effectiveMode = nextEffective
-        if (nextEffective !== 'refract') {
+        if (this.lastRenderedFrame) {
+          this.render(this.lastRenderedFrame)
+        } else if (nextEffective !== 'refract') {
           this.hideRefractBackdrop()
         }
       }
@@ -638,6 +641,8 @@ export class GlassSurfaceController {
       this.clear()
       return
     }
+
+    this.lastRenderedFrame = frame
 
     const contourPath = extractFieldContourPath(frame.field, { x: bounds.x, y: bounds.y })
     const opacityStr = `${opacity}`
@@ -755,6 +760,7 @@ export class GlassSurfaceController {
 
   /** Hides all surface layers and clears the overlay canvas without detaching DOM nodes. */
   clear(): void {
+    this.lastRenderedFrame = null
     this.hideRefractBackdrop()
     setVisibilityCached(this.veilEl, this.veilCache, 'hidden')
     setBackdropFilterCached(this.veilEl, this.veilCache, 'none')
@@ -764,12 +770,17 @@ export class GlassSurfaceController {
 
   /** Changes the requested render mode and recomputes the effective downgraded mode. */
   setMode(mode: SurfaceRenderMode): SurfaceRenderMode {
+    const prevEffective = this.effectiveMode
     this.requestedMode = mode
     this.effectiveMode = resolveEffectiveRenderMode(mode, this.surfaceCapabilities, {
       disableRefractOnReducedMotion: this.disableRefractOnReducedMotion,
     })
-    if (this.effectiveMode !== 'refract') {
-      this.hideRefractBackdrop()
+    if (this.effectiveMode !== prevEffective) {
+      if (this.lastRenderedFrame) {
+        this.render(this.lastRenderedFrame)
+      } else if (this.effectiveMode !== 'refract') {
+        this.hideRefractBackdrop()
+      }
     }
     return this.effectiveMode
   }
@@ -783,7 +794,11 @@ export class GlassSurfaceController {
   }
 
   setTheme(theme: ThemeMode): void {
+    if (theme === this.activeTheme) return
     this.activeTheme = theme
+    if (this.lastRenderedFrame) {
+      this.render(this.lastRenderedFrame)
+    }
   }
 
   getTheme(): ThemeMode {

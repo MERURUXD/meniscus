@@ -302,12 +302,22 @@ test('GlassSurfaceController clears stale filters across mode switches and honor
   assert.equal(extRefract.style.visibility, 'visible')
   assert.equal(extVeil.style.backdropFilter, 'none')
 
-  // Live prefers-reduced-motion switch with disableRefractOnReducedMotion=true downgrades refract.
+  // Live prefers-reduced-motion switch with disableRefractOnReducedMotion=true downgrades refract
+  // and immediately repaints the resting frosted fallback without requiring a new caller render().
   mqlCtrl.dispatchChange(true)
   assert.deepEqual(capChanges, [true])
   assert.equal(controller.getEffectiveMode(), 'frosted')
   assert.equal(extRefract.style.visibility, 'hidden')
   assert.equal(extRefract.style.backdropFilter, 'none')
+  assert.ok(extVeil.style.backdropFilter.includes('blur('))
+
+  // Restoring normal motion immediately repaints Route B3 refraction on the resting frame.
+  mqlCtrl.dispatchChange(false)
+  assert.deepEqual(capChanges, [true, false])
+  assert.equal(controller.getEffectiveMode(), 'refract')
+  assert.equal(extRefract.style.visibility, 'visible')
+  assert.equal(extRefract.style.backdropFilter.startsWith('url(#'), true)
+  assert.equal(extVeil.style.backdropFilter, 'none')
 
   // Caller-owned external elements must remain attached to container after dispose().
   controller.dispose()

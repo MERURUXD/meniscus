@@ -99,6 +99,8 @@ export interface GlassFieldProps {
   children?: ReactNode
 }
 
+const CONTENT_WRAPPER_STYLE: CSSProperties = { display: 'contents' }
+
 function parseBorderRadiusPx(rawValue: string | undefined, width: number, height: number): number {
   if (!rawValue) return 0
   const trimmed = rawValue.trim()
@@ -112,6 +114,11 @@ function parseBorderRadiusPx(rawValue: string | undefined, width: number, height
   return Number.isFinite(px) && px > 0 ? px : 0
 }
 
+/**
+ * Resolves a registered primitive's CSS coordinates in the managed layers' frame.
+ * Assumes an untransformed ancestor subtree for `'absolute'` positioning; ancestors
+ * with CSS transforms already form a Backdrop Root that alters backdrop sampling.
+ */
 function resolveRegisteredPrimitive(
   entry: RegisteredGlassPrimitive,
   container: HTMLDivElement | null,
@@ -218,8 +225,10 @@ function createFieldStore(): FieldStore {
   let controller: GlassSurfaceController | null = null
   let frameConfig: FrameConfigSnapshot | null = null
   let callbacks: FieldCallbacks = {}
+  let renderScheduled = false
 
   const flushRender = (): void => {
+    renderScheduled = false
     if (!controller || !frameConfig) return
 
     const combined: CoreGlassPrimitive[] = []
@@ -263,6 +272,17 @@ function createFieldStore(): FieldStore {
     controller.render(frame)
   }
 
+  // Coalesce sibling primitive updates and ResizeObserver notifications within a single
+  // commit or tick so multi-primitive fields avoid interleaved layout reads and duplicate renders.
+  const scheduleRender = (): void => {
+    if (renderScheduled || !controller || !frameConfig) return
+    renderScheduled = true
+    queueMicrotask(() => {
+      if (!renderScheduled) return
+      flushRender()
+    })
+  }
+
   return {
     syncFrameConfig(config, nextCallbacks) {
       frameConfig = config
@@ -273,6 +293,9 @@ function createFieldStore(): FieldStore {
     },
     setController(next) {
       controller = next
+      if (!next) {
+        renderScheduled = false
+      }
     },
     hasRegisteredPrimitives() {
       return registered.size > 0
@@ -289,11 +312,11 @@ function createFieldStore(): FieldStore {
     },
     unregisterPrimitive(id) {
       if (registered.delete(id)) {
-        flushRender()
+        scheduleRender()
       }
     },
     requestRender() {
-      flushRender()
+      scheduleRender()
     },
     getContainer() {
       return container
@@ -523,9 +546,15 @@ export function GlassField(props: GlassFieldProps): ReactElement {
     ResizeObserverCtor,
   ])
 
+  // Isolate React children inside a layout-transparent `display: contents` node so text/number
+  // reconciliation (`node.textContent = ...`) cannot wipe out controller-managed sibling layers.
   return createElement(
     GlassFieldContext.Provider,
     { value: store },
-    createElement('div', { ref: setContainerEl, className, style }, children),
+    createElement(
+      'div',
+      { ref: setContainerEl, className, style },
+      createElement('div', { 'data-meniscus-content': '', style: CONTENT_WRAPPER_STYLE }, children),
+    ),
   )
 }

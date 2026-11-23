@@ -8,7 +8,7 @@
 
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { StrictMode, act, createElement, createRef } from 'react'
+import { Fragment, StrictMode, act, createElement, createRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import {
   DEFAULT_OPTICAL_MATERIALS,
@@ -316,6 +316,7 @@ test('GlassPrimitive wrapper mode measures relative box, reads borderRadius, and
       ],
       {} as ResizeObserver,
     )
+    await Promise.resolve()
 
     const resized = spy.frames[spy.frames.length - 1]!
     assert.equal(resized.primitives[0]!.width, 200)
@@ -489,6 +490,144 @@ test('GlassField syncs controllerRef changes, clears initial optical overrides, 
     })
     assert.equal(refB.current, null)
     assert.equal(spy.getDisposedCount(), 1)
+  } finally {
+    await env.restore()
+  }
+})
+
+test('GlassField coalesces multi-primitive updates into one render and isolates text children', async () => {
+  const env = installDomEnv()
+  try {
+    const spy = createSpyOverlayRenderer()
+    const controllerRef = createRef<GlassSurfaceController | null>()
+    const containerRef = createRef<HTMLDivElement | null>()
+    const host = env.document.createElement('div')
+    env.document.body.appendChild(host)
+    const root = createRoot(host)
+
+    let setOffset!: (next: number) => void
+    function Group() {
+      const [offset, _setOffset] = useState(0)
+      setOffset = _setOffset
+      return createElement(
+        Fragment,
+        null,
+        createElement(GlassPrimitive, {
+          id: 'g-1',
+          x: 10 + offset,
+          y: 10,
+          width: 40,
+          height: 30,
+          radius: 10,
+        }),
+        createElement(GlassPrimitive, {
+          id: 'g-2',
+          x: 70 + offset,
+          y: 10,
+          width: 40,
+          height: 30,
+          radius: 10,
+        }),
+        createElement(GlassPrimitive, {
+          id: 'g-3',
+          x: 130 + offset,
+          y: 10,
+          width: 40,
+          height: 30,
+          radius: 10,
+        }),
+      )
+    }
+
+    await act(async () => {
+      root.render(
+        createElement(
+          GlassField,
+          {
+            env: CHROME_ENV,
+            overlayRenderer: spy.renderer,
+            controllerRef,
+            containerRef,
+            observeResize: false,
+          },
+          createElement(Group),
+        ),
+      )
+    })
+
+    const countBeforeGroupUpdate = spy.frames.length
+    assert.equal(spy.frames[countBeforeGroupUpdate - 1]!.primitives.length, 3)
+
+    // Updating 3 primitives within a single commit must coalesce into 1 render, not 3.
+    await act(async () => {
+      setOffset(50)
+    })
+    assert.equal(spy.frames.length, countBeforeGroupUpdate + 1)
+    const batchFrame = spy.frames[spy.frames.length - 1]!
+    assert.equal(batchFrame.primitives.length, 3)
+    const minCx = Math.min(...batchFrame.primitives.map((p) => p.cx))
+    const maxCx = Math.max(...batchFrame.primitives.map((p) => p.cx))
+    assert.equal(maxCx - minCx, 120)
+
+    // Controlled text-child updates inside GlassField must not wipe controller-managed layers.
+    const controlledPrimitives = [
+      {
+        id: 'text-pill',
+        center: { x: 80, y: 40 },
+        size: { width: 120, height: 40 },
+        radius: 20,
+      },
+    ]
+
+    await act(async () => {
+      root.render(
+        createElement(
+          GlassField,
+          {
+            env: CHROME_ENV,
+            overlayRenderer: spy.renderer,
+            controllerRef,
+            containerRef,
+            observeResize: false,
+            primitives: controlledPrimitives,
+          },
+          'Initial label',
+        ),
+      )
+    })
+
+    const els = controllerRef.current!.getElements()
+    const fieldContainer = containerRef.current!
+    assert.equal(els.refractBackdrop!.parentNode, fieldContainer)
+    assert.equal(els.veil!.parentNode, fieldContainer)
+    assert.equal(els.overlayCanvas!.parentNode, fieldContainer)
+
+    await act(async () => {
+      root.render(
+        createElement(
+          GlassField,
+          {
+            env: CHROME_ENV,
+            overlayRenderer: spy.renderer,
+            controllerRef,
+            containerRef,
+            observeResize: false,
+            primitives: controlledPrimitives,
+          },
+          'Updated label',
+        ),
+      )
+    })
+
+    assert.equal(els.refractBackdrop!.parentNode, fieldContainer)
+    assert.equal(els.veil!.parentNode, fieldContainer)
+    assert.equal(els.overlayCanvas!.parentNode, fieldContainer)
+    assert.equal(els.veil!.style.visibility, 'visible')
+    assert.ok(fieldContainer.textContent?.includes('Updated label'))
+
+    await act(async () => {
+      root.unmount()
+    })
   } finally {
     await env.restore()
   }

@@ -250,6 +250,8 @@ function attachElasticPressToElement(
 /**
  * Drives spring-based press inflation and rubber-band pointer tracking on `targetRef`
  * using GPU-composited `translate3d`/`scale` transforms only.
+ * The hook owns inline `element.style.transform` while active; apply layout positioning
+ * transforms on an outer wrapper when combining with static translations or rotations.
  */
 export function useElasticPress(
   targetRef: RefObject<HTMLElement | null>,

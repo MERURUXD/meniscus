@@ -1413,8 +1413,17 @@ export function createPopoverMorphController(
       reducedMotion = reduced
       if (phase === 'opening' || phase === 'closing') {
         const nextDuration = getPopoverPhaseDurationSec(phase, hasControlSource, reducedMotion)
-        elapsedSec = Math.min(elapsedSec, nextDuration)
         interruptStart = undefined
+        if (elapsedSec >= nextDuration) {
+          if (phase === 'opening') {
+            phase = 'open'
+            elapsedSec = nextDuration
+          } else {
+            phase = 'closed'
+            elapsedSec = 0
+            closeSnapshot = null
+          }
+        }
       }
       notify()
     },

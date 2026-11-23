@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { evaluateFieldDistance } from '@meniscus/core'
 import { createSegmentedPillController, type SegmentItem } from '../src/index.ts'
 
 const TABS: SegmentItem[] = [
@@ -125,4 +126,28 @@ test('createSegmentedPillController: handles setSegments resize, snapTo, reduced
   assert.equal(ctrl.getState().field.primitives.length, 1)
 
   ctrl.dispose()
+})
+
+test('createSegmentedPillController: diagonal jump with large maxStretchPx preserves continuous smin bridge', () => {
+  const diagCtrl = createSegmentedPillController({
+    maxStretchPx: 80,
+    segments: [
+      { id: 'a', rect: { x: 0, y: 0, width: 120, height: 24 } },
+      { id: 'b', rect: { x: 1000, y: 1000, width: 120, height: 24 } },
+    ],
+    initialActiveId: 'a',
+  })
+
+  diagCtrl.setActive('b')
+  for (let i = 0; i < 12; i += 1) {
+    const frame = diagCtrl.step(1 / 60)
+    if (frame.field.primitives.length === 2) {
+      const [lead, trail] = frame.field.primitives
+      const midX = (lead!.center.x + trail!.center.x) * 0.5
+      const midY = (lead!.center.y + trail!.center.y) * 0.5
+      const midDist = evaluateFieldDistance(midX, midY, frame.field)
+      assert.ok(midDist <= 0, `frame ${i}: bridge split at midpoint with SDF distance=${midDist}`)
+    }
+  }
+  diagCtrl.dispose()
 })

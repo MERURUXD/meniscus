@@ -115,6 +115,82 @@ function snapChannel(channel: SpringChannel, value: number): void {
   channel.snap(value, 0)
 }
 
+function evalSegmentedBoxesGap(
+  sep: number,
+  ux: number,
+  uy: number,
+  leadW: number,
+  leadH: number,
+  trailW: number,
+  trailH: number,
+  radius: number,
+): number {
+  const rLead = Math.max(0, Math.min(radius, leadW * 0.5, leadH * 0.5))
+  const rTrail = Math.max(0, Math.min(radius, trailW * 0.5, trailH * 0.5))
+  const innerSumW = Math.max(0, 0.5 * (leadW + trailW) - rLead - rTrail)
+  const innerSumH = Math.max(0, 0.5 * (leadH + trailH) - rLead - rTrail)
+  const ox = Math.max(0, Math.abs(ux) * sep - innerSumW)
+  const oy = Math.max(0, Math.abs(uy) * sep - innerSumH)
+  return Math.hypot(ox, oy) - rLead - rTrail
+}
+
+function computeConnectedStretchCap(
+  maxStretchPx: number,
+  ux: number,
+  uy: number,
+  lw: number,
+  lh: number,
+  tw: number,
+  th: number,
+  lr: number,
+  baseBlendK: number,
+  squeezeRatio: number,
+): number {
+  if (maxStretchPx <= 0) return 0
+  const minLeadW = Math.max(0, lw * (1 + squeezeRatio * 0.35 * Math.abs(ux)) * (1 - squeezeRatio * 0.5 * Math.abs(uy)))
+  const minLeadH = Math.max(0, lh * (1 + squeezeRatio * 0.35 * Math.abs(uy)) * (1 - squeezeRatio * 0.5 * Math.abs(ux)))
+  const minTrailW = Math.max(0, tw * (1 - squeezeRatio * Math.abs(uy)))
+  const minTrailH = Math.max(0, th * (1 - squeezeRatio * Math.abs(ux)))
+  const maxBridgeGap = baseBlendK * 0.4
+
+  if (
+    evalSegmentedBoxesGap(
+      maxStretchPx,
+      ux,
+      uy,
+      minLeadW,
+      minLeadH,
+      minTrailW,
+      minTrailH,
+      lr,
+    ) <= maxBridgeGap
+  ) {
+    return maxStretchPx
+  }
+
+  let lo = 0
+  let hi = maxStretchPx
+  for (let i = 0; i < 10; i += 1) {
+    const mid = 0.5 * (lo + hi)
+    const gap = evalSegmentedBoxesGap(
+      mid,
+      ux,
+      uy,
+      minLeadW,
+      minLeadH,
+      minTrailW,
+      minTrailH,
+      lr,
+    )
+    if (gap <= maxBridgeGap) {
+      lo = mid
+    } else {
+      hi = mid
+    }
+  }
+  return lo
+}
+
 function createZeroChannel(params: SpringParams, initialValue: number): SpringChannel {
   return createSpringChannel({
     params,
@@ -263,12 +339,21 @@ export function createSegmentedPillController(
 
     const ux = dx / rawLagDist
     const uy = dy / rawLagDist
-    const alongDim = Math.abs(ux) * lw + Math.abs(uy) * lh
-    // Cap effective center lag below the overlap + blendK bridge threshold so fast multi-tab jumps never tear apart.
-    const stretchCap = Math.min(maxStretchPx, Math.max(0, alongDim * 0.85 + baseBlendK * 0.25))
-    const clampedSep =
+    // Constrain maximum center separation by the actual rounded-box bridge gap so diagonal jumps never split into two lobes.
+    const stretchCap = computeConnectedStretchCap(
+      maxStretchPx,
+      ux,
+      uy,
+      lw,
+      lh,
+      tw,
+      th,
+      lr,
+      baseBlendK,
+      squeezeRatio,
+    )
+    let clampedSep =
       stretchCap > 0 ? (stretchCap * rawLagDist) / (stretchCap + rawLagDist) : 0
-
     const stretchRatio = stretchCap > 0 ? clamp(clampedSep / stretchCap, 0, 1) : 0
     const leadSqueezeX = 1 - squeezeRatio * 0.5 * stretchRatio * Math.abs(uy)
     const leadSqueezeY = 1 - squeezeRatio * 0.5 * stretchRatio * Math.abs(ux)
@@ -282,6 +367,29 @@ export function createSegmentedPillController(
     const outLeadH = Math.max(0, lh * leadStretchY * leadSqueezeY)
     const outTrailW = Math.max(0, tw * trailSqueezeX)
     const outTrailH = Math.max(0, th * trailSqueezeY)
+
+    const activeBlendK = baseBlendK * clamp(lerp(0.25, 1, stretchRatio), 0, 1)
+    const activeMaxGap = activeBlendK * 0.45
+    if (
+      clampedSep > 0 &&
+      evalSegmentedBoxesGap(clampedSep, ux, uy, outLeadW, outLeadH, outTrailW, outTrailH, lr) >
+        activeMaxGap
+    ) {
+      let lo = 0
+      let hi = clampedSep
+      for (let i = 0; i < 8; i += 1) {
+        const mid = 0.5 * (lo + hi)
+        if (
+          evalSegmentedBoxesGap(mid, ux, uy, outLeadW, outLeadH, outTrailW, outTrailH, lr) <=
+          activeMaxGap
+        ) {
+          lo = mid
+        } else {
+          hi = mid
+        }
+      }
+      clampedSep = lo
+    }
 
     const leadPrimitive: GlassPrimitive = {
       id: 'segmented-pill-lead',
@@ -299,8 +407,6 @@ export function createSegmentedPillController(
       size: { width: outTrailW, height: outTrailH },
       radius: Math.max(0, Math.min(lr, outTrailW * 0.5, outTrailH * 0.5)),
     }
-
-    const activeBlendK = baseBlendK * clamp(lerp(0.25, 1, stretchRatio), 0, 1)
 
     return {
       activeId,

@@ -309,6 +309,16 @@ test('createPopoverMorphController: lifecycle, mid-flight reversals, snapshot ca
   ctrl.open(true)
   approx(ctrl.getState().settled, rmMidClose.settled, 1e-4)
 
+  // Enabling reduced motion after >150ms of active transition finalizes terminal phase
+  ctrl.setReducedMotion(false)
+  ctrl.reset('closed')
+  ctrl.open(true)
+  ctrl.step(0.2)
+  assert.equal(ctrl.getState().phase, 'opening')
+  ctrl.setReducedMotion(true)
+  assert.equal(ctrl.getState().phase, 'open')
+  assert.equal(ctrl.getState().isAnimating, false)
+
   assert.ok(notifications > 0)
   unsub()
   const countAfterUnsub = notifications

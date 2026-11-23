@@ -1,6 +1,5 @@
 import {
   DEFAULT_OPTICAL_MATERIALS,
-  MAX_GPU_PRIMITIVES,
   type GlassPrimitive,
   type OpticalMaterial,
   type RimMode,
@@ -137,16 +136,15 @@ export function createInitialDragMergeNodes(stageSize: Size): DragMergeNodeInput
 export function createExtraDropletInput(index: number, stageSize: Size): DragMergeNodeInput {
   const w = Math.max(300, stageSize.width)
   const h = Math.max(320, stageSize.height)
-  const clampedIdx = Math.min(index, MAX_GPU_PRIMITIVES)
-  const angle = ((clampedIdx * 137.5) * Math.PI) / 180
+  const angle = ((index * 137.5) * Math.PI) / 180
   const rx = Math.min(130, w * 0.28) * Math.cos(angle)
   const ry = Math.min(95, h * 0.24) * Math.sin(angle)
-  const isCapsule = clampedIdx % 2 === 1
+  const isCapsule = index % 2 === 1
   const width = isCapsule ? 104 : 74
   const height = isCapsule ? 52 : 74
 
   return {
-    id: `drop-${clampedIdx}`,
+    id: `drop-${index}`,
     center: {
       x: Math.max(width * 0.5 + 16, Math.min(w - width * 0.5 - 16, w * 0.5 + rx)),
       y: Math.max(height * 0.5 + 16, Math.min(h - height * 0.5 - 16, h * 0.5 + ry)),

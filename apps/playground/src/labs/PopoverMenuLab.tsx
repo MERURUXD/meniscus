@@ -228,6 +228,7 @@ export function PopoverMenuLab({
       panelEl.style.top = `${geom.targetRect.y}px`
       panelEl.style.width = `${geom.targetRect.width}px`
       panelEl.style.minHeight = `${geom.targetRect.height}px`
+      panelEl.style.transformOrigin = `${geom.contentTransform.originX}px ${geom.contentTransform.originY}px`
       panelEl.style.transform = `translate3d(${geom.contentTransform.translateX}px, ${geom.contentTransform.translateY}px, 0) scale(${geom.contentTransform.scale})`
       panelEl.style.opacity = String(visible ? motion.contentOpacity : 0)
       panelEl.style.filter =

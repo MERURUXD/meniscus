@@ -397,14 +397,19 @@ export function DragMergeLab({
         ctrl.removeNode(node.id)
       }
     }
+    const existingIds = new Set(ctrl.getState().nodes.map((n) => n.id))
     for (const input of fresh) {
-      ctrl.updateNode(input.id, {
-        center: input.center,
-        restCenter: input.center,
-        size: input.size,
-        radius: input.radius,
-        pinned: input.pinned,
-      })
+      if (!existingIds.has(input.id)) {
+        ctrl.addNode(input)
+      } else {
+        ctrl.updateNode(input.id, {
+          center: input.center,
+          restCenter: input.center,
+          size: input.size,
+          radius: input.radius,
+          pinned: input.pinned,
+        })
+      }
     }
     nodesSnapshotRef.current = fresh
     setNodeIds(ctrl.getState().nodes.map((n) => n.id))

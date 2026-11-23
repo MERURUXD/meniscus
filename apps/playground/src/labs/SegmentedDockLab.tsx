@@ -109,6 +109,8 @@ export function SegmentedDockLab({
   const ctrlRef = useRef<SegmentedPillController | null>(null)
   const jumpTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastTelemetryAtRef = useRef(0)
+  const hasMeasuredRef = useRef(false)
+  const measuredSegmentsRef = useRef<SegmentItem[] | null>(null)
   const activeIdRef = useRef(activeId)
   const reducedMotionRef = useRef(reducedMotion)
 
@@ -210,10 +212,17 @@ export function SegmentedDockLab({
     }
 
     if (items.length > 0) {
+      measuredSegmentsRef.current = items
       ctrl.setSegments(items)
+      if (!hasMeasuredRef.current) {
+        hasMeasuredRef.current = true
+        ctrl.snapTo(activeIdRef.current)
+      } else if (ctrl.getState().isAnimating) {
+        ensureLoop()
+      }
       applyFrame(ctrl.getState(), true)
     }
-  }, [applyFrame])
+  }, [applyFrame, ensureLoop])
 
   useLayoutEffect(() => {
     configRef.current = { theme }
@@ -260,7 +269,7 @@ export function SegmentedDockLab({
   // Create and dispose SegmentedPillController symmetrically inside effect for StrictMode safety.
   useEffect(() => {
     const ctrl = createSegmentedPillController({
-      segments: makeFallbackSegments(),
+      segments: measuredSegmentsRef.current ?? makeFallbackSegments(),
       initialActiveId: activeIdRef.current,
       blendK,
       maxStretchPx,

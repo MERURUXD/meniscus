@@ -28,10 +28,13 @@ test('createInitialDragMergeNodes keeps all primitives inside compact and deskto
   }
 })
 
-test('createExtraDropletInput stays clamped within stage bounds up to MAX_GPU_PRIMITIVES', () => {
+test('createExtraDropletInput stays clamped within stage bounds and keeps unique IDs beyond MAX_GPU_PRIMITIVES', () => {
   const stage = { width: 420, height: 440 }
-  for (let i = 1; i <= MAX_GPU_PRIMITIVES; i++) {
+  const seenIds = new Set<string>()
+  for (let i = 1; i <= MAX_GPU_PRIMITIVES + 8; i++) {
     const drop = createExtraDropletInput(i, stage)
+    assert.ok(!seenIds.has(drop.id), `Expected unique ID for index ${i}, got duplicate ${drop.id}`)
+    seenIds.add(drop.id)
     assert.ok(drop.center.x - drop.size.width * 0.5 >= 0)
     assert.ok(drop.center.x + drop.size.width * 0.5 <= stage.width)
     assert.ok(drop.center.y - drop.size.height * 0.5 >= 0)

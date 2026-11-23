@@ -1,0 +1,263 @@
+import {
+  DEFAULT_OPTICAL_MATERIALS,
+  MAX_GPU_PRIMITIVES,
+  type GlassPrimitive,
+  type OpticalMaterial,
+  type RimMode,
+  type Size,
+  type ThemeMode,
+} from '@meniscus/core'
+import type { DragMergeNodeInput, PopoverPlacement } from '@meniscus/presets'
+
+export type LabId = 'drag-merge' | 'segmented-dock' | 'optics' | 'popover-menu'
+
+export interface LabTabMeta {
+  id: LabId
+  title: string
+  description: string
+}
+
+export const LAB_TABS: readonly LabTabMeta[] = [
+  {
+    id: 'drag-merge',
+    title: 'Drag & Merge Lab',
+    description: 'Interactive N-primitive liquid bridges & magnetic attraction',
+  },
+  {
+    id: 'segmented-dock',
+    title: 'Morphing Dock',
+    description: 'Continuous-flow segmented pill with mid-flight retargeting',
+  },
+  {
+    id: 'optics',
+    title: 'Optics & Degradation',
+    description: 'Live optical parameters, Route B3 refract vs frosted & SDF contour',
+  },
+  {
+    id: 'popover-menu',
+    title: 'Popover & Context Menu',
+    description: 'Interruptible anchored popover & point-origin context menu',
+  },
+] as const
+
+export interface DockSegmentMeta {
+  id: string
+  label: string
+  badge?: string
+}
+
+export const DOCK_SEGMENTS: readonly DockSegmentMeta[] = [
+  { id: 'overview', label: 'Overview' },
+  { id: 'optics', label: 'Optics', badge: 'B3' },
+  { id: 'field', label: 'SDF Field' },
+  { id: 'motion', label: 'Springs' },
+  { id: 'export', label: 'Spec' },
+] as const
+
+export interface DragNodeMeta {
+  id: string
+  label: string
+  sublabel: string
+}
+
+export const INITIAL_DRAG_NODE_META: Readonly<Record<string, DragNodeMeta>> = {
+  anchor: { id: 'anchor', label: 'Anchor', sublabel: 'Pinned' },
+  'orb-a': { id: 'orb-a', label: 'Orb A', sublabel: 'Drag me' },
+  'orb-b': { id: 'orb-b', label: 'Lens B', sublabel: 'Drag me' },
+  'pill-c': { id: 'pill-c', label: 'Capsule C', sublabel: 'Drag me' },
+}
+
+export function createInitialDragMergeNodes(stageSize: Size): DragMergeNodeInput[] {
+  const w = Math.max(300, stageSize.width)
+  const h = Math.max(320, stageSize.height)
+  const compact = w < 460
+  const cx = w * 0.5
+  const cy = compact ? h * 0.58 : h * 0.5
+
+  if (compact) {
+    const mobileCy = Math.max(296, h * 0.62)
+    return [
+      {
+        id: 'anchor',
+        center: { x: cx, y: mobileCy - 60 },
+        size: { width: 136, height: 48 },
+        radius: 24,
+        pinned: true,
+      },
+      {
+        id: 'orb-a',
+        center: { x: Math.max(52, cx - 72), y: mobileCy + 18 },
+        size: { width: 72, height: 72 },
+        radius: 36,
+      },
+      {
+        id: 'orb-b',
+        center: { x: Math.min(w - 52, cx + 72), y: mobileCy + 18 },
+        size: { width: 78, height: 64 },
+        radius: 22,
+      },
+      {
+        id: 'pill-c',
+        center: { x: cx, y: Math.min(h - 38, mobileCy + 96) },
+        size: { width: 112, height: 48 },
+        radius: 24,
+      },
+    ]
+  }
+
+  return [
+    {
+      id: 'anchor',
+      center: { x: cx, y: cy - 34 },
+      size: { width: 152, height: 56 },
+      radius: 28,
+      pinned: true,
+    },
+    {
+      id: 'orb-a',
+      center: { x: Math.max(62, cx - 104), y: cy + 52 },
+      size: { width: 82, height: 82 },
+      radius: 41,
+    },
+    {
+      id: 'orb-b',
+      center: { x: Math.min(w - 62, cx + 106), y: cy + 44 },
+      size: { width: 92, height: 74 },
+      radius: 24,
+    },
+    {
+      id: 'pill-c',
+      center: { x: cx, y: Math.min(h - 56, cy + 122) },
+      size: { width: 124, height: 52 },
+      radius: 26,
+    },
+  ]
+}
+
+export function createExtraDropletInput(index: number, stageSize: Size): DragMergeNodeInput {
+  const w = Math.max(300, stageSize.width)
+  const h = Math.max(320, stageSize.height)
+  const clampedIdx = Math.min(index, MAX_GPU_PRIMITIVES)
+  const angle = ((clampedIdx * 137.5) * Math.PI) / 180
+  const rx = Math.min(130, w * 0.28) * Math.cos(angle)
+  const ry = Math.min(95, h * 0.24) * Math.sin(angle)
+  const isCapsule = clampedIdx % 2 === 1
+  const width = isCapsule ? 104 : 74
+  const height = isCapsule ? 52 : 74
+
+  return {
+    id: `drop-${clampedIdx}`,
+    center: {
+      x: Math.max(width * 0.5 + 16, Math.min(w - width * 0.5 - 16, w * 0.5 + rx)),
+      y: Math.max(height * 0.5 + 16, Math.min(h - height * 0.5 - 16, h * 0.5 + ry)),
+    },
+    size: { width, height },
+    radius: Math.min(width, height) * 0.5,
+  }
+}
+
+export type OpticsViewMode = 'refract' | 'frosted' | 'solid' | 'split'
+
+export interface OpticsLabConfig {
+  blendK: number
+  blurPx: number
+  bevelPx: number
+  refractionStrength: number
+  dispersionPx: number
+  saturation: number
+  rimMode: RimMode
+  rimOpacity: number
+  gapPx: number
+  renderView: OpticsViewMode
+  showWireframe: boolean
+  oscillateGap: boolean
+}
+
+export const DEFAULT_OPTICS_LAB_CONFIG: OpticsLabConfig = {
+  blendK: 30,
+  blurPx: 4,
+  bevelPx: 20,
+  refractionStrength: 1.35,
+  dispersionPx: 1.4,
+  saturation: 2.08,
+  rimMode: 'directional',
+  rimOpacity: 0.34,
+  gapPx: 10,
+  renderView: 'refract',
+  showWireframe: false,
+  oscillateGap: false,
+}
+
+export function buildOpticsLabMaterial(
+  theme: ThemeMode,
+  config: OpticsLabConfig,
+): OpticalMaterial {
+  const base =
+    config.rimMode === 'soft'
+      ? DEFAULT_OPTICAL_MATERIALS[theme].frosted
+      : DEFAULT_OPTICAL_MATERIALS[theme].crisp
+
+  return {
+    ...base,
+    bevel: config.bevelPx,
+    refraction: config.refractionStrength * 50,
+    blur: config.blurPx,
+    dispersion: config.dispersionPx,
+    saturation: config.saturation,
+    rimMode: config.rimMode,
+    rimOpacity: config.rimOpacity,
+  }
+}
+
+export function buildOpticsLabPrimitives(
+  stageSize: Size,
+  gapPx: number,
+): GlassPrimitive[] {
+  const w = Math.max(240, stageSize.width)
+  const h = Math.max(240, stageSize.height)
+  const compact = w < 440
+
+  const mainW = compact ? 136 : 184
+  const mainH = compact ? 76 : 94
+  const orbW = compact ? 76 : 96
+  const orbH = compact ? 76 : 96
+
+  const halfSpan = (mainW + orbW) * 0.5 + gapPx
+  const centerX = w * 0.5
+  const centerY = compact ? h * 0.62 : h * 0.52
+
+  return [
+    {
+      id: 'optics-primary',
+      center: { x: centerX - halfSpan * 0.5 + (orbW - mainW) * 0.25, y: centerY },
+      size: { width: mainW, height: mainH },
+      radius: 32,
+    },
+    {
+      id: 'optics-satellite',
+      center: { x: centerX + halfSpan * 0.5 + (orbW - mainW) * 0.25, y: centerY },
+      size: { width: orbW, height: orbH },
+      radius: orbH * 0.5,
+    },
+  ]
+}
+
+export interface PopoverMenuActionItem {
+  id: string
+  label: string
+  shortcut: string
+}
+
+export const POPOVER_MENU_ITEMS: readonly PopoverMenuActionItem[] = [
+  { id: 'refract-preset', label: 'Route B3 Refraction', shortcut: 'R' },
+  { id: 'smin-fuse', label: 'Smooth Union Bridge', shortcut: 'K' },
+  { id: 'interrupt', label: 'Interrupt Mid-Flight', shortcut: 'Space' },
+  { id: 'edge-flip', label: 'Clamp & Auto-Flip', shortcut: 'F' },
+] as const
+
+export const POPOVER_ANCHOR_PLACEMENTS: readonly PopoverPlacement[] = [
+  'overAnchorEnd',
+  'overAnchorStart',
+  'belowPoint',
+  'abovePoint',
+] as const

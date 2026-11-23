@@ -1,4 +1,5 @@
 import { useState, type ReactElement } from 'react'
+import type { PlaygroundMessages } from '../i18n.ts'
 
 const SWATCH_COLORS = [
   { label: '620nm', bg: 'linear-gradient(135deg, #f43f5e, #fb7185)' },
@@ -12,13 +13,14 @@ const SWATCH_COLORS = [
 export interface LiveBackdropProps {
   title: string
   caption: string
+  messages: PlaygroundMessages['backdrop']
 }
 
 /**
  * Renders vibrant, high-contrast DOM typography, color swatches, grid lines, and a live
  * interactive counter behind glass layers to demonstrate authentic Live-DOM refraction.
  */
-export function LiveBackdrop({ title, caption }: LiveBackdropProps): ReactElement {
+export function LiveBackdrop({ title, caption, messages }: LiveBackdropProps): ReactElement {
   const [pulseCount, setPulseCount] = useState(1)
 
   return (
@@ -27,19 +29,21 @@ export function LiveBackdrop({ title, caption }: LiveBackdropProps): ReactElemen
 
       <div className="pg-backdrop-row">
         <div className="pg-backdrop-card">
-          <div className="pg-backdrop-kicker">Live DOM Optical Substrate</div>
+          <div className="pg-backdrop-kicker">{messages.kicker}</div>
           <h2 className="pg-backdrop-heading">{title}</h2>
           <p className="pg-backdrop-copy">{caption}</p>
         </div>
 
         <div className="pg-backdrop-ticker">
-          <span>Substrate pulses: {pulseCount}</span>
+          <span>
+            {messages.pulsesPrefix}: {pulseCount}
+          </span>
           <button
             type="button"
             className="pg-btn"
             onClick={() => setPulseCount((c) => c + 1)}
           >
-            Mutate DOM
+            {messages.mutateButton}
           </button>
         </div>
       </div>

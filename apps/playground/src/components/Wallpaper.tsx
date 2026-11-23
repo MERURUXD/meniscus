@@ -119,30 +119,47 @@ export function Wallpaper({ theme, reducedMotion }: WallpaperProps): ReactElemen
     if (!canvas) return
     const gl = canvas.getContext('webgl2', { antialias: false, alpha: false })
     if (!gl) return
-    const program = createProgram(gl)
-    if (!program) return
 
-    const vao = gl.createVertexArray()
-    const uRes = gl.getUniformLocation(program, 'uRes')
-    const uTime = gl.getUniformLocation(program, 'uTime')
-    const uColors = gl.getUniformLocation(program, 'uColors')
     // Packed once per theme; the frame loop only updates time and resolution.
     const colors = new Float32Array(FOLD_COUNT * 3)
     WALLPAPER_PALETTES[theme].forEach((hex, i) => colors.set(hexToRgb(hex), i * 3))
 
+    interface GpuResources {
+      program: WebGLProgram
+      vao: WebGLVertexArrayObject
+      uRes: WebGLUniformLocation | null
+      uTime: WebGLUniformLocation | null
+      uColors: WebGLUniformLocation | null
+    }
+
+    // GPU objects die with the context, so this runs at mount and again after a restore.
+    const createResources = (): GpuResources | null => {
+      const program = createProgram(gl)
+      if (!program) return null
+      return {
+        program,
+        vao: gl.createVertexArray(),
+        uRes: gl.getUniformLocation(program, 'uRes'),
+        uTime: gl.getUniformLocation(program, 'uTime'),
+        uColors: gl.getUniformLocation(program, 'uColors'),
+      }
+    }
+
+    let gpu = createResources()
+    if (!gpu) return
+
     let raf = 0
-    let lost = false
     const start = performance.now()
 
     const draw = (nowMs: number) => {
-      if (lost) return
+      if (!gpu) return
       gl.viewport(0, 0, canvas.width, canvas.height)
-      gl.useProgram(program)
-      gl.bindVertexArray(vao)
-      gl.uniform2f(uRes, canvas.width, canvas.height)
+      gl.useProgram(gpu.program)
+      gl.bindVertexArray(gpu.vao)
+      gl.uniform2f(gpu.uRes, canvas.width, canvas.height)
       // Reduced motion freezes a fixed, pleasant phase instead of wherever time happens to be.
-      gl.uniform1f(uTime, reducedMotion ? 12 : 12 + (nowMs - start) / 1000)
-      gl.uniform3fv(uColors, colors)
+      gl.uniform1f(gpu.uTime, reducedMotion ? 12 : 12 + (nowMs - start) / 1000)
+      gl.uniform3fv(gpu.uColors, colors)
       gl.drawArrays(gl.TRIANGLES, 0, 3)
     }
 
@@ -167,22 +184,34 @@ export function Wallpaper({ theme, reducedMotion }: WallpaperProps): ReactElemen
       draw(now)
       raf = requestAnimationFrame(tick)
     }
-    if (!reducedMotion) raf = requestAnimationFrame(tick)
+    const startLoop = () => {
+      if (!reducedMotion) raf = requestAnimationFrame(tick)
+    }
+    startLoop()
 
     const onLost = (e: Event) => {
+      // preventDefault signals that we will rebuild, which lets the browser restore the context.
       e.preventDefault()
-      lost = true
+      gpu = null
       cancelAnimationFrame(raf)
     }
+    const onRestored = () => {
+      gpu = createResources()
+      if (!gpu) return
+      draw(performance.now())
+      startLoop()
+    }
     canvas.addEventListener('webglcontextlost', onLost)
+    canvas.addEventListener('webglcontextrestored', onRestored)
 
     return () => {
       cancelAnimationFrame(raf)
       observer.disconnect()
       canvas.removeEventListener('webglcontextlost', onLost)
-      if (!lost) {
-        gl.deleteVertexArray(vao)
-        gl.deleteProgram(program)
+      canvas.removeEventListener('webglcontextrestored', onRestored)
+      if (gpu) {
+        gl.deleteVertexArray(gpu.vao)
+        gl.deleteProgram(gpu.program)
       }
     }
   }, [theme, reducedMotion])

@@ -469,7 +469,9 @@ export function createMorphTimeline(options: MorphTimelineOptions = {}): MorphTi
       const t = clamp(segmentElapsedSec / reducedMotionDurationSec, 0, 1)
       const p = lerp(mainAnchorValue, target, t)
       const v = (target - mainAnchorValue) / reducedMotionDurationSec
-      return { progress: p, velocity: v, cornerProgress: p, cornerVelocity: v }
+      const cp = lerp(cornerAnchorValue, target, t)
+      const cv = (target - cornerAnchorValue) / reducedMotionDurationSec
+      return { progress: p, velocity: v, cornerProgress: cp, cornerVelocity: cv }
     }
 
     const mainSample = evaluateSpringState(

@@ -240,6 +240,33 @@ test('createMorphTimeline mid-flight close after brief open does not snap to clo
   assert.equal(done.progress, 0)
 })
 
+test('createMorphTimeline preserves cornerProgress when reducedMotion is enabled mid-flight', () => {
+  const timeline = createMorphTimeline()
+  timeline.open()
+  const beforeSwitch = timeline.step(0.1)
+  assert.ok(beforeSwitch.progress > beforeSwitch.cornerProgress + 0.2)
+
+  timeline.setReducedMotion(true)
+  const atSwitch = timeline.getState()
+  assert.equal(atSwitch.reducedMotion, true)
+  approx(atSwitch.progress, beforeSwitch.progress, 1e-12, 'live reducedMotion toggle preserves progress')
+  approx(
+    atSwitch.cornerProgress,
+    beforeSwitch.cornerProgress,
+    1e-12,
+    'live reducedMotion toggle preserves cornerProgress without jumping',
+  )
+
+  const mid = timeline.step(0.075)
+  approx(mid.progress, (beforeSwitch.progress + 1) * 0.5, 1e-6)
+  approx(mid.cornerProgress, (beforeSwitch.cornerProgress + 1) * 0.5, 1e-6)
+
+  const end = timeline.step(0.08)
+  assert.equal(end.phase, 'open')
+  assert.equal(end.progress, 1)
+  assert.equal(end.cornerProgress, 1)
+})
+
 test('createElasticPressController handles press growth, rubber-band drag, and release rebound', () => {
   const press = createElasticPressController()
   const box = { width: 120, height: 40 }

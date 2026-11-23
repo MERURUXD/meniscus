@@ -583,19 +583,32 @@ function renderFallback2d(ctx: CanvasRenderingContext2D, frame: OverlayRenderFra
   const blendedContourPath =
     activeCount >= 2 && field.blendK > 0.001 ? extractFieldContourPath(field) : ''
 
-  // 1. Outside-only drop shadow: cast union shadow first, then destination-out erase the union interior
-  // so overlapping primitives never invert parity as they would with clip('evenodd').
+  // 1. Outside-only drop shadow: translate the opaque caster offscreen while offsetting shadowOffsetX
+  // back into the viewport so only translucent shadow pixels enter the canvas (no opaque AA fringe),
+  // then destination-out erase the union interior to keep glass strictly transparent.
   if (material.shadowAlpha > 0.001) {
+    let minX = 0
+    for (let i = 0; i < field.primitives.length; i++) {
+      const p = field.primitives[i]
+      if (p.size.width > 0.01 && p.size.height > 0.01) {
+        const left = p.center.x - p.size.width * 0.5
+        if (left < minX) minX = left
+      }
+    }
+    const offscreenX = Math.ceil(vpW - minX + material.shadowBlur * 3 + 64)
+
     ctx.save()
+    ctx.translate(offscreenX, 0)
     ctx.shadowColor = `rgba(0, 0, 0, ${(material.shadowAlpha * opacity).toFixed(4)})`
     ctx.shadowBlur = material.shadowBlur
-    ctx.shadowOffsetX = 0
+    ctx.shadowOffsetX = -offscreenX * dpr
     ctx.shadowOffsetY = material.shadowOffsetY
     ctx.fillStyle = 'rgba(0, 0, 0, 1)'
     ctx.beginPath()
     traceActiveFieldPath(ctx, field, activeCount, blendedContourPath)
     ctx.fill()
 
+    ctx.translate(-offscreenX, 0)
     ctx.shadowColor = 'rgba(0, 0, 0, 0)'
     ctx.shadowBlur = 0
     ctx.shadowOffsetX = 0

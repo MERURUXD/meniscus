@@ -393,6 +393,7 @@ function createMock2d(): Mock2dState {
       calls.push(['restore'])
     },
     beginPath: () => calls.push(['beginPath']),
+    translate: (...a: unknown[]) => calls.push(['translate', ...a]),
     rect: (...a: unknown[]) => calls.push(['rect', ...a]),
     roundRect: (...a: unknown[]) => calls.push(['roundRect', ...a]),
     moveTo: (...a: unknown[]) => calls.push(['moveTo', ...a]),
@@ -519,6 +520,10 @@ test('overlayRenderer: 2D fallback erases overlapping primitive shadow interiors
   assert.equal(mock2d.fillSnapshots.length, 2)
   assert.equal(mock2d.fillSnapshots[0]?.globalCompositeOperation, 'source-over')
   assert.ok(mock2d.fillSnapshots[0]!.shadowBlur > 0)
+  assert.ok(mock2d.fillSnapshots[0]!.shadowOffsetX < 0, 'shadow caster must be translated offscreen to prevent AA fringe')
+  const translateCalls = mock2d.calls.filter((c) => c[0] === 'translate')
+  assert.equal(translateCalls.length, 2)
+  assert.equal(translateCalls[0]?.[1], -(translateCalls[1]?.[1] as number))
   assert.equal(mock2d.fillSnapshots[1]?.globalCompositeOperation, 'destination-out')
   assert.equal(mock2d.fillSnapshots[1]?.shadowColor, 'rgba(0, 0, 0, 0)')
   assert.equal(mock2d.fillSnapshots[1]?.shadowBlur, 0)

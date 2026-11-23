@@ -195,7 +195,31 @@ export function OpticsLab({ theme, reducedMotion }: OpticsLabProps): ReactElemen
   }
 
   useEffect(() => {
-    if (!config.oscillateGap || reducedMotion) return
+    if (!config.oscillateGap || reducedMotion) {
+      if (gapReadoutRef.current) {
+        gapReadoutRef.current.textContent = `${config.gapPx.toFixed(1)}px`
+      }
+      if (config.showWireframe) {
+        const activeField: GlassFieldState = {
+          primitives: buildOpticsLabPrimitives(
+            config.renderView === 'split' ? splitSize : stageSize,
+            config.gapPx,
+          ),
+          blendK: config.blendK,
+          rimOpacity: 1,
+          styleMix: config.rimMode === 'soft' ? 1 : 0,
+        }
+        updateWireframeDom(activeField, primaryWirePathRef.current, primaryRectRefs.current)
+        if (config.renderView === 'split') {
+          updateWireframeDom(
+            activeField,
+            secondaryWirePathRef.current,
+            secondaryRectRefs.current,
+          )
+        }
+      }
+      return
+    }
     let phase = 0
     const loop = createFrameLoop((dtSec) => {
       phase += dtSec * 1.45
@@ -258,7 +282,17 @@ export function OpticsLab({ theme, reducedMotion }: OpticsLabProps): ReactElemen
     return () => {
       loop.stop()
     }
-  }, [config.oscillateGap, reducedMotion])
+  }, [
+    config.oscillateGap,
+    config.gapPx,
+    config.blendK,
+    config.rimMode,
+    config.showWireframe,
+    config.renderView,
+    stageSize,
+    splitSize,
+    reducedMotion,
+  ])
 
   const handleCapabilitiesChange = useCallback((caps: GlassSurfaceCapabilities) => {
     const view = configRef.current.renderView

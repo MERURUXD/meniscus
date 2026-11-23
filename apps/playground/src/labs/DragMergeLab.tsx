@@ -381,6 +381,7 @@ export function DragMergeLab({
     const list = ctrl.getState().nodes
     const removable = [...list].reverse().find((n) => !n.pinned)
     if (!removable || list.length <= 2) return
+    userInteractedRef.current = true
     ctrl.removeNode(removable.id)
     nodesSnapshotRef.current = snapshotNodeInputs(ctrl)
     setNodeIds(ctrl.getState().nodes.map((n) => n.id))

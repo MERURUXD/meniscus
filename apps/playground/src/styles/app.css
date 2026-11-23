@@ -424,6 +424,7 @@
   display: grid;
   place-items: center;
   padding: 20px;
+  pointer-events: none;
 }
 
 .pg-dock-field {
@@ -432,6 +433,7 @@
   padding: 8px;
   background: rgba(15, 23, 42, 0.08);
   border: 1px solid var(--border-subtle);
+  pointer-events: auto;
 }
 
 .pg-dock-items {

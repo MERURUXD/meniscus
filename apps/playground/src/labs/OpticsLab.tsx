@@ -195,87 +195,56 @@ export function OpticsLab({ theme, reducedMotion }: OpticsLabProps): ReactElemen
   }
 
   useEffect(() => {
-    if (!config.oscillateGap || reducedMotion) {
-      if (gapReadoutRef.current) {
-        gapReadoutRef.current.textContent = `${config.gapPx.toFixed(1)}px`
-      }
-      if (config.showWireframe) {
-        const activeField: GlassFieldState = {
-          primitives: buildOpticsLabPrimitives(
-            config.renderView === 'split' ? splitSize : stageSize,
-            config.gapPx,
-          ),
-          blendK: config.blendK,
-          rimOpacity: 1,
-          styleMix: config.rimMode === 'soft' ? 1 : 0,
-        }
-        updateWireframeDom(activeField, primaryWirePathRef.current, primaryRectRefs.current)
-        if (config.renderView === 'split') {
-          updateWireframeDom(
-            activeField,
-            secondaryWirePathRef.current,
-            secondaryRectRefs.current,
-          )
-        }
-      }
-      return
-    }
-    let phase = 0
-    const loop = createFrameLoop((dtSec) => {
-      phase += dtSec * 1.45
+    const syncBenchGap = (gapPx: number) => {
       const cfg = configRef.current
-      if (!cfg.oscillateGap) return false
-      const dynamicGap = Math.round((16 + 34 * Math.sin(phase)) * 10) / 10
-      if (gapReadoutRef.current) {
-        gapReadoutRef.current.textContent = `${dynamicGap.toFixed(1)}px (live)`
-      }
-
       const activeTheme = themeRef.current
       const activeMat = materialRef.current
       const activeRefract = refractionRef.current
-
+      const activeSize = cfg.renderView === 'split' ? sizeRef.current.split : sizeRef.current.single
+      const field: GlassFieldState = {
+        primitives: buildOpticsLabPrimitives(activeSize, gapPx),
+        blendK: cfg.blendK,
+        rimOpacity: 1,
+        styleMix: cfg.rimMode === 'soft' ? 1 : 0,
+      }
+      primarySurfaceRef.current?.render({
+        field,
+        material: activeMat,
+        refraction: activeRefract,
+        theme: activeTheme,
+      })
       if (cfg.renderView === 'split') {
-        const splitPrimitives = buildOpticsLabPrimitives(sizeRef.current.split, dynamicGap)
-        const field: GlassFieldState = {
-          primitives: splitPrimitives,
-          blendK: cfg.blendK,
-          rimOpacity: 1,
-          styleMix: cfg.rimMode === 'soft' ? 1 : 0,
-        }
-        primarySurfaceRef.current?.render({
-          field,
-          material: activeMat,
-          refraction: activeRefract,
-          theme: activeTheme,
-        })
         secondarySurfaceRef.current?.render({
           field,
           material: activeMat,
           refraction: activeRefract,
           theme: activeTheme,
         })
-        if (cfg.showWireframe) {
-          updateWireframeDom(field, primaryWirePathRef.current, primaryRectRefs.current)
+      }
+      if (cfg.showWireframe) {
+        updateWireframeDom(field, primaryWirePathRef.current, primaryRectRefs.current)
+        if (cfg.renderView === 'split') {
           updateWireframeDom(field, secondaryWirePathRef.current, secondaryRectRefs.current)
         }
-      } else {
-        const singlePrimitives = buildOpticsLabPrimitives(sizeRef.current.single, dynamicGap)
-        const field: GlassFieldState = {
-          primitives: singlePrimitives,
-          blendK: cfg.blendK,
-          rimOpacity: 1,
-          styleMix: cfg.rimMode === 'soft' ? 1 : 0,
-        }
-        primarySurfaceRef.current?.render({
-          field,
-          material: activeMat,
-          refraction: activeRefract,
-          theme: activeTheme,
-        })
-        if (cfg.showWireframe) {
-          updateWireframeDom(field, primaryWirePathRef.current, primaryRectRefs.current)
-        }
       }
+    }
+
+    if (!config.oscillateGap || reducedMotion) {
+      if (gapReadoutRef.current) {
+        gapReadoutRef.current.textContent = `${config.gapPx.toFixed(1)}px`
+      }
+      syncBenchGap(config.gapPx)
+      return
+    }
+    let phase = 0
+    const loop = createFrameLoop((dtSec) => {
+      phase += dtSec * 1.45
+      if (!configRef.current.oscillateGap) return false
+      const dynamicGap = Math.round((16 + 34 * Math.sin(phase)) * 10) / 10
+      if (gapReadoutRef.current) {
+        gapReadoutRef.current.textContent = `${dynamicGap.toFixed(1)}px (live)`
+      }
+      syncBenchGap(dynamicGap)
       return true
     })
     loop.start()
@@ -289,6 +258,9 @@ export function OpticsLab({ theme, reducedMotion }: OpticsLabProps): ReactElemen
     config.rimMode,
     config.showWireframe,
     config.renderView,
+    material,
+    refraction,
+    theme,
     stageSize,
     splitSize,
     reducedMotion,

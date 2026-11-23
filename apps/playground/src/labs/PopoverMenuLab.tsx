@@ -57,14 +57,16 @@ function computeAnchoredTriggerRect(stageSize: Size, placement: PopoverPlacement
   const h = Math.max(320, stageSize.height)
   const width = 136
   const height = 42
+  // Clear the chart's wordmark and caption, which own the top-left of every stage.
+  const topY = Math.max(68, Math.round(h * 0.34))
 
   switch (placement) {
     case 'overAnchorEnd':
-      return { x: Math.max(20, w - width - 36), y: 68, width, height }
+      return { x: Math.max(20, w - width - 36), y: topY, width, height }
     case 'overAnchorStart':
-      return { x: 28, y: 68, width, height }
+      return { x: 28, y: topY, width, height }
     case 'belowPoint':
-      return { x: (w - width) * 0.5, y: 74, width, height }
+      return { x: (w - width) * 0.5, y: topY, width, height }
     case 'abovePoint':
       return { x: (w - width) * 0.5, y: h - height - 72, width, height }
   }
@@ -154,6 +156,7 @@ export function PopoverMenuLab({
 
   const latestRef = useRef({
     theme,
+    renderMode,
     activeSourceKind,
     stageSize,
     placement,
@@ -195,7 +198,7 @@ export function PopoverMenuLab({
       } else {
         surface.render({
           field: geom.field,
-          material: SHOWCASE_MATERIALS[l.theme],
+          material: SHOWCASE_MATERIALS[l.renderMode][l.theme],
           theme: l.theme,
           opacity,
           blurBumpPx: motion.blurBumpPx,
@@ -261,6 +264,7 @@ export function PopoverMenuLab({
     reducedMotionRef.current = reducedMotion
     latestRef.current = {
       theme,
+      renderMode,
       activeSourceKind,
       stageSize,
       placement,
@@ -480,7 +484,7 @@ export function PopoverMenuLab({
           blendK={POPOVER_MORPH_DEFAULTS.dropletBlendK}
           primitives={restingPrimitives}
           opacity={activeSourceKind === 'point' || bareSource ? 0 : 1}
-          material={SHOWCASE_MATERIALS[theme]}
+          material={SHOWCASE_MATERIALS[renderMode][theme]}
         >
           <button
             ref={triggerBtnRef}

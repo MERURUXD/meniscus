@@ -104,7 +104,22 @@ export function OpticsLab({ theme, locale, reducedMotion }: OpticsLabProps): Rea
   const primaryRectRefs = useRef<Array<SVGRectElement | null>>([])
   const secondaryRectRefs = useRef<Array<SVGRectElement | null>>([])
 
-  const material = useMemo(() => buildOpticsLabMaterial(theme, config), [theme, config])
+  // The primary surface shows the frosted tier whenever it cannot refract, so its material
+  // must carry the fallback blur too; the split view's right pane is always the fallback.
+  const primaryTier =
+    config.renderView === 'frosted' ||
+    tierKey === 'refractDowngraded' ||
+    tierKey === 'splitDowngraded'
+      ? 'frosted'
+      : 'refract'
+  const material = useMemo(
+    () => buildOpticsLabMaterial(theme, config, primaryTier),
+    [theme, config, primaryTier],
+  )
+  const fallbackMaterial = useMemo(
+    () => buildOpticsLabMaterial(theme, config, 'frosted'),
+    [theme, config],
+  )
   const refraction = useMemo<Partial<RefractFilterConfig>>(
     () => ({
       bezel: config.bevelPx,
@@ -125,6 +140,7 @@ export function OpticsLab({ theme, locale, reducedMotion }: OpticsLabProps): Rea
 
   const configRef = useRef(config)
   const materialRef = useRef(material)
+  const fallbackMaterialRef = useRef(fallbackMaterial)
   const refractionRef = useRef(refraction)
   const themeRef = useRef(theme)
   const liveSuffixRef = useRef(op.liveSuffix)
@@ -133,11 +149,12 @@ export function OpticsLab({ theme, locale, reducedMotion }: OpticsLabProps): Rea
   useEffect(() => {
     configRef.current = config
     materialRef.current = material
+    fallbackMaterialRef.current = fallbackMaterial
     refractionRef.current = refraction
     themeRef.current = theme
     liveSuffixRef.current = op.liveSuffix
     sizeRef.current = { single: stageSize, split: splitSize }
-  }, [config, material, refraction, theme, op.liveSuffix, stageSize, splitSize])
+  }, [config, material, fallbackMaterial, refraction, theme, op.liveSuffix, stageSize, splitSize])
 
   useEffect(() => {
     const el = singleStageRef.current
@@ -222,7 +239,7 @@ export function OpticsLab({ theme, locale, reducedMotion }: OpticsLabProps): Rea
       if (cfg.renderView === 'split') {
         secondarySurfaceRef.current?.render({
           field,
-          material: activeMat,
+          material: fallbackMaterialRef.current,
           refraction: activeRefract,
           theme: activeTheme,
         })
@@ -265,6 +282,7 @@ export function OpticsLab({ theme, locale, reducedMotion }: OpticsLabProps): Rea
     config.showWireframe,
     config.renderView,
     material,
+    fallbackMaterial,
     refraction,
     theme,
     stageSize,
@@ -359,7 +377,7 @@ export function OpticsLab({ theme, locale, reducedMotion }: OpticsLabProps): Rea
               blendK={config.blendK}
               styleMix={config.rimMode === 'soft' ? 1 : 0}
               primitives={splitField.primitives}
-              material={material}
+              material={fallbackMaterial}
               refraction={refraction}
             />
             {config.showWireframe ? (

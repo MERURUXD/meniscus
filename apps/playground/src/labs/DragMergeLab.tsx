@@ -174,13 +174,14 @@ export function DragMergeLab({
   const hitboxMapRef = useRef(new Map<string, HTMLDivElement>())
   const loopRef = useRef<FrameLoop | null>(null)
   const lastTelemetryAtRef = useRef(0)
-  const configRef = useRef({ theme, blendK })
+  const configRef = useRef({ theme, blendK, renderMode })
   const reducedMotionRef = useRef(reducedMotion)
 
   const applyFrameToDom = useCallback((state: DragMergeState, forceTelemetry = false) => {
     const surface = surfaceRef.current
     const activeBlendK = configRef.current.blendK
     const activeTheme = configRef.current.theme
+    const activeMaterials = SHOWCASE_MATERIALS[configRef.current.renderMode]
 
     if (surface) {
       surface.render({
@@ -190,7 +191,7 @@ export function DragMergeLab({
           rimOpacity: state.field.rimOpacity,
           styleMix: state.field.styleMix,
         },
-        material: SHOWCASE_MATERIALS[activeTheme],
+        material: activeMaterials[activeTheme],
         theme: activeTheme,
       })
     }
@@ -233,7 +234,7 @@ export function DragMergeLab({
 
   useLayoutEffect(() => {
     surfaceRef.current = surfaceCtrl
-    configRef.current = { theme, blendK }
+    configRef.current = { theme, blendK, renderMode }
     reducedMotionRef.current = reducedMotion
     if (ctrlRef.current && surfaceCtrl) {
       applyFrameToDom(ctrlRef.current.getState(), true)
@@ -470,7 +471,7 @@ export function DragMergeLab({
           theme={theme}
           blendK={blendK}
           primitives={initialSeed.field.primitives}
-          material={SHOWCASE_MATERIALS[theme]}
+          material={SHOWCASE_MATERIALS[renderMode][theme]}
         >
           {nodeIds.map((id) => {
             const meta = resolveNodeDisplay(id, extraIndices, dm)

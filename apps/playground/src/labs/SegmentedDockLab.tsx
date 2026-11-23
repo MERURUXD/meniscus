@@ -148,7 +148,7 @@ export function SegmentedDockLab({
     stretchRatio: 0,
     isAnimating: false,
   })
-  const configRef = useRef({ theme })
+  const configRef = useRef({ theme, renderMode })
 
   const registerButton = useCallback((id: string, el: HTMLButtonElement | null) => {
     if (el) {
@@ -164,7 +164,7 @@ export function SegmentedDockLab({
     if (surface) {
       surface.render({
         field: state.field,
-        material: SHOWCASE_MATERIALS[activeTheme],
+        material: SHOWCASE_MATERIALS[configRef.current.renderMode][activeTheme],
         theme: activeTheme,
       })
     }
@@ -237,7 +237,7 @@ export function SegmentedDockLab({
   useLayoutEffect(() => {
     dockContainerRef.current = dockContainerEl
     surfaceRef.current = surfaceCtrl
-    configRef.current = { theme }
+    configRef.current = { theme, renderMode }
     activeIdRef.current = activeId
     reducedMotionRef.current = reducedMotion
     if (ctrlRef.current && surfaceCtrl) {
@@ -353,7 +353,7 @@ export function SegmentedDockLab({
             theme={theme}
             blendK={initialField.blendK}
             primitives={initialField.primitives}
-            material={SHOWCASE_MATERIALS[theme]}
+            material={SHOWCASE_MATERIALS[renderMode][theme]}
           >
             <div
               className="pg-dock-items"

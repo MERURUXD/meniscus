@@ -209,6 +209,37 @@ test('createMorphTimeline handles open/close, mid-flight reversals, seek, and re
   assert.equal(events.length, countBeforeDispose)
 })
 
+test('createMorphTimeline mid-flight close after brief open does not snap to closed prematurely', () => {
+  const timeline = createMorphTimeline()
+  timeline.open()
+  timeline.step(0.03)
+  timeline.close()
+
+  let prev = timeline.getState()
+  assert.equal(prev.phase, 'closing')
+  assert.ok(prev.progress > 0)
+
+  // Step 10 frames at 60Hz; the re-anchored spring must not snap to 0 around frame 4.
+  for (let i = 0; i < 10; i += 1) {
+    const next = timeline.step(1 / 60)
+    assert.equal(next.phase, 'closing', `frame ${i + 1} must remain closing`)
+    assert.ok(next.progress > 0, `frame ${i + 1} progress must stay > 0`)
+    assert.ok(
+      Math.abs(next.progress - prev.progress) < 0.15 && next.progress !== prev.progress,
+      `frame ${i + 1} must advance smoothly without snapping`,
+    )
+    prev = next
+  }
+
+  // Step past the full 0.5s closeDurationSec to verify accurate settling to closed/0.
+  for (let i = 0; i < 21; i += 1) {
+    timeline.step(1 / 60)
+  }
+  const done = timeline.getState()
+  assert.equal(done.phase, 'closed')
+  assert.equal(done.progress, 0)
+})
+
 test('createElasticPressController handles press growth, rubber-band drag, and release rebound', () => {
   const press = createElasticPressController()
   const box = { width: 120, height: 40 }

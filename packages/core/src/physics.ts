@@ -508,7 +508,8 @@ export function createMorphTimeline(options: MorphTimelineOptions = {}): MorphTi
 
   function buildState(): MorphTimelineState {
     const duration = getActiveDuration()
-    const normalizedT = duration > 0 ? clamp(elapsedSec / duration, 0, 1) : phase === 'open' ? 1 : 0
+    const normalizedT =
+      duration > 0 ? clamp(segmentElapsedSec / duration, 0, 1) : phase === 'open' ? 1 : 0
     const { progress, cornerProgress } = evaluateCurves()
     return {
       phase,
@@ -551,14 +552,7 @@ export function createMorphTimeline(options: MorphTimelineOptions = {}): MorphTi
     }
 
     phase = nextPhase
-    const duration = getActiveDuration()
-    // Estimate nominal elapsedSec from current progress to keep normalizedT queries consistent.
-    const target = nextPhase === 'opening' ? 1 : 0
-    const approxFraction = nextPhase === 'opening' ? clamp(current.progress, 0, 1) : clamp(1 - current.progress, 0, 1)
-    elapsedSec = approxFraction * duration
-    if (phase === 'opening' && target === 1 && current.progress === 0) {
-      elapsedSec = 0
-    }
+    elapsedSec = 0
     notify()
   }
 
@@ -592,8 +586,8 @@ export function createMorphTimeline(options: MorphTimelineOptions = {}): MorphTi
       if (phase === 'opening' || phase === 'closing') {
         const duration = getActiveDuration()
         segmentElapsedSec += dtSec
-        elapsedSec = Math.min(duration, elapsedSec + dtSec)
-        if (segmentElapsedSec >= duration || elapsedSec >= duration) {
+        elapsedSec = Math.min(duration, segmentElapsedSec)
+        if (segmentElapsedSec >= duration) {
           if (phase === 'opening') {
             phase = 'open'
             mainAnchorValue = 1
@@ -659,8 +653,7 @@ export function createMorphTimeline(options: MorphTimelineOptions = {}): MorphTi
         cornerAnchorVelocity = current.cornerVelocity
         segmentElapsedSec = 0
         cornerDelayRemainingSec = 0
-        const duration = getActiveDuration()
-        elapsedSec = Math.min(elapsedSec, duration)
+        elapsedSec = 0
       }
       notify()
     },

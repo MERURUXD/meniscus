@@ -32,10 +32,55 @@ const nextEdgeBuf = new Int32Array(TOTAL_EDGES)
 const activeEdgeList = new Int32Array(MAX_CELLS * 2)
 const visitedBuf = new Uint8Array(TOTAL_EDGES)
 
-// Reusable SoA field buffer and string builders.
+// Reusable SoA field buffer, clustering scratch buffers, and string builders.
 const sharedPreparedField: PreparedField = createPreparedField(16)
+let clusterCapacity = 16
+let activeOrigIndicesBuf = new Int32Array(clusterCapacity)
+let clusterQueueBuf = new Int32Array(clusterCapacity)
+let clusterVisitedBuf = new Int32Array(clusterCapacity)
+let clusterPreparedField: PreparedField = createPreparedField(clusterCapacity)
 const reusableLoopStrings: string[] = []
 const reusableLoopParts: string[] = []
+
+function ensureClusterCapacity(needed: number): void {
+  if (needed <= clusterCapacity) {
+    return
+  }
+  let nextCap = clusterCapacity
+  while (nextCap < needed) {
+    nextCap *= 2
+  }
+  clusterCapacity = nextCap
+  activeOrigIndicesBuf = new Int32Array(nextCap)
+  clusterQueueBuf = new Int32Array(nextCap)
+  clusterVisitedBuf = new Int32Array(nextCap)
+  clusterPreparedField = createPreparedField(nextCap)
+}
+
+function packClusterPreparedField(
+  prepared: PreparedField,
+  memberIndices: Int32Array,
+  clusterSize: number,
+): PreparedField {
+  const dst = clusterPreparedField
+  for (let i = 0; i < clusterSize; i++) {
+    const srcIdx = memberIndices[i]!
+    dst.cx[i] = prepared.cx[srcIdx]!
+    dst.cy[i] = prepared.cy[srcIdx]!
+    dst.halfW[i] = prepared.halfW[srcIdx]!
+    dst.halfH[i] = prepared.halfH[srcIdx]!
+    dst.radius[i] = prepared.radius[srcIdx]!
+    dst.innerW[i] = prepared.innerW[srcIdx]!
+    dst.innerH[i] = prepared.innerH[srcIdx]!
+    dst.minX[i] = prepared.minX[srcIdx]!
+    dst.maxX[i] = prepared.maxX[srcIdx]!
+    dst.minY[i] = prepared.minY[srcIdx]!
+    dst.maxY[i] = prepared.maxY[srcIdx]!
+  }
+  dst.count = clusterSize
+  dst.blendK = prepared.blendK
+  return dst
+}
 
 const ZERO_POINT: Point = { x: 0, y: 0 }
 
@@ -154,24 +199,117 @@ export function extractFieldContourPath(
     return result
   }
 
-  // Compute combined AABB directly from SoA buffers to avoid allocating a temporary Rect.
-  let minX = prepared.minX[0]!
-  let maxX = prepared.maxX[0]!
-  let minY = prepared.minY[0]!
-  let maxY = prepared.maxY[0]!
-  for (let i = 1; i < activeCount; i++) {
-    const pMinX = prepared.minX[i]!
-    const pMaxX = prepared.maxX[i]!
-    const pMinY = prepared.minY[i]!
-    const pMaxY = prepared.maxY[i]!
-    if (pMinX < minX) minX = pMinX
-    if (pMaxX > maxX) maxX = pMaxX
-    if (pMinY < minY) minY = pMinY
-    if (pMaxY > maxY) maxY = pMaxY
+  ensureClusterCapacity(activeCount)
+
+  const primitives = field.primitives
+  let activeIdx = 0
+  for (let i = 0; i < primitives.length; i++) {
+    if (isActivePrimitive(primitives[i]!)) {
+      activeOrigIndicesBuf[activeIdx++] = i
+    }
   }
 
+  for (let i = 0; i < activeCount; i++) {
+    clusterVisitedBuf[i] = 0
+  }
+
+  const minXArr = prepared.minX
+  const maxXArr = prepared.maxX
+  const minYArr = prepared.minY
+  const maxYArr = prepared.maxY
+  const connectThreshold = blendK + 4
+
+  reusableLoopStrings.length = 0
+
+  // Partition active primitives into connected clusters by AABB Euclidean gap <= blendK + 4.
+  for (let start = 0; start < activeCount; start++) {
+    if (clusterVisitedBuf[start]!) {
+      continue
+    }
+    clusterVisitedBuf[start] = 1
+    let head = 0
+    let tail = 0
+    clusterQueueBuf[tail++] = start
+
+    let cMinX = minXArr[start]!
+    let cMaxX = maxXArr[start]!
+    let cMinY = minYArr[start]!
+    let cMaxY = maxYArr[start]!
+
+    while (head < tail) {
+      const u = clusterQueueBuf[head++]!
+      const uMinX = minXArr[u]!
+      const uMaxX = maxXArr[u]!
+      const uMinY = minYArr[u]!
+      const uMaxY = maxYArr[u]!
+
+      for (let v = 0; v < activeCount; v++) {
+        if (clusterVisitedBuf[v]!) {
+          continue
+        }
+        const vMinX = minXArr[v]!
+        const vMaxX = maxXArr[v]!
+        const vMinY = minYArr[v]!
+        const vMaxY = maxYArr[v]!
+        const gx = Math.max(0, uMinX - vMaxX, vMinX - uMaxX)
+        const gy = Math.max(0, uMinY - vMaxY, vMinY - uMaxY)
+        if (gx <= connectThreshold && gy <= connectThreshold && Math.hypot(gx, gy) <= connectThreshold) {
+          clusterVisitedBuf[v] = 1
+          clusterQueueBuf[tail++] = v
+          if (vMinX < cMinX) cMinX = vMinX
+          if (vMaxX > cMaxX) cMaxX = vMaxX
+          if (vMinY < cMinY) cMinY = vMinY
+          if (vMaxY > cMaxY) cMaxY = vMaxY
+        }
+      }
+    }
+
+    if (tail === 1) {
+      // Isolated primitive (> blendK + 4 from all others) has an exact analytic rounded-rect zero isosurface.
+      const origIdx = activeOrigIndicesBuf[start]!
+      const sub = formatRoundedRectPath(primitives[origIdx]!, offset)
+      if (sub) {
+        reusableLoopStrings.push(sub)
+      }
+    } else {
+      // Pack only this cluster's primitives so disconnected islands inside a concave cluster AABB are not duplicated or clipped.
+      const clusterPrepared =
+        tail === activeCount
+          ? prepared
+          : packClusterPreparedField(prepared, clusterQueueBuf, tail)
+      appendClusterMarchingSquaresLoops(
+        cMinX,
+        cMaxX,
+        cMinY,
+        cMaxY,
+        tail,
+        blendK,
+        clusterPrepared,
+        offset,
+        reusableLoopStrings,
+      )
+    }
+  }
+
+  const result = reusableLoopStrings.join(' ')
+  reusableLoopStrings.length = 0
+  reusableLoopParts.length = 0
+  return result
+}
+
+function appendClusterMarchingSquaresLoops(
+  minX: number,
+  maxX: number,
+  minY: number,
+  maxY: number,
+  clusterSize: number,
+  blendK: number,
+  prepared: PreparedField,
+  offset: Point,
+  outLoops: string[],
+): void {
   // Margin compensating for multi-primitive smin dilation so outer boundary nodes stay strictly positive and form closed loops.
-  const msPadding = Math.min(Math.max(activeCount - 1, 1), 4) * blendK * 0.25 + 4
+  const msPadding = Math.min(Math.max(clusterSize - 1, 1), 4) * blendK * 0.25 + 4
   const boundsX = minX - msPadding
   const boundsY = minY - msPadding
   const boundsW = maxX - minX + msPadding * 2
@@ -179,7 +317,7 @@ export function extractFieldContourPath(
 
   const longest = boundsW > boundsH ? boundsW : boundsH
   if (longest <= MIN_ACTIVE_SIZE) {
-    return ''
+    return
   }
 
   const targetStep = longest / MAX_GRID_STEPS
@@ -368,7 +506,7 @@ export function extractFieldContourPath(
   }
 
   if (segmentCount === 0) {
-    return ''
+    return
   }
 
   for (let i = 0; i < segmentCount; i++) {
@@ -376,7 +514,6 @@ export function extractFieldContourPath(
   }
 
   // 4. Chain directed edges into closed loops (supporting multiple islands and interior holes).
-  reusableLoopStrings.length = 0
   const maxLoopSteps = segmentCount + 1
 
   for (let i = 0; i < segmentCount; i++) {
@@ -428,12 +565,7 @@ export function extractFieldContourPath(
 
     if (vertexCount >= 3) {
       reusableLoopParts.push('Z')
-      reusableLoopStrings.push(reusableLoopParts.join(''))
+      outLoops.push(reusableLoopParts.join(''))
     }
   }
-
-  const result = reusableLoopStrings.join(' ')
-  reusableLoopStrings.length = 0
-  reusableLoopParts.length = 0
-  return result
 }

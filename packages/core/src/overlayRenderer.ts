@@ -14,8 +14,10 @@
  * SPDX-License-Identifier: MPL-2.0
  */
 
+import { extractFieldContourPath } from './contour.ts'
 import { MAX_GPU_PRIMITIVES } from './contracts.ts'
 import type {
+  GlassFieldState,
   GlassPrimitive,
   IGlassOverlayRenderer,
   OverlayRenderFrame,
@@ -333,6 +335,159 @@ function traceActivePrimitives(
   return activeCount
 }
 
+/**
+ * Traces an SVG path string emitted by `extractFieldContourPath` (`M`, `L`, `A`, `Z`)
+ * directly onto a 2D Canvas context without relying on `Path2D`.
+ */
+export function traceSvgPath2d(ctx: CanvasRenderingContext2D, pathD: string): void {
+  const len = pathD.length
+  let i = 0
+  let curX = 0
+  let curY = 0
+  let startX = 0
+  let startY = 0
+  let cmd = ''
+
+  function skipSeparators(): void {
+    while (i < len) {
+      const c = pathD.charCodeAt(i)
+      if (c === 32 || c === 9 || c === 10 || c === 13 || c === 44) {
+        i++
+      } else {
+        break
+      }
+    }
+  }
+
+  function isCommandChar(c: number): boolean {
+    return (c >= 65 && c <= 90) || (c >= 97 && c <= 122)
+  }
+
+  function nextNumber(): number {
+    skipSeparators()
+    const start = i
+    if (i < len && (pathD.charCodeAt(i) === 45 || pathD.charCodeAt(i) === 43)) {
+      i++
+    }
+    while (i < len) {
+      const c = pathD.charCodeAt(i)
+      if ((c >= 48 && c <= 57) || c === 46) {
+        i++
+      } else if ((c === 101 || c === 69) && i > start) {
+        i++
+        if (i < len && (pathD.charCodeAt(i) === 45 || pathD.charCodeAt(i) === 43)) {
+          i++
+        }
+      } else {
+        break
+      }
+    }
+    return i > start ? Number(pathD.slice(start, i)) : Number.NaN
+  }
+
+  while (i < len) {
+    skipSeparators()
+    if (i >= len) break
+
+    const c = pathD.charCodeAt(i)
+    if (isCommandChar(c)) {
+      cmd = pathD[i]
+      i++
+    } else if (!cmd) {
+      break
+    }
+
+    if (cmd === 'Z' || cmd === 'z') {
+      ctx.closePath()
+      curX = startX
+      curY = startY
+      cmd = ''
+      continue
+    }
+
+    if (cmd === 'M' || cmd === 'm') {
+      const x = nextNumber()
+      const y = nextNumber()
+      if (!Number.isFinite(x) || !Number.isFinite(y)) break
+      const absX = cmd === 'm' ? curX + x : x
+      const absY = cmd === 'm' ? curY + y : y
+      ctx.moveTo(absX, absY)
+      curX = absX
+      curY = absY
+      startX = absX
+      startY = absY
+      cmd = cmd === 'm' ? 'l' : 'L'
+      continue
+    }
+
+    if (cmd === 'L' || cmd === 'l') {
+      const x = nextNumber()
+      const y = nextNumber()
+      if (!Number.isFinite(x) || !Number.isFinite(y)) break
+      const absX = cmd === 'l' ? curX + x : x
+      const absY = cmd === 'l' ? curY + y : y
+      ctx.lineTo(absX, absY)
+      curX = absX
+      curY = absY
+      continue
+    }
+
+    if (cmd === 'A' || cmd === 'a') {
+      const rx = nextNumber()
+      const ry = nextNumber()
+      nextNumber() // x-axis rotation
+      nextNumber() // large-arc flag
+      const sweep = nextNumber()
+      const x = nextNumber()
+      const y = nextNumber()
+      if (!Number.isFinite(rx) || !Number.isFinite(ry) || !Number.isFinite(x) || !Number.isFinite(y)) {
+        break
+      }
+      const absX = cmd === 'a' ? curX + x : x
+      const absY = cmd === 'a' ? curY + y : y
+      const r = Math.max(rx, ry)
+      const dx = absX - curX
+      const dy = absY - curY
+      const d = Math.hypot(dx, dy)
+      if (d > 1e-6 && r > 0) {
+        const safeR = Math.max(r, d * 0.5)
+        const nx = dx / d
+        const ny = dy / d
+        const midX = (curX + absX) * 0.5
+        const midY = (curY + absY) * 0.5
+        const h = Math.sqrt(Math.max(0, safeR * safeR - d * d * 0.25))
+        const sweepClockwise = sweep !== 0
+        const sign = sweepClockwise ? 1 : -1
+        const cx = midX - sign * ny * h
+        const cy = midY + sign * nx * h
+        const startAngle = Math.atan2(curY - cy, curX - cx)
+        const endAngle = Math.atan2(absY - cy, absX - cx)
+        ctx.arc(cx, cy, safeR, startAngle, endAngle, !sweepClockwise)
+      } else {
+        ctx.lineTo(absX, absY)
+      }
+      curX = absX
+      curY = absY
+      continue
+    }
+
+    break
+  }
+}
+
+function traceActiveFieldPath(
+  ctx: CanvasRenderingContext2D,
+  field: GlassFieldState,
+  activeCount: number,
+  blendedContourPath: string,
+): void {
+  if (activeCount >= 2 && field.blendK > 0.001 && blendedContourPath.length > 0) {
+    traceSvgPath2d(ctx, blendedContourPath)
+    return
+  }
+  traceActivePrimitives(ctx, field.primitives)
+}
+
 function renderFallback2d(ctx: CanvasRenderingContext2D, frame: OverlayRenderFrame): void {
   const dpr = Math.max(1, frame.dpr)
   const vpW = Math.max(1, frame.viewport.width)
@@ -343,31 +498,38 @@ function renderFallback2d(ctx: CanvasRenderingContext2D, frame: OverlayRenderFra
   ctx.clearRect(0, 0, vpW, vpH)
   if (opacity <= 0.001 || field.primitives.length === 0) return
 
-  let hasActive = false
+  let activeCount = 0
   for (let i = 0; i < field.primitives.length; i++) {
     const p = field.primitives[i]
     if (p.size.width > 0.01 && p.size.height > 0.01) {
-      hasActive = true
-      break
+      activeCount++
     }
   }
-  if (!hasActive) return
+  if (activeCount === 0) return
 
-  // 1. Outside-only drop shadow using evenodd clip to exclude all active primitive interiors
+  const blendedContourPath =
+    activeCount >= 2 && field.blendK > 0.001 ? extractFieldContourPath(field) : ''
+
+  // 1. Outside-only drop shadow: cast union shadow first, then destination-out erase the union interior
+  // so overlapping primitives never invert parity as they would with clip('evenodd').
   if (material.shadowAlpha > 0.001) {
     ctx.save()
-    ctx.beginPath()
-    ctx.rect(0, 0, vpW, vpH)
-    traceActivePrimitives(ctx, field.primitives)
-    ctx.clip('evenodd')
-
     ctx.shadowColor = `rgba(0, 0, 0, ${(material.shadowAlpha * opacity).toFixed(4)})`
     ctx.shadowBlur = material.shadowBlur
     ctx.shadowOffsetX = 0
     ctx.shadowOffsetY = material.shadowOffsetY
     ctx.fillStyle = 'rgba(0, 0, 0, 1)'
     ctx.beginPath()
-    traceActivePrimitives(ctx, field.primitives)
+    traceActiveFieldPath(ctx, field, activeCount, blendedContourPath)
+    ctx.fill()
+
+    ctx.shadowColor = 'rgba(0, 0, 0, 0)'
+    ctx.shadowBlur = 0
+    ctx.shadowOffsetX = 0
+    ctx.shadowOffsetY = 0
+    ctx.globalCompositeOperation = 'destination-out'
+    ctx.beginPath()
+    traceActiveFieldPath(ctx, field, activeCount, blendedContourPath)
     ctx.fill()
     ctx.restore()
   }
@@ -379,7 +541,7 @@ function renderFallback2d(ctx: CanvasRenderingContext2D, frame: OverlayRenderFra
     ctx.lineWidth = material.hairlineWidth
     ctx.strokeStyle = `rgba(0, 0, 0, ${Math.min(1, hairlineAlpha).toFixed(4)})`
     ctx.beginPath()
-    traceActivePrimitives(ctx, field.primitives)
+    traceActiveFieldPath(ctx, field, activeCount, blendedContourPath)
     ctx.stroke()
     ctx.restore()
   }
@@ -392,7 +554,7 @@ function renderFallback2d(ctx: CanvasRenderingContext2D, frame: OverlayRenderFra
     ctx.lineWidth = borderWidth
     ctx.strokeStyle = `rgba(${Math.round(r * 255)}, ${Math.round(g * 255)}, ${Math.round(b * 255)}, ${Math.min(1, a * opacity).toFixed(4)})`
     ctx.beginPath()
-    traceActivePrimitives(ctx, field.primitives)
+    traceActiveFieldPath(ctx, field, activeCount, blendedContourPath)
     ctx.stroke()
     ctx.restore()
   }
@@ -407,7 +569,7 @@ function renderFallback2d(ctx: CanvasRenderingContext2D, frame: OverlayRenderFra
   if (effectiveRim > 0.001) {
     ctx.save()
     ctx.beginPath()
-    traceActivePrimitives(ctx, field.primitives)
+    traceActiveFieldPath(ctx, field, activeCount, blendedContourPath)
     ctx.clip()
 
     const topGrad = ctx.createLinearGradient(0, 0, 0, vpH)
@@ -416,7 +578,7 @@ function renderFallback2d(ctx: CanvasRenderingContext2D, frame: OverlayRenderFra
     ctx.lineWidth = Math.max(1.2, Math.min(2.5, material.rimWidth))
     ctx.strokeStyle = topGrad
     ctx.beginPath()
-    traceActivePrimitives(ctx, field.primitives)
+    traceActiveFieldPath(ctx, field, activeCount, blendedContourPath)
     ctx.stroke()
     ctx.restore()
   }

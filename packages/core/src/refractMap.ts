@@ -141,13 +141,19 @@ let soaHalfH = new Float64Array(0)
 let soaRad = new Float64Array(0)
 let soaInnerW = new Float64Array(0)
 let soaInnerH = new Float64Array(0)
+let soaBezel = new Float64Array(0)
+let soaInvBezel = new Float64Array(0)
 let soaMinX = new Float64Array(0)
 let soaMaxX = new Float64Array(0)
 let soaMinY = new Float64Array(0)
 let soaMaxY = new Float64Array(0)
 let rowDySigned = new Float64Array(0)
+let rowAbsDy = new Float64Array(0)
 let rowQy = new Float64Array(0)
 let rowSy = new Float64Array(0)
+
+// Reusable 2-element scratch vector for corner-bend outward unit gradient without heap allocation.
+const tmpCornerDir = new Float64Array(2)
 
 // Reusable index buffer for active primitives per build, avoiding per-frame array allocations.
 let activeIndicesBuf = new Int32Array(0)
@@ -184,11 +190,14 @@ function ensureSoaCapacity(needed: number): void {
   soaRad = new Float64Array(nextCap)
   soaInnerW = new Float64Array(nextCap)
   soaInnerH = new Float64Array(nextCap)
+  soaBezel = new Float64Array(nextCap)
+  soaInvBezel = new Float64Array(nextCap)
   soaMinX = new Float64Array(nextCap)
   soaMaxX = new Float64Array(nextCap)
   soaMinY = new Float64Array(nextCap)
   soaMaxY = new Float64Array(nextCap)
   rowDySigned = new Float64Array(nextCap)
+  rowAbsDy = new Float64Array(nextCap)
   rowQy = new Float64Array(nextCap)
   rowSy = new Float64Array(nextCap)
 }
@@ -313,6 +322,39 @@ function cornerBend(
   const weight = Math.pow(Math.max(0, 1 - lo / bezel), falloff)
   if (normal <= 1e-6) return x < y ? [weight, 0] : [0, weight]
   return [(nx / normal) * weight, (ny / normal) * weight]
+}
+
+/**
+ * Computes the unit outward gradient matching `cornerBend` inward deflection,
+ * stored into `tmpCornerDir` to avoid per-pixel allocations in blend zones.
+ */
+function computeCornerBendOutwardDir(
+  edgeX: number,
+  edgeY: number,
+  rad: number,
+  bezel: number,
+  falloff: number,
+  sx: number,
+  sy: number,
+  fallbackGx: number,
+  fallbackGy: number,
+): void {
+  const [ox, oy] = cornerBend(
+    edgeX > 0 ? edgeX : 0,
+    edgeY > 0 ? edgeY : 0,
+    rad,
+    bezel,
+    falloff,
+  )
+  const oLen = Math.hypot(ox, oy)
+  if (oLen > 1e-6) {
+    const invO = 1 / oLen
+    tmpCornerDir[0] = sx * ox * invO
+    tmpCornerDir[1] = sy * oy * invO
+  } else {
+    tmpCornerDir[0] = fallbackGx
+    tmpCornerDir[1] = fallbackGy
+  }
 }
 
 function collectActivePrimitiveIndices(primitives: readonly GlassPrimitive[]): number {
@@ -503,6 +545,9 @@ function rasterizeDualShapeScanlines(
   const pRad = Math.max(0, Math.min(shapeA.radius, pHalfW, pHalfH))
   const pInnerW = pHalfW - pRad
   const pInnerH = pHalfH - pRad
+  const pBezel = Math.max(1e-3, Math.min(safeBezel, pHalfW, pHalfH))
+  const pInvBezel = 1 / pBezel
+  const pBendCorners = pRad > 0 && pRad < pBezel
 
   const dCx = shapeB.center.x
   const dCy = shapeB.center.y
@@ -511,32 +556,39 @@ function rasterizeDualShapeScanlines(
   const dRad = Math.max(0, Math.min(shapeB.radius, dHalfW, dHalfH))
   const dInnerW = dHalfW - dRad
   const dInnerH = dHalfH - dRad
-  const effBezel = Math.max(1e-3, Math.min(safeBezel, Math.max(pHalfW, dHalfW), Math.max(pHalfH, dHalfH)))
+  const dBezel = Math.max(1e-3, Math.min(safeBezel, dHalfW, dHalfH))
+  const dInvBezel = 1 / dBezel
+  const dBendCorners = dRad > 0 && dRad < dBezel
 
+  const maxBezel = pBezel > dBezel ? pBezel : dBezel
   const smoothUnion = blendK > 0.001
   const inv2K = smoothUnion ? 0.5 / blendK : 0
-  const invBezel = 1 / effBezel
-  const interiorGate = -Math.max(effBezel, 0.5)
+  const interiorGate = -Math.max(maxBezel, 0.5)
 
   let offset = 0
   for (let py = 0; py < pngH; py++) {
     scanlines[offset++] = 0
     const wy = originY + py * stepY
     const pDy = wy - pCy
+    const pAbsDy = pDy < 0 ? -pDy : pDy
     const pSy = pDy >= 0 ? 1 : -1
-    const pQy = (pDy < 0 ? -pDy : pDy) - pInnerH
+    const pQy = pAbsDy - pInnerH
     const pQyPos = pQy > 0
+    const pEdgeY = pHalfH - pAbsDy
 
     const dDy = wy - dCy
+    const dAbsDy = dDy < 0 ? -dDy : dDy
     const dSy = dDy >= 0 ? 1 : -1
-    const dQy = (dDy < 0 ? -dDy : dDy) - dInnerH
+    const dQy = dAbsDy - dInnerH
     const dQyPos = dQy > 0
+    const dEdgeY = dHalfH - dAbsDy
 
     for (let px = 0; px < pngW; px++) {
       const wx = originX + px * stepX
       const pDx = wx - pCx
+      const pAbsDx = pDx < 0 ? -pDx : pDx
       const pSx = pDx >= 0 ? 1 : -1
-      const pQx = (pDx < 0 ? -pDx : pDx) - pInnerW
+      const pQx = pAbsDx - pInnerW
 
       let sdA: number
       let gAx: number
@@ -563,8 +615,9 @@ function rasterizeDualShapeScanlines(
       }
 
       const dDx = wx - dCx
+      const dAbsDx = dDx < 0 ? -dDx : dDx
       const dSx = dDx >= 0 ? 1 : -1
-      const dQx = (dDx < 0 ? -dDx : dDx) - dInnerW
+      const dQx = dAbsDx - dInnerW
 
       let sdB: number
       let gBx: number
@@ -593,19 +646,62 @@ function rasterizeDualShapeScanlines(
       let sd: number
       let gx: number
       let gy: number
+      let blended = false
+      let winIsA = true
+      let blendH = 1
+
       if (smoothUnion) {
         const h = clamp01(0.5 + (sdB - sdA) * inv2K)
-        sd = sdB + (sdA - sdB) * h - blendK * h * (1 - h)
-        gx = gBx + (gAx - gBx) * h
-        gy = gBy + (gAy - gBy) * h
+        if (h > 0 && h < 1) {
+          blended = true
+          blendH = h
+          sd = sdB + (sdA - sdB) * h - blendK * h * (1 - h)
+
+          let mixAx = gAx
+          let mixAy = gAy
+          if (pBendCorners && sdA < 0 && -sdA < pBezel) {
+            const pEdgeX = pHalfW - pAbsDx
+            if (pEdgeX < pBezel && pEdgeY < pBezel) {
+              computeCornerBendOutwardDir(pEdgeX, pEdgeY, pRad, pBezel, safeFalloff, pSx, pSy, gAx, gAy)
+              mixAx = tmpCornerDir[0]
+              mixAy = tmpCornerDir[1]
+            }
+          }
+
+          let mixBx = gBx
+          let mixBy = gBy
+          if (dBendCorners && sdB < 0 && -sdB < dBezel) {
+            const dEdgeX = dHalfW - dAbsDx
+            if (dEdgeX < dBezel && dEdgeY < dBezel) {
+              computeCornerBendOutwardDir(dEdgeX, dEdgeY, dRad, dBezel, safeFalloff, dSx, dSy, gBx, gBy)
+              mixBx = tmpCornerDir[0]
+              mixBy = tmpCornerDir[1]
+            }
+          }
+
+          gx = mixBx + (mixAx - mixBx) * h
+          gy = mixBy + (mixAy - mixBy) * h
+        } else if (h >= 1) {
+          sd = sdA
+          gx = gAx
+          gy = gAy
+          winIsA = true
+        } else {
+          sd = sdB
+          gx = gBx
+          gy = gBy
+          winIsA = false
+        }
       } else if (sdA <= sdB) {
         sd = sdA
         gx = gAx
         gy = gAy
+        winIsA = true
       } else {
         sd = sdB
         gx = gBx
         gy = gBy
+        winIsA = false
       }
 
       if (sd >= 0.5) {
@@ -621,26 +717,62 @@ function rasterizeDualShapeScanlines(
       } else {
         const distIn = sd < 0 ? -sd : 0
         const alpha = sd <= -0.5 ? 255 : Math.round((0.5 - sd) * 255)
-        if (distIn >= effBezel) {
-          scanlines[offset++] = 128
-          scanlines[offset++] = 128
-          scanlines[offset++] = 128
-          scanlines[offset++] = alpha
-        } else {
-          const gLen = Math.hypot(gx, gy)
-          let nx = 0
-          let ny = 0
-          if (gLen > 1e-6) {
-            const invG = -1 / gLen
-            nx = gx * invG
-            ny = gy * invG
+        if (!blended) {
+          const winBezel = winIsA ? pBezel : dBezel
+          const winInvBezel = winIsA ? pInvBezel : dInvBezel
+          const winRad = winIsA ? pRad : dRad
+          const winEdgeX = winIsA ? pHalfW - pAbsDx : dHalfW - dAbsDx
+          const winEdgeY = winIsA ? pEdgeY : dEdgeY
+          const winSx = winIsA ? pSx : dSx
+          const winSy = winIsA ? pSy : dSy
+          if (winRad > 0 && winRad < winBezel && winEdgeX < winBezel && winEdgeY < winBezel) {
+            const [ox, oy] = cornerBend(
+              winEdgeX > 0 ? winEdgeX : 0,
+              winEdgeY > 0 ? winEdgeY : 0,
+              winRad,
+              winBezel,
+              safeFalloff,
+            )
+            scanlines[offset++] = Math.round(128 - winSx * ox * 127)
+            scanlines[offset++] = Math.round(128 - winSy * oy * 127)
+            scanlines[offset++] = 128
+            scanlines[offset++] = alpha
+          } else if (distIn >= winBezel) {
+            scanlines[offset++] = 128
+            scanlines[offset++] = 128
+            scanlines[offset++] = 128
+            scanlines[offset++] = alpha
+          } else {
+            const m = Math.pow(Math.max(0, 1 - distIn * winInvBezel), safeFalloff)
+            const amp = m * 127
+            scanlines[offset++] = Math.round(128 - gx * amp)
+            scanlines[offset++] = Math.round(128 - gy * amp)
+            scanlines[offset++] = 128
+            scanlines[offset++] = alpha
           }
-          const m = Math.pow(Math.max(0, 1 - distIn * invBezel), safeFalloff)
-          const amp = m * 127
-          scanlines[offset++] = Math.round(128 + nx * amp)
-          scanlines[offset++] = Math.round(128 + ny * amp)
-          scanlines[offset++] = 128
-          scanlines[offset++] = alpha
+        } else {
+          const blendBezel = dBezel + (pBezel - dBezel) * blendH
+          if (distIn >= blendBezel) {
+            scanlines[offset++] = 128
+            scanlines[offset++] = 128
+            scanlines[offset++] = 128
+            scanlines[offset++] = alpha
+          } else {
+            const gLen = Math.hypot(gx, gy)
+            let nx = 0
+            let ny = 0
+            if (gLen > 1e-6) {
+              const invG = -1 / gLen
+              nx = gx * invG
+              ny = gy * invG
+            }
+            const m = Math.pow(Math.max(0, 1 - distIn / blendBezel), safeFalloff)
+            const amp = m * 127
+            scanlines[offset++] = Math.round(128 + nx * amp)
+            scanlines[offset++] = Math.round(128 + ny * amp)
+            scanlines[offset++] = 128
+            scanlines[offset++] = alpha
+          }
         }
       }
     }
@@ -663,8 +795,7 @@ function rasterizeMultiShapeScanlines(
 ): void {
   ensureSoaCapacity(activeCount)
 
-  let maxHalfW = 0.001
-  let maxHalfH = 0.001
+  let maxBezel = 1e-3
   for (let i = 0; i < activeCount; i++) {
     const p = primitives[activeIndicesBuf[i]]
     const cx = p.center.x
@@ -672,6 +803,7 @@ function rasterizeMultiShapeScanlines(
     const halfW = Math.max(0.001, p.size.width * 0.5)
     const halfH = Math.max(0.001, p.size.height * 0.5)
     const rad = Math.max(0, Math.min(p.radius, halfW, halfH))
+    const localBezel = Math.max(1e-3, Math.min(safeBezel, halfW, halfH))
     soaCx[i] = cx
     soaCy[i] = cy
     soaHalfW[i] = halfW
@@ -679,20 +811,19 @@ function rasterizeMultiShapeScanlines(
     soaRad[i] = rad
     soaInnerW[i] = halfW - rad
     soaInnerH[i] = halfH - rad
+    soaBezel[i] = localBezel
+    soaInvBezel[i] = 1 / localBezel
     soaMinX[i] = cx - halfW
     soaMaxX[i] = cx + halfW
     soaMinY[i] = cy - halfH
     soaMaxY[i] = cy + halfH
-    if (halfW > maxHalfW) maxHalfW = halfW
-    if (halfH > maxHalfH) maxHalfH = halfH
+    if (localBezel > maxBezel) maxBezel = localBezel
   }
 
-  const effBezel = Math.max(1e-3, Math.min(safeBezel, maxHalfW, maxHalfH))
   const smoothUnion = blendK > 0.001
   const effectiveBlendK = smoothUnion ? blendK : 0
   const inv2K = smoothUnion ? 0.5 / blendK : 0
-  const invBezel = 1 / effBezel
-  const interiorGate = -Math.max(effBezel, 0.5)
+  const interiorGate = -Math.max(maxBezel, 0.5)
   const outerThreshold = 0.5 + effectiveBlendK
   const outerThresholdSq = outerThreshold * outerThreshold
 
@@ -708,6 +839,7 @@ function rasterizeMultiShapeScanlines(
     for (let i = 0; i < activeCount; i++) {
       const dy = wy - soaCy[i]
       const absDy = dy < 0 ? -dy : dy
+      rowAbsDy[i] = absDy
       rowSy[i] = dy >= 0 ? 1 : -1
       rowQy[i] = absDy - soaInnerH[i]
       const dySigned = absDy - soaHalfH[i]
@@ -745,8 +877,9 @@ function rasterizeMultiShapeScanlines(
 
       // Initialize accumulator with primitive 0.
       const dx0 = wx - soaCx[0]
+      const absDx0 = dx0 < 0 ? -dx0 : dx0
       const sx0 = dx0 >= 0 ? 1 : -1
-      const qx0 = (dx0 < 0 ? -dx0 : dx0) - soaInnerW[0]
+      const qx0 = absDx0 - soaInnerW[0]
       const qy0 = rowQy[0]
       const sy0 = rowSy[0]
       const rad0 = soaRad[0]
@@ -774,6 +907,12 @@ function rasterizeMultiShapeScanlines(
         accGx = 0
         accGy = sy0
       }
+
+      let blended = false
+      let winIdx = 0
+      let winAbsDx = absDx0
+      let winSx = sx0
+      let accBezel = soaBezel[0]
 
       // Fold remaining primitives in order after signed AABB lower-bound pruning.
       for (let i = 1; i < activeCount; i++) {
@@ -828,22 +967,75 @@ function rasterizeMultiShapeScanlines(
 
         if (smoothUnion) {
           const h = clamp01(0.5 + (sdB - accDist) * inv2K)
-          accDist = sdB + (accDist - sdB) * h - blendK * h * (1 - h)
-          const mx = gBx + (accGx - gBx) * h
-          const my = gBy + (accGy - gBy) * h
-          const mLen = Math.hypot(mx, my)
-          if (mLen > 1e-6) {
-            const invM = 1 / mLen
-            accGx = mx * invM
-            accGy = my * invM
-          } else {
-            accGx = 0
-            accGy = 0
+          if (h > 0 && h < 1) {
+            // Apply cornerBend to the previously dominant single primitive when entering a blend zone.
+            if (!blended) {
+              const wBezel = soaBezel[winIdx]
+              const wRad = soaRad[winIdx]
+              if (wRad > 0 && wRad < wBezel && accDist < 0 && -accDist < wBezel) {
+                const wEdgeX = soaHalfW[winIdx] - winAbsDx
+                const wEdgeY = soaHalfH[winIdx] - rowAbsDy[winIdx]
+                if (wEdgeX < wBezel && wEdgeY < wBezel) {
+                  computeCornerBendOutwardDir(
+                    wEdgeX,
+                    wEdgeY,
+                    wRad,
+                    wBezel,
+                    safeFalloff,
+                    winSx,
+                    rowSy[winIdx],
+                    accGx,
+                    accGy,
+                  )
+                  accGx = tmpCornerDir[0]
+                  accGy = tmpCornerDir[1]
+                }
+              }
+              blended = true
+            }
+
+            const bBezel = soaBezel[i]
+            if (rad > 0 && rad < bBezel && sdB < 0 && -sdB < bBezel) {
+              const bEdgeX = soaHalfW[i] - absDx
+              const bEdgeY = soaHalfH[i] - rowAbsDy[i]
+              if (bEdgeX < bBezel && bEdgeY < bBezel) {
+                computeCornerBendOutwardDir(bEdgeX, bEdgeY, rad, bBezel, safeFalloff, sx, sy, gBx, gBy)
+                gBx = tmpCornerDir[0]
+                gBy = tmpCornerDir[1]
+              }
+            }
+
+            accDist = sdB + (accDist - sdB) * h - blendK * h * (1 - h)
+            accBezel = bBezel + (accBezel - bBezel) * h
+            const mx = gBx + (accGx - gBx) * h
+            const my = gBy + (accGy - gBy) * h
+            const mLen = Math.hypot(mx, my)
+            if (mLen > 1e-6) {
+              const invM = 1 / mLen
+              accGx = mx * invM
+              accGy = my * invM
+            } else {
+              accGx = 0
+              accGy = 0
+            }
+          } else if (h <= 0) {
+            accDist = sdB
+            accGx = gBx
+            accGy = gBy
+            accBezel = soaBezel[i]
+            winIdx = i
+            winAbsDx = absDx
+            winSx = sx
+            blended = false
           }
         } else if (sdB < accDist) {
           accDist = sdB
           accGx = gBx
           accGy = gBy
+          accBezel = soaBezel[i]
+          winIdx = i
+          winAbsDx = absDx
+          winSx = sx
         }
       }
 
@@ -860,7 +1052,37 @@ function rasterizeMultiShapeScanlines(
       } else {
         const distIn = accDist < 0 ? -accDist : 0
         const alpha = accDist <= -0.5 ? 255 : Math.round((0.5 - accDist) * 255)
-        if (distIn >= effBezel) {
+        if (!blended) {
+          const winBezel = soaBezel[winIdx]
+          const winRad = soaRad[winIdx]
+          const winEdgeX = soaHalfW[winIdx] - winAbsDx
+          const winEdgeY = soaHalfH[winIdx] - rowAbsDy[winIdx]
+          if (winRad > 0 && winRad < winBezel && winEdgeX < winBezel && winEdgeY < winBezel) {
+            const [ox, oy] = cornerBend(
+              winEdgeX > 0 ? winEdgeX : 0,
+              winEdgeY > 0 ? winEdgeY : 0,
+              winRad,
+              winBezel,
+              safeFalloff,
+            )
+            scanlines[offset++] = Math.round(128 - winSx * ox * 127)
+            scanlines[offset++] = Math.round(128 - rowSy[winIdx] * oy * 127)
+            scanlines[offset++] = 128
+            scanlines[offset++] = alpha
+          } else if (distIn >= winBezel) {
+            scanlines[offset++] = 128
+            scanlines[offset++] = 128
+            scanlines[offset++] = 128
+            scanlines[offset++] = alpha
+          } else {
+            const m = Math.pow(Math.max(0, 1 - distIn * soaInvBezel[winIdx]), safeFalloff)
+            const amp = m * 127
+            scanlines[offset++] = Math.round(128 - accGx * amp)
+            scanlines[offset++] = Math.round(128 - accGy * amp)
+            scanlines[offset++] = 128
+            scanlines[offset++] = alpha
+          }
+        } else if (distIn >= accBezel) {
           scanlines[offset++] = 128
           scanlines[offset++] = 128
           scanlines[offset++] = 128
@@ -874,7 +1096,7 @@ function rasterizeMultiShapeScanlines(
             nx = accGx * invG
             ny = accGy * invG
           }
-          const m = Math.pow(Math.max(0, 1 - distIn * invBezel), safeFalloff)
+          const m = Math.pow(Math.max(0, 1 - distIn / accBezel), safeFalloff)
           const amp = m * 127
           scanlines[offset++] = Math.round(128 + nx * amp)
           scanlines[offset++] = Math.round(128 + ny * amp)

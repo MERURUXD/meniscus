@@ -232,15 +232,68 @@ export function parseCssRgba(color: string): [number, number, number, number] {
   return [0, 0, 0, 0]
 }
 
-/** Extracts `brightness(...)` and `contrast(...)` products and application order from a CSS filter string. */
+const VEIL_SINGULAR_EPS = 1e-6
+
+function veilOpticsToAffine(veil: BackdropVeilOptics): { scale: number; offset: number } {
+  const scale = veil.brightness * veil.contrast
+  const offset = veil.contrastFirst
+    ? veil.brightness * 0.5 * (1 - veil.contrast)
+    : 0.5 * (1 - veil.contrast)
+  return { scale, offset }
+}
+
+function affineToVeilOptics(
+  scale: number,
+  offset: number,
+  preferBrightnessFirst: boolean,
+): BackdropVeilOptics {
+  const canBrightnessFirst = Math.abs(1 - 2 * offset) > VEIL_SINGULAR_EPS
+  const canContrastFirst = Math.abs(scale + 2 * offset) > VEIL_SINGULAR_EPS
+
+  if (preferBrightnessFirst && canBrightnessFirst) {
+    const contrast = 1 - 2 * offset
+    return {
+      brightness: scale / contrast,
+      contrast,
+      contrastFirst: false,
+    }
+  }
+
+  if (canContrastFirst) {
+    const brightness = scale + 2 * offset
+    return {
+      brightness,
+      contrast: scale / brightness,
+      contrastFirst: true,
+    }
+  }
+
+  if (canBrightnessFirst) {
+    const contrast = 1 - 2 * offset
+    return {
+      brightness: scale / contrast,
+      contrast,
+      contrastFirst: false,
+    }
+  }
+
+  // Degenerate singular point (scale ~ -1, offset ~ 0.5) has no finite factorization.
+  return {
+    brightness: 0,
+    contrast: 0,
+    contrastFirst: !preferBrightnessFirst,
+  }
+}
+
+/** Extracts `brightness(...)` and `contrast(...)` affine composition from a CSS filter string. */
 export function parseCssFilterOptics(filterStr: string): BackdropVeilOptics {
   if (!filterStr || filterStr === 'none') {
     return { brightness: 1, contrast: 1, contrastFirst: false }
   }
-  let brightness = 1
-  let contrast = 1
-  let firstBrightnessIdx = -1
-  let firstContrastIdx = -1
+  let scale = 1
+  let offset = 0
+  let hasSeenContrast = false
+  let allBrightnessBeforeFirstContrast = true
 
   const regex = /(brightness|contrast)\(\s*([^)]+)\s*\)/gi
   let match: RegExpExecArray | null
@@ -250,34 +303,35 @@ export function parseCssFilterOptics(filterStr: string): BackdropVeilOptics {
     const val = raw.endsWith('%') ? parseFloat(raw) / 100 : parseFloat(raw)
     if (!Number.isFinite(val)) continue
     if (fn === 'brightness') {
-      brightness *= val
-      if (firstBrightnessIdx < 0) firstBrightnessIdx = match.index
+      scale *= val
+      offset *= val
+      if (hasSeenContrast) {
+        allBrightnessBeforeFirstContrast = false
+      }
     } else {
-      contrast *= val
-      if (firstContrastIdx < 0) firstContrastIdx = match.index
+      scale *= val
+      offset = offset * val + 0.5 * (1 - val)
+      hasSeenContrast = true
     }
   }
 
-  return {
-    brightness,
-    contrast,
-    contrastFirst:
-      firstContrastIdx >= 0 && firstBrightnessIdx >= 0 && firstContrastIdx < firstBrightnessIdx,
-  }
+  return affineToVeilOptics(scale, offset, allBrightnessBeforeFirstContrast)
 }
 
-/** Linearly interpolates two backdrop veil optics states at `t` in `[0, 1]`. */
+/** Linearly interpolates two backdrop veil optics states in 1D affine `(scale, offset)` space. */
 export function interpolateVeilOptics(
   from: BackdropVeilOptics,
   to: BackdropVeilOptics,
   t: number,
 ): BackdropVeilOptics {
   const u = clamp(t, 0, 1)
-  return {
-    brightness: lerp(from.brightness, to.brightness, u),
-    contrast: lerp(from.contrast, to.contrast, u),
-    contrastFirst: u >= 0.5 ? to.contrastFirst : from.contrastFirst,
-  }
+  const a = veilOpticsToAffine(from)
+  const b = veilOpticsToAffine(to)
+  const scale = lerp(a.scale, b.scale, u)
+  const offset = lerp(a.offset, b.offset, u)
+  const preferBrightnessFirst =
+    from.contrastFirst === to.contrastFirst ? !from.contrastFirst : false
+  return affineToVeilOptics(scale, offset, preferBrightnessFirst)
 }
 
 function splitTopLevelCommas(input: string): string[] {
@@ -487,7 +541,7 @@ export function interpolateCssGlassSurfaceToMaterial(
 
   return {
     ...baseMaterial,
-    borderWidth: Math.max(from.borderWidth, to.borderWidth),
+    borderWidth: lerp(from.borderWidth, to.borderWidth, t),
     borderRgba: [
       lerp(from.borderRgba[0], to.borderRgba[0], t),
       lerp(from.borderRgba[1], to.borderRgba[1], t),

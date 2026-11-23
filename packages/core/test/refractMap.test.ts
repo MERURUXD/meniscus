@@ -384,3 +384,107 @@ test('refractMap: signed AABB pruning preserves deep overlap bevel band when acc
     }
   }
 })
+
+test('refractMap: unblended cornerBend and local bezel stay pixel-identical to N=1 when distant N=2/N=3 primitives are added', () => {
+  const builder = createRefractMapBuilder()
+  const bounds = { x: 0, y: 0, width: 120, height: 120 }
+  const primary: GlassPrimitive = { center: { x: 60, y: 60 }, size: { width: 100, height: 100 }, radius: 4 }
+  const farSame: GlassPrimitive = { center: { x: 500, y: 500 }, size: { width: 100, height: 100 }, radius: 4 }
+  const farSmall: GlassPrimitive = { center: { x: 500, y: 500 }, size: { width: 20, height: 20 }, radius: 4 }
+  const farLarge: GlassPrimitive = { center: { x: 500, y: 500 }, size: { width: 200, height: 200 }, radius: 4 }
+
+  const png1 = decodeStoredRgbaPng(
+    builder.build({ bounds, field: { primitives: [primary], blendK: 20 }, bezel: 20, mapScale: 1 }).dataUrl,
+  )
+  const corner14 = png1.pixelAt(14, 14)
+  assert.ok(corner14.r > 128 && corner14.g > 128 && corner14.a === 255)
+
+  const variants: Array<{ label: string; primitives: GlassPrimitive[] }> = [
+    { label: 'N=2 farSame', primitives: [primary, farSame] },
+    { label: 'N=3 farSame+farSmall', primitives: [primary, farSame, farSmall] },
+    { label: 'N=2 farLarge', primitives: [primary, farLarge] },
+    { label: 'N=2 farSmall', primitives: [primary, farSmall] },
+    { label: 'N=3 reversed order', primitives: [farLarge, primary, farSmall] },
+  ]
+
+  for (const variant of variants) {
+    const pngN = decodeStoredRgbaPng(
+      builder.build({
+        bounds,
+        field: { primitives: variant.primitives, blendK: 20 },
+        bezel: 20,
+        mapScale: 1,
+      }).dataUrl,
+    )
+    assert.deepEqual(
+      pngN.pixelAt(14, 14),
+      corner14,
+      `${variant.label}: corner pixel (14,14) must match N=1 exactly`,
+    )
+    for (let py = 0; py < 120; py++) {
+      for (let px = 0; px < 120; px++) {
+        assert.deepEqual(
+          pngN.pixelAt(px, py),
+          png1.pixelAt(px, py),
+          `${variant.label}: pixel (${px},${py}) must match N=1`,
+        )
+      }
+    }
+  }
+
+  // Also verify a smaller 20x20 primary (local bezel=10) is unaffected by a distant 200x200 primitive (bezel=20)
+  const smallPrimary: GlassPrimitive = { center: { x: 60, y: 60 }, size: { width: 20, height: 20 }, radius: 4 }
+  const smallPng1 = decodeStoredRgbaPng(
+    builder.build({ bounds, field: { primitives: [smallPrimary], blendK: 20 }, bezel: 20, mapScale: 1 }).dataUrl,
+  )
+  const smallPng2 = decodeStoredRgbaPng(
+    builder.build({
+      bounds,
+      field: { primitives: [smallPrimary, farLarge], blendK: 20 },
+      bezel: 20,
+      mapScale: 1,
+    }).dataUrl,
+  )
+  const smallPng3 = decodeStoredRgbaPng(
+    builder.build({
+      bounds,
+      field: { primitives: [farLarge, smallPrimary, farSmall], blendK: 20 },
+      bezel: 20,
+      mapScale: 1,
+    }).dataUrl,
+  )
+  for (let py = 45; py <= 75; py++) {
+    for (let px = 45; px <= 75; px++) {
+      assert.deepEqual(smallPng2.pixelAt(px, py), smallPng1.pixelAt(px, py))
+      assert.deepEqual(smallPng3.pixelAt(px, py), smallPng1.pixelAt(px, py))
+    }
+  }
+})
+
+test('refractMap: blend-zone cornerBend smoothing avoids abrupt normal jumps across the blend boundary', () => {
+  const builder = createRefractMapBuilder()
+  const bounds = { x: 0, y: 0, width: 140, height: 120 }
+  const a: GlassPrimitive = { center: { x: 50, y: 60 }, size: { width: 60, height: 80 }, radius: 4 }
+  const b: GlassPrimitive = { center: { x: 95, y: 60 }, size: { width: 50, height: 60 }, radius: 4 }
+
+  const png = decodeStoredRgbaPng(
+    builder.build({
+      bounds,
+      field: { primitives: [a, b], blendK: 20 },
+      bezel: 20,
+      mapScale: 1,
+    }).dataUrl,
+  )
+
+  // Near top-left corner of primitive a (x=20..39, y=20..39), verify smooth transition across x=52..62
+  // without sudden single-pixel sign inversions in horizontal/vertical displacement.
+  let prev = png.pixelAt(48, 24)
+  for (let px = 49; px <= 64; px++) {
+    const cur = png.pixelAt(px, 24)
+    assert.ok(
+      Math.abs(cur.r - prev.r) <= 28 && Math.abs(cur.g - prev.g) <= 28,
+      `excessive jump at (${px},24): ${JSON.stringify(prev)} -> ${JSON.stringify(cur)}`,
+    )
+    prev = cur
+  }
+})

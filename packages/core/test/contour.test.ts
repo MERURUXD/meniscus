@@ -186,3 +186,113 @@ test('N=3 and N=8 extracted vertices against evaluateFieldDistance with offset',
   }
   assert.ok(maxErr < gridStep * 0.1, `Max zero-isosurface error with offset (${maxErr}) should be well below grid step ${gridStep}`)
 })
+
+/** Parses command endpoints from M/L/A/Z SVG subpaths. */
+function parseSubpathEndpoints(sub: string): Point[] {
+  const tokens = sub.match(/[MLAZ]|-?\d+(?:\.\d+)?/g) ?? []
+  const pts: Point[] = []
+  let i = 0
+  while (i < tokens.length) {
+    const cmd = tokens[i]
+    if (cmd === 'M' || cmd === 'L') {
+      const x = Number(tokens[i + 1])
+      const y = Number(tokens[i + 2])
+      assert.ok(Number.isFinite(x) && Number.isFinite(y), `Invalid coordinates: ${sub}`)
+      pts.push({ x, y })
+      i += 3
+    } else if (cmd === 'A') {
+      const x = Number(tokens[i + 6])
+      const y = Number(tokens[i + 7])
+      assert.ok(Number.isFinite(x) && Number.isFinite(y), `Invalid arc endpoint: ${sub}`)
+      pts.push({ x, y })
+      i += 8
+    } else {
+      i += 1
+    }
+  }
+  return pts
+}
+
+test('distant small primitive is preserved without grid undersampling (Codex P1 regression)', () => {
+  const field: GlassFieldState = {
+    primitives: [
+      { center: { x: 100, y: 100 }, size: { width: 80, height: 60 }, radius: 16 },
+      { center: { x: 3840, y: 100 }, size: { width: 16, height: 16 }, radius: 8 },
+    ],
+    blendK: 28,
+  }
+
+  const path = extractFieldContourPath(field)
+  assertClosedValidPath(path, 2)
+
+  const subpaths = path.match(/M[^Z]*Z/g) ?? []
+  assert.equal(subpaths.length, 2)
+
+  const capsulePts = parseSubpathEndpoints(subpaths[1]!)
+  assert.ok(capsulePts.length >= 4)
+  for (const pt of capsulePts) {
+    assert.ok(
+      pt.x >= 3832 && pt.x <= 3848 && pt.y >= 92 && pt.y <= 108,
+      `Expected small capsule endpoint near (3840, 100), got (${pt.x}, ${pt.y})`,
+    )
+  }
+})
+
+test('mixed bridged cluster plus distant small capsule extracts 2 valid closed loops', () => {
+  const field: GlassFieldState = {
+    primitives: [
+      { center: { x: 100, y: 100 }, size: { width: 80, height: 60 }, radius: 16 },
+      { center: { x: 165, y: 100 }, size: { width: 44, height: 44 }, radius: 22 },
+      { center: { x: 3840, y: 100 }, size: { width: 16, height: 16 }, radius: 8 },
+    ],
+    blendK: 28,
+  }
+
+  const path = extractFieldContourPath(field)
+  assertClosedValidPath(path, 2)
+
+  const subpaths = path.match(/M[^Z]*Z/g) ?? []
+  assert.equal(subpaths.length, 2)
+
+  // First loop is the Marching Squares bridged contour covering both left primitives.
+  const bridgePts = parsePolygonLoops(subpaths[0]!)[0]!
+  assert.ok(bridgePts.length >= 12)
+  for (const pt of bridgePts) {
+    assert.ok(pt.x > 40 && pt.x < 210, `Unexpected bridge vertex x=${pt.x}`)
+  }
+
+  // Second loop is the distant 16x16 capsule around (3840, 100).
+  const capsulePts = parseSubpathEndpoints(subpaths[1]!)
+  assert.ok(capsulePts.length >= 4)
+  for (const pt of capsulePts) {
+    assert.ok(
+      pt.x >= 3832 && pt.x <= 3848 && pt.y >= 92 && pt.y <= 108,
+      `Expected small capsule endpoint near (3840, 100), got (${pt.x}, ${pt.y})`,
+    )
+  }
+})
+
+test('isolated island inside concave L-shaped cluster AABB is not duplicated', () => {
+  const field: GlassFieldState = {
+    primitives: [
+      { center: { x: 0, y: 0 }, size: { width: 40, height: 40 }, radius: 10 },
+      { center: { x: 0, y: 50 }, size: { width: 40, height: 40 }, radius: 10 },
+      { center: { x: 50, y: 0 }, size: { width: 40, height: 40 }, radius: 10 },
+      { center: { x: 65, y: 65 }, size: { width: 20, height: 20 }, radius: 10 },
+    ],
+    blendK: 28,
+  }
+
+  const path = extractFieldContourPath(field)
+  assertClosedValidPath(path, 2)
+})
+
+test('dynamic cluster buffer expansion supports more than 16 active primitives', () => {
+  const primitives: GlassPrimitive[] = Array.from({ length: 20 }, (_, i) => ({
+    center: { x: i * 120, y: 100 },
+    size: { width: 24, height: 24 },
+    radius: 12,
+  }))
+  const path = extractFieldContourPath({ primitives, blendK: 28 })
+  assertClosedValidPath(path, 20)
+})

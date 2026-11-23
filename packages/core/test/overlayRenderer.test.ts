@@ -8,6 +8,7 @@
 
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { extractFieldContourPath, formatRoundedRectPath } from '../src/contour.ts'
 import {
   DEFAULT_OPTICAL_MATERIALS,
   MAX_GPU_PRIMITIVES,
@@ -18,6 +19,7 @@ import {
   OVERLAY_FRAGMENT_SHADER,
   OVERLAY_VERTEX_SHADER,
   createGlassOverlayRenderer,
+  traceSvgPath2d,
 } from '../src/overlayRenderer.ts'
 
 function createPrimitive(index: number): GlassPrimitive {
@@ -310,20 +312,34 @@ test('overlayRenderer: WebGL2 mount, N=0/1/3/16 and >16 truncation uniform uploa
   assert.equal(listeners.size, 0, 'dispose must remove context listeners')
 })
 
-test('overlayRenderer: 2D Canvas automatic fallback renders N-primitive shadows, hairlines, borders, and rim catchlights', () => {
+interface Mock2dState {
+  ctx: Record<string, unknown>
+  calls: Array<[string, ...unknown[]]>
+  fillSnapshots: Array<{
+    globalCompositeOperation: string
+    shadowColor: string
+    shadowBlur: number
+    shadowOffsetX: number
+    shadowOffsetY: number
+  }>
+}
+
+function createMock2d(): Mock2dState {
   const calls: Array<[string, ...unknown[]]> = []
-  const fake2d = {
-    setTransform: (...a: unknown[]) => calls.push(['setTransform', ...a]),
-    clearRect: (...a: unknown[]) => calls.push(['clearRect', ...a]),
-    save: () => calls.push(['save']),
-    restore: () => calls.push(['restore']),
-    beginPath: () => calls.push(['beginPath']),
-    rect: (...a: unknown[]) => calls.push(['rect', ...a]),
-    roundRect: (...a: unknown[]) => calls.push(['roundRect', ...a]),
-    clip: (...a: unknown[]) => calls.push(['clip', ...a]),
-    fill: () => calls.push(['fill']),
-    stroke: () => calls.push(['stroke']),
-    createLinearGradient: () => ({ addColorStop() {} }),
+  const fillSnapshots: Mock2dState['fillSnapshots'] = []
+  const stack: Array<{
+    globalCompositeOperation: string
+    shadowColor: string
+    shadowBlur: number
+    shadowOffsetX: number
+    shadowOffsetY: number
+    fillStyle: string
+    strokeStyle: string
+    lineWidth: number
+  }> = []
+
+  const ctx: Record<string, unknown> = {
+    globalCompositeOperation: 'source-over',
     shadowColor: '',
     shadowBlur: 0,
     shadowOffsetX: 0,
@@ -331,7 +347,62 @@ test('overlayRenderer: 2D Canvas automatic fallback renders N-primitive shadows,
     fillStyle: '',
     strokeStyle: '',
     lineWidth: 0,
+    setTransform: (...a: unknown[]) => calls.push(['setTransform', ...a]),
+    clearRect: (...a: unknown[]) => calls.push(['clearRect', ...a]),
+    save: () => {
+      stack.push({
+        globalCompositeOperation: String(ctx.globalCompositeOperation),
+        shadowColor: String(ctx.shadowColor),
+        shadowBlur: Number(ctx.shadowBlur),
+        shadowOffsetX: Number(ctx.shadowOffsetX),
+        shadowOffsetY: Number(ctx.shadowOffsetY),
+        fillStyle: String(ctx.fillStyle),
+        strokeStyle: String(ctx.strokeStyle),
+        lineWidth: Number(ctx.lineWidth),
+      })
+      calls.push(['save'])
+    },
+    restore: () => {
+      const prev = stack.pop()
+      if (prev) {
+        ctx.globalCompositeOperation = prev.globalCompositeOperation
+        ctx.shadowColor = prev.shadowColor
+        ctx.shadowBlur = prev.shadowBlur
+        ctx.shadowOffsetX = prev.shadowOffsetX
+        ctx.shadowOffsetY = prev.shadowOffsetY
+        ctx.fillStyle = prev.fillStyle
+        ctx.strokeStyle = prev.strokeStyle
+        ctx.lineWidth = prev.lineWidth
+      }
+      calls.push(['restore'])
+    },
+    beginPath: () => calls.push(['beginPath']),
+    rect: (...a: unknown[]) => calls.push(['rect', ...a]),
+    roundRect: (...a: unknown[]) => calls.push(['roundRect', ...a]),
+    moveTo: (...a: unknown[]) => calls.push(['moveTo', ...a]),
+    lineTo: (...a: unknown[]) => calls.push(['lineTo', ...a]),
+    arc: (...a: unknown[]) => calls.push(['arc', ...a]),
+    closePath: () => calls.push(['closePath']),
+    clip: (...a: unknown[]) => calls.push(['clip', ...a]),
+    fill: (...a: unknown[]) => {
+      fillSnapshots.push({
+        globalCompositeOperation: String(ctx.globalCompositeOperation),
+        shadowColor: String(ctx.shadowColor),
+        shadowBlur: Number(ctx.shadowBlur),
+        shadowOffsetX: Number(ctx.shadowOffsetX),
+        shadowOffsetY: Number(ctx.shadowOffsetY),
+      })
+      calls.push(['fill', ...a])
+    },
+    stroke: () => calls.push(['stroke']),
+    createLinearGradient: () => ({ addColorStop() {} }),
   }
+
+  return { ctx, calls, fillSnapshots }
+}
+
+test('overlayRenderer: 2D Canvas automatic fallback renders N-primitive shadows, hairlines, borders, and rim catchlights', () => {
+  const mock2d = createMock2d()
 
   // Verify WebGL2 compile failure also falls back automatically to 2D Canvas
   const failingGl = createMockWebGL2({ failCompile: true })
@@ -341,7 +412,7 @@ test('overlayRenderer: 2D Canvas automatic fallback renders N-primitive shadows,
     height: 10,
     addEventListener: (k: string, fn: () => void) => listeners.set(k, fn),
     removeEventListener: (k: string) => listeners.delete(k),
-    getContext: (kind: string) => (kind === 'webgl2' ? failingGl.gl : kind === '2d' ? fake2d : null),
+    getContext: (kind: string) => (kind === 'webgl2' ? failingGl.gl : kind === '2d' ? mock2d.ctx : null),
   } as unknown as HTMLCanvasElement
 
   const renderer = createGlassOverlayRenderer()
@@ -354,6 +425,12 @@ test('overlayRenderer: 2D Canvas automatic fallback renders N-primitive shadows,
 
   renderer.render(
     makeFrame([three[0], degenerate, three[1], three[2]], {
+      field: {
+        primitives: [three[0], degenerate, three[1], three[2]],
+        blendK: 0,
+        rimOpacity: 0.85,
+        styleMix: 0.6,
+      },
       material: {
         ...DEFAULT_OPTICAL_MATERIALS.dark.frosted,
         borderWidth: 1,
@@ -364,23 +441,141 @@ test('overlayRenderer: 2D Canvas automatic fallback renders N-primitive shadows,
 
   assert.equal(mockCanvas.width, 800)
   assert.equal(mockCanvas.height, 600)
-  assert.ok(calls.some((c) => c[0] === 'clip' && c[1] === 'evenodd'))
-  // Shadow (clip + fill), hairline, uniform border, rim (clip + stroke) = 6 passes x 3 active primitives => 18 roundRect calls
-  const roundRectCalls = calls.filter((c) => c[0] === 'roundRect')
+  assert.equal(mock2d.calls.some((c) => c[0] === 'clip' && c[1] === 'evenodd'), false)
+  assert.equal(mock2d.fillSnapshots.length, 2)
+  assert.equal(mock2d.fillSnapshots[0]?.globalCompositeOperation, 'source-over')
+  assert.equal(mock2d.fillSnapshots[1]?.globalCompositeOperation, 'destination-out')
+  // Shadow (fill + destination-out erase), hairline, uniform border, rim (clip + stroke) = 6 passes x 3 active primitives => 18 roundRect calls
+  const roundRectCalls = mock2d.calls.filter((c) => c[0] === 'roundRect')
   assert.equal(roundRectCalls.length, 18)
-  assert.equal(calls.filter((c) => c[0] === 'stroke').length, 3)
+  assert.equal(mock2d.calls.filter((c) => c[0] === 'stroke').length, 3)
 
   // N=0 clears without drawing roundRect
-  calls.length = 0
+  mock2d.calls.length = 0
   renderer.render(makeFrame([]))
-  assert.ok(calls.some((c) => c[0] === 'clearRect'))
-  assert.equal(calls.filter((c) => c[0] === 'roundRect').length, 0)
+  assert.ok(mock2d.calls.some((c) => c[0] === 'clearRect'))
+  assert.equal(mock2d.calls.filter((c) => c[0] === 'roundRect').length, 0)
 
   // clear() invokes clearRect
-  calls.length = 0
+  mock2d.calls.length = 0
   renderer.clear()
-  assert.ok(calls.some((c) => c[0] === 'clearRect'))
+  assert.ok(mock2d.calls.some((c) => c[0] === 'clearRect'))
 
   renderer.dispose()
   assert.equal(listeners.size, 0)
+})
+
+test('overlayRenderer: 2D fallback erases overlapping primitive shadow interiors with destination-out instead of clip(evenodd)', () => {
+  const mock2d = createMock2d()
+  const mockCanvas = {
+    width: 10,
+    height: 10,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    getContext: (kind: string) => (kind === '2d' ? mock2d.ctx : null),
+  } as unknown as HTMLCanvasElement
+
+  const renderer = createGlassOverlayRenderer()
+  renderer.mount(mockCanvas)
+
+  const overlapping: GlassPrimitive[] = [
+    { id: 'a', center: { x: 80, y: 80 }, size: { width: 60, height: 60 }, radius: 12 },
+    { id: 'b', center: { x: 100, y: 80 }, size: { width: 60, height: 60 }, radius: 12 },
+  ]
+
+  renderer.render(
+    makeFrame(overlapping, {
+      field: { primitives: overlapping, blendK: 0 },
+      material: {
+        ...DEFAULT_OPTICAL_MATERIALS.dark.frosted,
+        shadowAlpha: 0.35,
+        shadowBlur: 18,
+        shadowOffsetY: 6,
+      },
+    }),
+  )
+
+  assert.equal(
+    mock2d.calls.some((c) => c[0] === 'clip' && c[1] === 'evenodd'),
+    false,
+    'must never use clip(evenodd) for overlapping primitive shadows',
+  )
+  assert.equal(mock2d.fillSnapshots.length, 2)
+  assert.equal(mock2d.fillSnapshots[0]?.globalCompositeOperation, 'source-over')
+  assert.ok(mock2d.fillSnapshots[0]!.shadowBlur > 0)
+  assert.equal(mock2d.fillSnapshots[1]?.globalCompositeOperation, 'destination-out')
+  assert.equal(mock2d.fillSnapshots[1]?.shadowColor, 'rgba(0, 0, 0, 0)')
+  assert.equal(mock2d.fillSnapshots[1]?.shadowBlur, 0)
+  assert.equal(mock2d.fillSnapshots[1]?.shadowOffsetX, 0)
+  assert.equal(mock2d.fillSnapshots[1]?.shadowOffsetY, 0)
+  assert.equal(mock2d.ctx.globalCompositeOperation, 'source-over', 'restore() must reset composite mode')
+
+  renderer.dispose()
+})
+
+test('overlayRenderer: 2D fallback traces smooth blended liquid-bridge contour via extractFieldContourPath when blendK > 0.001', () => {
+  const mock2d = createMock2d()
+  const mockCanvas = {
+    width: 10,
+    height: 10,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    getContext: (kind: string) => (kind === '2d' ? mock2d.ctx : null),
+  } as unknown as HTMLCanvasElement
+
+  const renderer = createGlassOverlayRenderer()
+  renderer.mount(mockCanvas)
+
+  const nearbyField = {
+    primitives: [
+      { id: 'left', center: { x: 50, y: 60 }, size: { width: 20, height: 20 }, radius: 6 },
+      { id: 'right', center: { x: 74, y: 60 }, size: { width: 20, height: 20 }, radius: 6 },
+    ],
+    blendK: 16,
+  }
+  const expectedContour = extractFieldContourPath(nearbyField)
+  assert.ok(expectedContour.startsWith('M') && expectedContour.includes('L') && expectedContour.endsWith('Z'))
+
+  renderer.render(
+    makeFrame(nearbyField.primitives, {
+      field: nearbyField,
+      material: {
+        ...DEFAULT_OPTICAL_MATERIALS.dark.frosted,
+        borderWidth: 1,
+        borderRgba: [1, 1, 1, 0.25],
+      },
+    }),
+  )
+
+  assert.equal(
+    mock2d.calls.filter((c) => c[0] === 'roundRect').length,
+    0,
+    'blended 2D fallback must trace smooth liquid contour instead of separate roundRects',
+  )
+  const moveTos = mock2d.calls.filter((c) => c[0] === 'moveTo')
+  const lineTos = mock2d.calls.filter((c) => c[0] === 'lineTo')
+  const closePaths = mock2d.calls.filter((c) => c[0] === 'closePath')
+  // 6 passes (shadow fill, shadow destination-out erase, hairline, border, rim clip, rim stroke)
+  assert.equal(moveTos.length, 6)
+  assert.ok(lineTos.length >= 60, `expected Marching Squares contour lineTo segments, got ${lineTos.length}`)
+  assert.equal(closePaths.length, 6)
+
+  renderer.dispose()
+})
+
+test('overlayRenderer: traceSvgPath2d accurately decodes M, L, clockwise arc A, and Z commands', () => {
+  const mock2d = createMock2d()
+  const roundedPath = formatRoundedRectPath({
+    center: { x: 50, y: 40 },
+    size: { width: 40, height: 20 },
+    radius: 5,
+  })
+
+  traceSvgPath2d(mock2d.ctx as unknown as CanvasRenderingContext2D, roundedPath)
+
+  const arcCalls = mock2d.calls.filter((c) => c[0] === 'arc')
+  assert.equal(arcCalls.length, 4, 'rounded rect emits 4 corner arcs')
+  // Top-right corner center is (65, 35) with radius 5, clockwise (anticlockwise=false)
+  assert.deepEqual(arcCalls[0], ['arc', 65, 35, 5, -Math.PI / 2, 0, false])
+  assert.equal(mock2d.calls.filter((c) => c[0] === 'closePath').length, 1)
 })

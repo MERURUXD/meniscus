@@ -76,21 +76,53 @@ test('parseCssRgba supports rgb, rgba, space-slash syntax, color(srgb), and keyw
   assert.deepEqual(parseCssRgba('color(srgb 1 0 0)'), [1, 0, 0, 1])
 })
 
-test('parseCssFilterOptics and interpolateVeilOptics preserve filter order and products', () => {
+test('parseCssFilterOptics and interpolateVeilOptics preserve exact 1D affine transforms', () => {
   const a = parseCssFilterOptics('blur(12px) saturate(1.75) brightness(1.1) contrast(0.94) url("#lens")')
   approx(a.brightness, 1.1, 1e-4)
   approx(a.contrast, 0.94, 1e-4)
   assert.equal(a.contrastFirst, false)
 
-  const b = parseCssFilterOptics('blur(3px) contrast(0.8) brightness(1.2) contrast(1.1)')
-  approx(b.brightness, 1.2, 1e-4)
-  approx(b.contrast, 0.88, 1e-4)
-  assert.equal(b.contrastFirst, true)
+  // brightness(2) contrast(0.5) brightness(0.5) => 0.5 * x + 0.125
+  const interleaved = parseCssFilterOptics('brightness(2) contrast(0.5) brightness(0.5)')
+  assert.equal(interleaved.contrastFirst, true)
+  approx(interleaved.brightness, 0.75, 1e-4)
+  approx(interleaved.contrast, 2 / 3, 1e-4)
+  const interleavedMat = buildColorOpticsMatrix(
+    1,
+    interleaved.brightness,
+    interleaved.contrast,
+    interleaved.contrastFirst,
+  )
+    .trim()
+    .split(/\s+/)
+    .map(Number)
+  approx(interleavedMat[0], 0.5, 1e-4, 'interleaved rr')
+  approx(interleavedMat[4], 0.125, 1e-4, 'interleaved offset')
 
+  // contrast(0.8) brightness(1.2) contrast(1.1) => 1.056 * x + 0.082
+  const b = parseCssFilterOptics('blur(3px) contrast(0.8) brightness(1.2) contrast(1.1)')
+  assert.equal(b.contrastFirst, true)
+  approx(b.brightness, 1.22, 1e-4)
+  approx(b.contrast, 1.056 / 1.22, 1e-4)
+  const bMat = buildColorOpticsMatrix(1, b.brightness, b.contrast, b.contrastFirst)
+    .trim()
+    .split(/\s+/)
+    .map(Number)
+  approx(bMat[0], 1.056, 1e-4, 'b rr')
+  approx(bMat[4], 0.082, 1e-4, 'b offset')
+
+  // Interpolating across opposite contrastFirst endpoints yields linear (scale, offset).
+  const aScale = a.brightness * a.contrast
+  const aOffset = 0.5 * (1 - a.contrast)
+  const bScale = 1.056
+  const bOffset = 0.082
   const mid = interpolateVeilOptics(a, b, 0.5)
-  approx(mid.brightness, 1.15, 1e-4)
-  approx(mid.contrast, 0.91, 1e-4)
-  assert.equal(mid.contrastFirst, true)
+  const midMat = buildColorOpticsMatrix(1, mid.brightness, mid.contrast, mid.contrastFirst)
+    .trim()
+    .split(/\s+/)
+    .map(Number)
+  approx(midMat[0], (aScale + bScale) * 0.5, 1e-4, 'mid affine scale')
+  approx(midMat[4], (aOffset + bOffset) * 0.5, 1e-4, 'mid affine offset')
 })
 
 test('parseCssBoxShadow parses multi-layer shadows and inset flags', () => {
@@ -129,6 +161,31 @@ test('parseCssGlassSurface and interpolateCssGlassSurfaceToMaterial map standard
   approx(mat.shadowOffsetY, 24, 1e-4)
   approx(mat.shadowAlpha, 0.45, 1e-4)
   assert.ok(mat.rimOpacity > 0.2 && mat.rimOpacity < 0.3)
+
+  const thick = parseCssGlassSurface({
+    backdropFilter: 'none',
+    borderWidthPx: 4,
+    borderColor: 'rgba(255, 255, 255, 0.5)',
+    boxShadow: 'none',
+  })
+  const thin = parseCssGlassSurface({
+    backdropFilter: 'none',
+    borderWidthPx: 1,
+    borderColor: 'rgba(255, 255, 255, 0.5)',
+    boxShadow: 'none',
+  })
+  assert.equal(
+    interpolateCssGlassSurfaceToMaterial(DEFAULT_OPTICAL_MATERIALS.dark.crisp, thick, thin, 0).borderWidth,
+    4,
+  )
+  assert.equal(
+    interpolateCssGlassSurfaceToMaterial(DEFAULT_OPTICAL_MATERIALS.dark.crisp, thick, thin, 0.5).borderWidth,
+    2.5,
+  )
+  assert.equal(
+    interpolateCssGlassSurfaceToMaterial(DEFAULT_OPTICAL_MATERIALS.dark.crisp, thick, thin, 1).borderWidth,
+    1,
+  )
 })
 
 test('interpolateOpticalMaterial and resolveOpticalMaterial interpolate across presets and optional fields', () => {

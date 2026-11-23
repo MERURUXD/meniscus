@@ -31,23 +31,25 @@ import {
 } from '@meniscus/presets'
 import { ControlPanel, SliderControl } from '../components/ControlPanel.tsx'
 import { LiveBackdrop } from '../components/LiveBackdrop.tsx'
+import { getMessages, type Locale, type PlaygroundMessages } from '../i18n.ts'
 import {
   INITIAL_DRAG_NODE_META,
   createExtraDropletInput,
   createInitialDragMergeNodes,
-  type DragNodeMeta,
 } from '../labDefaults.ts'
 
 export interface DragMergeLabProps {
   theme: ThemeMode
+  locale: Locale
   reducedMotion: boolean
   renderMode: SurfaceRenderMode
 }
 
 interface TelemetrySnapshot {
   mergedCount: number
-  strongestPair: string
-  strongestGap: string
+  aId: string | null
+  bId: string | null
+  minGap: number
   activeCount: number
 }
 
@@ -69,7 +71,8 @@ function snapshotNodeInputs(controller: DragMergeController): DragMergeNodeInput
 function summarizeTelemetry(state: DragMergeState): TelemetrySnapshot {
   let mergedCount = 0
   let minGap = Infinity
-  let strongestPair = 'None'
+  let aId: string | null = null
+  let bId: string | null = null
 
   for (const link of state.links) {
     if (link.merged) {
@@ -77,23 +80,52 @@ function summarizeTelemetry(state: DragMergeState): TelemetrySnapshot {
     }
     if (link.gapPx < minGap) {
       minGap = link.gapPx
-      strongestPair = `${link.aId} ↔ ${link.bId}`
+      aId = link.aId
+      bId = link.bId
     }
   }
 
   return {
     mergedCount,
-    strongestPair,
-    strongestGap: Number.isFinite(minGap) ? `${minGap.toFixed(1)}px` : '—',
+    aId,
+    bId,
+    minGap,
     activeCount: state.nodes.length,
   }
 }
 
+function resolveNodeDisplay(
+  id: string,
+  extraIndices: Readonly<Record<string, number>>,
+  copy: PlaygroundMessages['dragMerge'],
+): { label: string; sublabel: string } {
+  if (
+    id === 'anchor' ||
+    id === 'orb-a' ||
+    id === 'orb-b' ||
+    id === 'pill-c'
+  ) {
+    return copy.nodes[id]
+  }
+  const extraIdx = extraIndices[id]
+  if (extraIdx !== undefined) {
+    return {
+      label: `${copy.extraNodeLabelPrefix} ${extraIdx}`,
+      sublabel: copy.extraNodeSublabel,
+    }
+  }
+  return { label: id, sublabel: copy.extraNodeSublabel }
+}
+
 export function DragMergeLab({
   theme,
+  locale,
   reducedMotion,
   renderMode,
 }: DragMergeLabProps): ReactElement {
+  const t = getMessages(locale)
+  const dm = t.dragMerge
+
   const [blendK, setBlendK] = useState<number>(DRAG_MERGE_DEFAULTS.blendK)
   const [magneticRadiusPx, setMagneticRadiusPx] = useState<number>(
     DRAG_MERGE_DEFAULTS.magneticRadiusPx,
@@ -102,6 +134,7 @@ export function DragMergeLab({
   const [snapToNearest, setSnapToNearest] = useState(false)
 
   const stageRef = useRef<HTMLDivElement | null>(null)
+  const [surfaceCtrl, setSurfaceCtrl] = useState<GlassSurfaceController | null>(null)
   const surfaceRef = useRef<GlassSurfaceController | null>(null)
   const stageSizeRef = useRef<Size>(DEFAULT_STAGE_SIZE)
   const userInteractedRef = useRef(false)
@@ -129,13 +162,12 @@ export function DragMergeLab({
   const nodesSnapshotRef = useRef<DragMergeNodeInput[]>(initialSeed.nodes)
   const ctrlRef = useRef<DragMergeController | null>(null)
   const [nodeIds, setNodeIds] = useState<string[]>(initialSeed.nodeIds)
-  const [nodeMetaMap, setNodeMetaMap] = useState<Readonly<Record<string, DragNodeMeta>>>(
-    () => INITIAL_DRAG_NODE_META,
-  )
+  const [extraIndices, setExtraIndices] = useState<Readonly<Record<string, number>>>({})
   const [telemetry, setTelemetry] = useState<TelemetrySnapshot>({
     mergedCount: 0,
-    strongestPair: 'anchor ↔ orb-a',
-    strongestGap: '22.3px',
+    aId: 'anchor',
+    bId: 'orb-a',
+    minGap: 22.3,
     activeCount: initialSeed.nodeIds.length,
   })
 
@@ -182,8 +214,9 @@ export function DragMergeLab({
       const nextTel = summarizeTelemetry(state)
       setTelemetry((prev) =>
         prev.mergedCount === nextTel.mergedCount &&
-        prev.strongestPair === nextTel.strongestPair &&
-        prev.strongestGap === nextTel.strongestGap &&
+        prev.aId === nextTel.aId &&
+        prev.bId === nextTel.bId &&
+        Math.abs(prev.minGap - nextTel.minGap) < 0.05 &&
         prev.activeCount === nextTel.activeCount
           ? prev
           : nextTel,
@@ -199,9 +232,10 @@ export function DragMergeLab({
   }, [])
 
   useLayoutEffect(() => {
+    surfaceRef.current = surfaceCtrl
     configRef.current = { theme, blendK }
     reducedMotionRef.current = reducedMotion
-    if (ctrlRef.current) {
+    if (ctrlRef.current && surfaceCtrl) {
       applyFrameToDom(ctrlRef.current.getState(), true)
     }
   })
@@ -367,10 +401,7 @@ export function DragMergeLab({
     const input = createExtraDropletInput(idx, stageSizeRef.current)
     ctrl.addNode(input)
     nodesSnapshotRef.current = snapshotNodeInputs(ctrl)
-    setNodeMetaMap((prev) => ({
-      ...prev,
-      [input.id]: { id: input.id, label: `Drop ${idx}`, sublabel: 'Drag me' },
-    }))
+    setExtraIndices((prev) => ({ ...prev, [input.id]: idx }))
     setNodeIds(ctrl.getState().nodes.map((n) => n.id))
     applyFrameToDom(ctrl.getState(), true)
   }
@@ -418,16 +449,23 @@ export function DragMergeLab({
     ensureLoop()
   }
 
+  const closestPairText =
+    telemetry.aId && telemetry.bId
+      ? `${resolveNodeDisplay(telemetry.aId, extraIndices, dm).label} ↔ ${resolveNodeDisplay(telemetry.bId, extraIndices, dm).label}`
+      : dm.nonePair
+  const gapText = Number.isFinite(telemetry.minGap) ? `${telemetry.minGap.toFixed(1)}px` : '—'
+
   return (
     <div className="pg-lab-grid">
       <div className="pg-stage" ref={stageRef} data-testid="drag-merge-stage">
         <LiveBackdrop
-          title="Drag & Merge Liquid Bridges"
-          caption="Drag droplets across swatches or slide them into the pinned anchor to trigger magnetic pull and smin meniscus bridges."
+          title={dm.backdropTitle}
+          caption={dm.backdropCaption}
+          messages={t.backdrop}
         />
         <GlassField
           className="pg-glass-stage"
-          controllerRef={surfaceRef}
+          controllerRef={setSurfaceCtrl}
           mode={renderMode}
           theme={theme}
           blendK={blendK}
@@ -435,7 +473,7 @@ export function DragMergeLab({
           material={DEFAULT_OPTICAL_MATERIALS[theme].crisp}
         >
           {nodeIds.map((id) => {
-            const meta = nodeMetaMap[id] ?? { id, label: id, sublabel: 'Drag me' }
+            const meta = resolveNodeDisplay(id, extraIndices, dm)
             return (
               <div
                 key={id}
@@ -462,13 +500,10 @@ export function DragMergeLab({
         </GlassField>
       </div>
 
-      <ControlPanel
-        title="Field & Coupling Controls"
-        description="Tune the smooth-union radius and magnetic pull driving the N-primitive SDF field."
-      >
+      <ControlPanel title={dm.panelTitle} description={dm.panelDescription}>
         <SliderControl
           id="drag-blend-k"
-          label="Smooth Union (blendK)"
+          label={dm.blendKLabel}
           value={blendK}
           min={0}
           max={48}
@@ -477,7 +512,7 @@ export function DragMergeLab({
         />
         <SliderControl
           id="drag-magnetic-r"
-          label="Magnetic Capture Radius"
+          label={dm.magneticRadiusLabel}
           value={magneticRadiusPx}
           min={0}
           max={96}
@@ -495,7 +530,7 @@ export function DragMergeLab({
               if (!returnToRest) setSnapToNearest(false)
             }}
           >
-            Return on Release
+            {dm.returnOnRelease}
           </button>
           <button
             type="button"
@@ -506,7 +541,7 @@ export function DragMergeLab({
               if (!snapToNearest) setReturnToRest(false)
             }}
           >
-            Snap Nearest
+            {dm.snapNearest}
           </button>
         </div>
 
@@ -517,7 +552,7 @@ export function DragMergeLab({
             disabled={nodeIds.length >= MAX_GPU_PRIMITIVES}
             onClick={handleAddDroplet}
           >
-            Add Droplet
+            {dm.addDroplet}
           </button>
           <button
             type="button"
@@ -525,31 +560,31 @@ export function DragMergeLab({
             disabled={nodeIds.length <= 2}
             onClick={handleRemoveLastDroplet}
           >
-            Remove
+            {dm.remove}
           </button>
           <button type="button" className="pg-btn" onClick={handleReset}>
-            Reset
+            {dm.reset}
           </button>
         </div>
 
         <div className="pg-telemetry">
           <div>
-            <div className="pg-stat-label">Primitives</div>
+            <div className="pg-stat-label">{dm.statPrimitives}</div>
             <div className="pg-stat-value">
               {telemetry.activeCount} / {MAX_GPU_PRIMITIVES}
             </div>
           </div>
           <div>
-            <div className="pg-stat-label">Active Bridges</div>
+            <div className="pg-stat-label">{dm.statBridges}</div>
             <div className="pg-stat-value">{telemetry.mergedCount}</div>
           </div>
           <div>
-            <div className="pg-stat-label">Closest Pair</div>
-            <div className="pg-stat-value">{telemetry.strongestPair}</div>
+            <div className="pg-stat-label">{dm.statClosestPair}</div>
+            <div className="pg-stat-value">{closestPairText}</div>
           </div>
           <div>
-            <div className="pg-stat-label">Surface Gap</div>
-            <div className="pg-stat-value">{telemetry.strongestGap}</div>
+            <div className="pg-stat-label">{dm.statSurfaceGap}</div>
+            <div className="pg-stat-value">{gapText}</div>
           </div>
         </div>
       </ControlPanel>

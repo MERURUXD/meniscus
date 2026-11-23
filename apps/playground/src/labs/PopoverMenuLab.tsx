@@ -28,18 +28,23 @@ import {
   createPopoverMorphSnapshot,
   type PopoverAnchorConfig,
   type PopoverMorphController,
+  type PopoverMorphPhase,
   type PopoverPanelConfig,
   type PopoverPlacement,
 } from '@meniscus/presets'
 import { ControlPanel } from '../components/ControlPanel.tsx'
 import { LiveBackdrop } from '../components/LiveBackdrop.tsx'
+import { getMessages, type Locale } from '../i18n.ts'
 import { POPOVER_ANCHOR_PLACEMENTS, POPOVER_MENU_ITEMS } from '../labDefaults.ts'
 
 export interface PopoverMenuLabProps {
   theme: ThemeMode
+  locale: Locale
   reducedMotion: boolean
   renderMode: SurfaceRenderMode
 }
+
+type PopoverMenuItemId = 'refract-preset' | 'smin-fuse' | 'interrupt' | 'edge-flip'
 
 const DEFAULT_STAGE_SIZE: Size = { width: 760, height: 520 }
 const PANEL_SIZE: Size = { width: 244, height: 184 }
@@ -64,19 +69,24 @@ function computeAnchoredTriggerRect(stageSize: Size, placement: PopoverPlacement
 
 export function PopoverMenuLab({
   theme,
+  locale,
   reducedMotion,
   renderMode,
 }: PopoverMenuLabProps): ReactElement {
+  const t = getMessages(locale)
+  const pm = t.popoverMenu
+
   const [placement, setPlacement] = useState<PopoverPlacement>('overAnchorEnd')
   const [externalTrigger, setExternalTrigger] = useState(false)
   const [bareSource, setBareSource] = useState(false)
   const [activeSourceKind, setActiveSourceKind] = useState<'anchored' | 'point'>('anchored')
   const [pointRect, setPointRect] = useState<Rect>({ x: 180, y: 240, width: 2, height: 2 })
   const [stageSize, setStageSize] = useState<Size>(DEFAULT_STAGE_SIZE)
-  const [phaseLabel, setPhaseLabel] = useState<string>('closed')
-  const [lastAction, setLastAction] = useState<string>('None')
+  const [phase, setPhase] = useState<PopoverMorphPhase>('closed')
+  const [lastActionId, setLastActionId] = useState<PopoverMenuItemId | null>(null)
 
   const stageRef = useRef<HTMLDivElement | null>(null)
+  const [surfaceCtrl, setSurfaceCtrl] = useState<GlassSurfaceController | null>(null)
   const surfaceRef = useRef<GlassSurfaceController | null>(null)
   const triggerBtnRef = useRef<HTMLButtonElement | null>(null)
   const triggerGlyphRef = useRef<HTMLSpanElement | null>(null)
@@ -164,7 +174,7 @@ export function PopoverMenuLab({
     const motion = ctrl.getState()
     const geom = ctrl.evaluateGeometry(anchor, panel)
 
-    setPhaseLabel((prev) => (prev === motion.phase ? prev : motion.phase))
+    setPhase((prev) => (prev === motion.phase ? prev : motion.phase))
 
     const opacity =
       l.activeSourceKind === 'point'
@@ -244,6 +254,7 @@ export function PopoverMenuLab({
   }, [buildConfigs])
 
   useLayoutEffect(() => {
+    surfaceRef.current = surfaceCtrl
     reducedMotionRef.current = reducedMotion
     latestRef.current = {
       theme,
@@ -254,7 +265,9 @@ export function PopoverMenuLab({
       bareSource,
       pointRect,
     }
-    syncDom()
+    if (surfaceCtrl) {
+      syncDom()
+    }
   })
 
   const ensureLoop = useCallback(() => {
@@ -266,7 +279,7 @@ export function PopoverMenuLab({
 
   useElasticPress(triggerBtnRef, {
     reducedMotion,
-    enabled: phaseLabel === 'closed',
+    enabled: phase === 'closed',
   })
 
   // Instantiate and dispose controller symmetrically inside effect for StrictMode safety.
@@ -393,8 +406,8 @@ export function PopoverMenuLab({
   const handleStageClick = (e: ReactMouseEvent<HTMLDivElement>) => {
     const ctrl = ctrlRef.current
     if (!ctrl) return
-    const phase = ctrl.getState().phase
-    if (phase !== 'open' && phase !== 'opening') return
+    const currentPhase = ctrl.getState().phase
+    if (currentPhase !== 'open' && currentPhase !== 'opening') return
     const target = e.target as Node | null
     if (panelRef.current?.contains(target) || triggerBtnRef.current?.contains(target)) {
       return
@@ -405,7 +418,7 @@ export function PopoverMenuLab({
   const handleRunInterruptSequence = () => {
     const ctrl = ctrlRef.current
     if (!ctrl) return
-    for (const t of interruptTimersRef.current) clearTimeout(t)
+    for (const timer of interruptTimersRef.current) clearTimeout(timer)
     interruptTimersRef.current = []
 
     setActiveSourceKind('anchored')
@@ -451,13 +464,14 @@ export function PopoverMenuLab({
         onClick={handleStageClick}
       >
         <LiveBackdrop
-          title="Production Popover & Context Menu"
-          caption="Click Actions to expand the anchored liquid popover, or right-click anywhere inside the stage for a point context menu."
+          title={pm.backdropTitle}
+          caption={pm.backdropCaption}
+          messages={t.backdrop}
         />
 
         <GlassField
           className="pg-glass-stage"
-          controllerRef={surfaceRef}
+          controllerRef={setSurfaceCtrl}
           mode={renderMode}
           theme={theme}
           blendK={POPOVER_MORPH_DEFAULTS.dropletBlendK}
@@ -476,7 +490,7 @@ export function PopoverMenuLab({
               height: `${triggerRect.height}px`,
               pointerEvents: 'auto',
             }}
-            aria-expanded={phaseLabel === 'open' || phaseLabel === 'opening'}
+            aria-expanded={phase === 'open' || phase === 'opening'}
             onClick={openAnchoredMenu}
           >
             <span
@@ -488,7 +502,7 @@ export function PopoverMenuLab({
                 willChange: 'transform, opacity',
               }}
             >
-              Actions ▾
+              {pm.triggerLabel}
             </span>
           </button>
 
@@ -505,29 +519,32 @@ export function PopoverMenuLab({
               ref={panelRef}
               className="pg-popover-panel"
               role="menu"
-              aria-label="Morphing popover actions"
+              aria-label={pm.menuAriaLabel}
             >
-              {POPOVER_MENU_ITEMS.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  role="menuitem"
-                  className="pg-menu-item"
-                  onClick={() => {
-                    setLastAction(item.label)
-                    closeCurrentMenu()
-                  }}
-                >
-                  <span>{item.label}</span>
-                  <span className="pg-menu-shortcut">{item.shortcut}</span>
-                </button>
-              ))}
+              {POPOVER_MENU_ITEMS.map((item) => {
+                const itemId = item.id as PopoverMenuItemId
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    role="menuitem"
+                    className="pg-menu-item"
+                    onClick={() => {
+                      setLastActionId(itemId)
+                      closeCurrentMenu()
+                    }}
+                  >
+                    <span>{pm.menuItems[itemId] ?? item.label}</span>
+                    <span className="pg-menu-shortcut">{item.shortcut}</span>
+                  </button>
+                )
+              })}
             </div>
           </div>
         </GlassField>
 
         <div className="pg-context-hint">
-          <span>Right-click stage or spawn at point:</span>
+          <span>{pm.contextHint}</span>
           <button
             type="button"
             className="pg-btn"
@@ -536,15 +553,12 @@ export function PopoverMenuLab({
               openContextMenuAt(stageSize.width * 0.32, stageSize.height * 0.45)
             }}
           >
-            Context Menu Here
+            {pm.contextHereButton}
           </button>
         </div>
       </div>
 
-      <ControlPanel
-        title="Popover & Menu Options"
-        description="Test anchor placements, bare/external triggers, point clamping, and rapid mid-flight reversals."
-      >
+      <ControlPanel title={pm.panelTitle} description={pm.panelDescription}>
         <div className="pg-btn-group">
           {POPOVER_ANCHOR_PLACEMENTS.map((p) => (
             <button
@@ -557,7 +571,7 @@ export function PopoverMenuLab({
                 setExternalTrigger(p === 'belowPoint' || p === 'abovePoint')
               }}
             >
-              {p}
+              {pm.placements[p]}
             </button>
           ))}
         </div>
@@ -569,7 +583,7 @@ export function PopoverMenuLab({
             aria-pressed={externalTrigger}
             onClick={() => setExternalTrigger((v) => !v)}
           >
-            External Trigger
+            {pm.externalTrigger}
           </button>
           <button
             type="button"
@@ -577,35 +591,39 @@ export function PopoverMenuLab({
             aria-pressed={bareSource}
             onClick={() => setBareSource((v) => !v)}
           >
-            Bare Source
+            {pm.bareSource}
           </button>
         </div>
 
         <div className="pg-btn-group">
           <button type="button" className="pg-btn" onClick={handleRunInterruptSequence}>
-            Interrupt Reversal Demo
+            {pm.interruptDemo}
           </button>
           <button type="button" className="pg-btn" onClick={closeCurrentMenu}>
-            Close Menu
+            {pm.closeMenu}
           </button>
         </div>
 
         <div className="pg-telemetry">
           <div>
-            <div className="pg-stat-label">Phase</div>
-            <div className="pg-stat-value">{phaseLabel}</div>
+            <div className="pg-stat-label">{pm.statPhase}</div>
+            <div className="pg-stat-value">{pm.phases[phase]}</div>
           </div>
           <div>
-            <div className="pg-stat-label">Source Mode</div>
-            <div className="pg-stat-value">{activeSourceKind}</div>
+            <div className="pg-stat-label">{pm.statSourceMode}</div>
+            <div className="pg-stat-value">{pm.sourceModes[activeSourceKind]}</div>
           </div>
           <div>
-            <div className="pg-stat-label">Last Action</div>
-            <div className="pg-stat-value">{lastAction}</div>
+            <div className="pg-stat-label">{pm.statLastAction}</div>
+            <div className="pg-stat-value">
+              {lastActionId ? pm.menuItems[lastActionId] : pm.noneAction}
+            </div>
           </div>
           <div>
-            <div className="pg-stat-label">Reduced Motion</div>
-            <div className="pg-stat-value">{reducedMotion ? 'Crossfade' : 'Spring'}</div>
+            <div className="pg-stat-label">{pm.statReducedMotion}</div>
+            <div className="pg-stat-value">
+              {reducedMotion ? pm.reducedMotionMode : pm.springMode}
+            </div>
           </div>
         </div>
       </ControlPanel>

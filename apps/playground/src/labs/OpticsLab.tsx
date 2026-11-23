@@ -25,6 +25,7 @@ import {
 import { GlassField } from '@meniscus/react'
 import { ControlPanel, SliderControl } from '../components/ControlPanel.tsx'
 import { LiveBackdrop } from '../components/LiveBackdrop.tsx'
+import { getMessages, type Locale, type PlaygroundMessages } from '../i18n.ts'
 import {
   DEFAULT_OPTICS_LAB_CONFIG,
   buildOpticsLabMaterial,
@@ -35,8 +36,11 @@ import {
 
 export interface OpticsLabProps {
   theme: ThemeMode
+  locale: Locale
   reducedMotion: boolean
 }
+
+type TierLabelKey = keyof PlaygroundMessages['optics']['tierLabels']
 
 const DEFAULT_SINGLE_STAGE: Size = { width: 760, height: 520 }
 const DEFAULT_SPLIT_STAGE: Size = { width: 374, height: 520 }
@@ -85,11 +89,14 @@ function SdfWireframeOverlay({
   )
 }
 
-export function OpticsLab({ theme, reducedMotion }: OpticsLabProps): ReactElement {
+export function OpticsLab({ theme, locale, reducedMotion }: OpticsLabProps): ReactElement {
+  const t = getMessages(locale)
+  const op = t.optics
+
   const [config, setConfig] = useState<OpticsLabConfig>(DEFAULT_OPTICS_LAB_CONFIG)
   const [stageSize, setStageSize] = useState<Size>(DEFAULT_SINGLE_STAGE)
   const [splitSize, setSplitSize] = useState<Size>(DEFAULT_SPLIT_STAGE)
-  const [effectiveModeLabel, setEffectiveModeLabel] = useState<string>('refract')
+  const [tierKey, setTierKey] = useState<TierLabelKey>('refract')
 
   const singleStageRef = useRef<HTMLDivElement | null>(null)
   const splitLeftRef = useRef<HTMLDivElement | null>(null)
@@ -125,6 +132,7 @@ export function OpticsLab({ theme, reducedMotion }: OpticsLabProps): ReactElemen
   const materialRef = useRef(material)
   const refractionRef = useRef(refraction)
   const themeRef = useRef(theme)
+  const liveSuffixRef = useRef(op.liveSuffix)
   const sizeRef = useRef({ single: stageSize, split: splitSize })
 
   useEffect(() => {
@@ -132,8 +140,9 @@ export function OpticsLab({ theme, reducedMotion }: OpticsLabProps): ReactElemen
     materialRef.current = material
     refractionRef.current = refraction
     themeRef.current = theme
+    liveSuffixRef.current = op.liveSuffix
     sizeRef.current = { single: stageSize, split: splitSize }
-  }, [config, material, refraction, theme, stageSize, splitSize])
+  }, [config, material, refraction, theme, op.liveSuffix, stageSize, splitSize])
 
   useEffect(() => {
     const el = singleStageRef.current
@@ -165,12 +174,14 @@ export function OpticsLab({ theme, reducedMotion }: OpticsLabProps): ReactElemen
 
   useEffect(() => {
     const ctrl = primarySurfaceRef.current
-    if (ctrl) {
-      const nextLabel =
-        config.renderView === 'split'
-          ? `${ctrl.getEffectiveMode()} + frosted`
-          : ctrl.getEffectiveMode()
-      setEffectiveModeLabel(nextLabel)
+    if (!ctrl) return
+    const effective = ctrl.getEffectiveMode()
+    if (config.renderView === 'split') {
+      setTierKey(effective === 'refract' ? 'split' : 'splitDowngraded')
+    } else if (config.renderView === 'refract' && effective !== 'refract') {
+      setTierKey('refractDowngraded')
+    } else {
+      setTierKey(effective)
     }
   }, [config.renderView])
 
@@ -242,7 +253,7 @@ export function OpticsLab({ theme, reducedMotion }: OpticsLabProps): ReactElemen
       if (!configRef.current.oscillateGap) return false
       const dynamicGap = Math.round((16 + 34 * Math.sin(phase)) * 10) / 10
       if (gapReadoutRef.current) {
-        gapReadoutRef.current.textContent = `${dynamicGap.toFixed(1)}px (live)`
+        gapReadoutRef.current.textContent = `${dynamicGap.toFixed(1)}px ${liveSuffixRef.current}`
       }
       syncBenchGap(dynamicGap)
       return true
@@ -269,9 +280,9 @@ export function OpticsLab({ theme, reducedMotion }: OpticsLabProps): ReactElemen
   const handleCapabilitiesChange = useCallback((caps: GlassSurfaceCapabilities) => {
     const view = configRef.current.renderView
     if ((view === 'refract' || view === 'split') && !caps.svgBackdropRefraction) {
-      setEffectiveModeLabel(view === 'split' ? 'frosted + frosted' : 'frosted (auto-downgraded)')
+      setTierKey(view === 'split' ? 'splitDowngraded' : 'refractDowngraded')
     } else {
-      setEffectiveModeLabel(view === 'split' ? 'refract + frosted' : view)
+      setTierKey(view)
     }
   }, [])
 
@@ -307,10 +318,11 @@ export function OpticsLab({ theme, reducedMotion }: OpticsLabProps): ReactElemen
       {config.renderView === 'split' ? (
         <div className="pg-stage-split" data-testid="optics-split-stage">
           <div className="pg-split-pane" ref={splitLeftRef}>
-            <div className="pg-split-badge">Requested: Refract (Route B3)</div>
+            <div className="pg-split-badge">{op.splitLeftBadge}</div>
             <LiveBackdrop
-              title="Route B3 Lens"
-              caption="Stored-PNG SDF displacement + chromatic dispersion."
+              title={op.splitLeftTitle}
+              caption={op.splitLeftCaption}
+              messages={t.backdrop}
             />
             <GlassField
               className="pg-glass-stage"
@@ -338,10 +350,11 @@ export function OpticsLab({ theme, reducedMotion }: OpticsLabProps): ReactElemen
           </div>
 
           <div className="pg-split-pane">
-            <div className="pg-split-badge">Fallback: Frosted Contour</div>
+            <div className="pg-split-badge">{op.splitRightBadge}</div>
             <LiveBackdrop
-              title="Frosted Veil"
-              caption="Universal CSS backdrop blur + SDF contour + WebGL2 rim."
+              title={op.splitRightTitle}
+              caption={op.splitRightCaption}
+              messages={t.backdrop}
             />
             <GlassField
               className="pg-glass-stage"
@@ -370,8 +383,9 @@ export function OpticsLab({ theme, reducedMotion }: OpticsLabProps): ReactElemen
       ) : (
         <div className="pg-stage" ref={singleStageRef} data-testid="optics-single-stage">
           <LiveBackdrop
-            title="Optics & Progressive Degradation"
-            caption="Tune bevel lens width, RGB dispersion, blur, and separation gap over crisp text and spectral swatches."
+            title={op.backdropTitle}
+            caption={op.backdropCaption}
+            messages={t.backdrop}
           />
           <GlassField
             className="pg-glass-stage"
@@ -399,34 +413,26 @@ export function OpticsLab({ theme, reducedMotion }: OpticsLabProps): ReactElemen
         </div>
       )}
 
-      <ControlPanel
-        title="Optical Bench Parameters"
-        description="Inspect Route B3 displacement refraction vs Gaussian frosted fallback and live SDF contours."
-      >
+      <ControlPanel title={op.panelTitle} description={op.panelDescription}>
         <div className="pg-btn-group">
-          {(
-            [
-              ['refract', 'Refract'],
-              ['frosted', 'Frosted'],
-              ['solid', 'Solid'],
-              ['split', 'Split Compare'],
-            ] as readonly [OpticsViewMode, string][]
-          ).map(([modeKey, label]) => (
-            <button
-              key={modeKey}
-              type="button"
-              className="pg-btn"
-              aria-pressed={config.renderView === modeKey}
-              onClick={() => updateConfig('renderView', modeKey)}
-            >
-              {label}
-            </button>
-          ))}
+          {(['refract', 'frosted', 'solid', 'split'] as const satisfies readonly OpticsViewMode[]).map(
+            (modeKey) => (
+              <button
+                key={modeKey}
+                type="button"
+                className="pg-btn"
+                aria-pressed={config.renderView === modeKey}
+                onClick={() => updateConfig('renderView', modeKey)}
+              >
+                {op.views[modeKey]}
+              </button>
+            ),
+          )}
         </div>
 
         <SliderControl
           id="optics-gap"
-          label="Primitive Separation"
+          label={op.gapLabel}
           value={config.gapPx}
           min={-24}
           max={56}
@@ -435,7 +441,7 @@ export function OpticsLab({ theme, reducedMotion }: OpticsLabProps): ReactElemen
         />
         <SliderControl
           id="optics-blend"
-          label="Smooth Union (blendK)"
+          label={op.blendKLabel}
           value={config.blendK}
           min={0}
           max={56}
@@ -444,7 +450,7 @@ export function OpticsLab({ theme, reducedMotion }: OpticsLabProps): ReactElemen
         />
         <SliderControl
           id="optics-bevel"
-          label="Bevel Lens Width"
+          label={op.bevelLabel}
           value={config.bevelPx}
           min={4}
           max={32}
@@ -453,7 +459,7 @@ export function OpticsLab({ theme, reducedMotion }: OpticsLabProps): ReactElemen
         />
         <SliderControl
           id="optics-strength"
-          label="Refraction Strength"
+          label={op.strengthLabel}
           value={config.refractionStrength}
           min={0}
           max={2.2}
@@ -463,7 +469,7 @@ export function OpticsLab({ theme, reducedMotion }: OpticsLabProps): ReactElemen
         />
         <SliderControl
           id="optics-dispersion"
-          label="RGB Dispersion"
+          label={op.dispersionLabel}
           value={config.dispersionPx}
           min={0}
           max={4}
@@ -474,7 +480,7 @@ export function OpticsLab({ theme, reducedMotion }: OpticsLabProps): ReactElemen
         />
         <SliderControl
           id="optics-blur"
-          label="Gaussian Blur"
+          label={op.blurLabel}
           value={config.blurPx}
           min={0}
           max={24}
@@ -485,7 +491,7 @@ export function OpticsLab({ theme, reducedMotion }: OpticsLabProps): ReactElemen
         />
         <SliderControl
           id="optics-saturation"
-          label="Backdrop Saturation"
+          label={op.saturationLabel}
           value={config.saturation}
           min={0.5}
           max={3.2}
@@ -495,7 +501,7 @@ export function OpticsLab({ theme, reducedMotion }: OpticsLabProps): ReactElemen
         />
         <SliderControl
           id="optics-rim-opacity"
-          label="Rim Highlight Opacity"
+          label={op.rimOpacityLabel}
           value={config.rimOpacity}
           min={0}
           max={0.85}
@@ -513,7 +519,7 @@ export function OpticsLab({ theme, reducedMotion }: OpticsLabProps): ReactElemen
               aria-pressed={config.rimMode === rm}
               onClick={() => updateConfig('rimMode', rm)}
             >
-              Rim: {rm}
+              {op.rimPrefix}: {op.rimModes[rm]}
             </button>
           ))}
         </div>
@@ -525,7 +531,7 @@ export function OpticsLab({ theme, reducedMotion }: OpticsLabProps): ReactElemen
             aria-pressed={config.showWireframe}
             onClick={() => updateConfig('showWireframe', !config.showWireframe)}
           >
-            SDF Wireframe
+            {op.wireframeButton}
           </button>
           <button
             type="button"
@@ -534,24 +540,24 @@ export function OpticsLab({ theme, reducedMotion }: OpticsLabProps): ReactElemen
             aria-pressed={config.oscillateGap && !reducedMotion}
             onClick={() => updateConfig('oscillateGap', !config.oscillateGap)}
           >
-            Oscillate Gap
+            {op.oscillateButton}
           </button>
           <button
             type="button"
             className="pg-btn"
             onClick={() => setConfig(DEFAULT_OPTICS_LAB_CONFIG)}
           >
-            Reset Optics
+            {op.resetButton}
           </button>
         </div>
 
         <div className="pg-telemetry">
           <div>
-            <div className="pg-stat-label">Effective Tier</div>
-            <div className="pg-stat-value">{effectiveModeLabel}</div>
+            <div className="pg-stat-label">{op.statEffectiveTier}</div>
+            <div className="pg-stat-value">{op.tierLabels[tierKey]}</div>
           </div>
           <div>
-            <div className="pg-stat-label">Gap Offset</div>
+            <div className="pg-stat-label">{op.statGapOffset}</div>
             <div className="pg-stat-value">
               <span ref={gapReadoutRef}>{config.gapPx.toFixed(1)}px</span>
             </div>

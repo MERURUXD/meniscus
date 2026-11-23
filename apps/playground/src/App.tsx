@@ -2,6 +2,12 @@ import { useEffect, useState, type ReactElement } from 'react'
 import type { ThemeMode } from '@meniscus/core'
 import { detectSurfaceCapabilities, type SurfaceCapabilities } from '@meniscus/dom'
 import { useReducedMotion } from '@meniscus/react'
+import {
+  detectInitialLocale,
+  getMessages,
+  persistLocale,
+  type Locale,
+} from './i18n.ts'
 import { DragMergeLab } from './labs/DragMergeLab.tsx'
 import { OpticsLab } from './labs/OpticsLab.tsx'
 import { PopoverMenuLab } from './labs/PopoverMenuLab.tsx'
@@ -23,12 +29,14 @@ function detectWebgl2Support(): boolean {
 export function App(): ReactElement {
   const [activeLab, setActiveLab] = useState<LabId>('drag-merge')
   const [theme, setTheme] = useState<ThemeMode>('light')
+  const [locale, setLocale] = useState<Locale>(() => detectInitialLocale())
   const [forceReducedMotion, setForceReducedMotion] = useState<boolean | null>(null)
   const [capabilities] = useState<SurfaceCapabilities>(() => detectSurfaceCapabilities())
   const [hasWebgl2] = useState<boolean>(() => detectWebgl2Support())
 
   const systemReducedMotion = useReducedMotion()
   const effectiveReducedMotion = forceReducedMotion ?? systemReducedMotion
+  const t = getMessages(locale)
 
   useEffect(() => {
     if (typeof document !== 'undefined') {
@@ -36,10 +44,18 @@ export function App(): ReactElement {
     }
   }, [theme])
 
+  useEffect(() => {
+    persistLocale(locale)
+    if (typeof document !== 'undefined') {
+      document.documentElement.lang = locale === 'zh' ? 'zh-CN' : 'en'
+      document.title = t.documentTitle
+    }
+  }, [locale, t.documentTitle])
+
   const renderMode = capabilities.svgBackdropRefraction ? 'refract' : 'frosted'
   const capabilityLabel = capabilities.svgBackdropRefraction
-    ? 'Refract (Chromium Route B3)'
-    : 'Frosted Fallback (Non-Chromium)'
+    ? t.header.refractSupported
+    : t.header.frostedFallback
 
   return (
     <div className="pg-shell" data-theme={theme}>
@@ -51,9 +67,7 @@ export function App(): ReactElement {
             </div>
             <div>
               <h1 className="pg-title">Meniscus</h1>
-              <p className="pg-subtitle">
-                Live-DOM N-Primitive Continuous Glass Morphing Laboratory
-              </p>
+              <p className="pg-subtitle">{t.header.subtitle}</p>
             </div>
           </div>
 
@@ -62,8 +76,18 @@ export function App(): ReactElement {
               className="pg-cap-pill"
               data-fallback={!capabilities.svgBackdropRefraction ? 'true' : 'false'}
             >
-              {capabilityLabel} · {hasWebgl2 ? 'WebGL2' : 'Canvas 2D'}
+              {capabilityLabel} ·{' '}
+              {hasWebgl2 ? t.header.overlayWebgl2 : t.header.overlayCanvas2d}
             </span>
+
+            <button
+              type="button"
+              className="pg-btn"
+              aria-label={t.header.langToggleAria}
+              onClick={() => setLocale((prev) => (prev === 'en' ? 'zh' : 'en'))}
+            >
+              {t.header.langToggleLabel}
+            </button>
 
             <button
               type="button"
@@ -71,7 +95,7 @@ export function App(): ReactElement {
               aria-pressed={theme === 'dark'}
               onClick={() => setTheme((prev) => (prev === 'light' ? 'dark' : 'light'))}
             >
-              Theme: {theme === 'light' ? 'Light' : 'Dark'}
+              {theme === 'light' ? t.header.themeLight : t.header.themeDark}
             </button>
 
             <button
@@ -82,31 +106,37 @@ export function App(): ReactElement {
                 setForceReducedMotion((prev) => !(prev ?? systemReducedMotion))
               }
             >
-              Reduced Motion: {effectiveReducedMotion ? 'On' : 'Off'}
+              {effectiveReducedMotion
+                ? t.header.reducedMotionOn
+                : t.header.reducedMotionOff}
             </button>
           </div>
         </header>
 
-        <nav className="pg-nav" role="tablist" aria-label="Meniscus Interactive Labs">
-          {LAB_TABS.map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              role="tab"
-              className="pg-nav-tab"
-              aria-selected={activeLab === tab.id}
-              onClick={() => setActiveLab(tab.id)}
-            >
-              <span className="pg-nav-tab-title">{tab.title}</span>
-              <span className="pg-nav-tab-desc">{tab.description}</span>
-            </button>
-          ))}
+        <nav className="pg-nav" role="tablist" aria-label={t.header.labsNavAria}>
+          {LAB_TABS.map((tab) => {
+            const tabCopy = t.tabs[tab.id]
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                role="tab"
+                className="pg-nav-tab"
+                aria-selected={activeLab === tab.id}
+                onClick={() => setActiveLab(tab.id)}
+              >
+                <span className="pg-nav-tab-title">{tabCopy.title}</span>
+                <span className="pg-nav-tab-desc">{tabCopy.description}</span>
+              </button>
+            )
+          })}
         </nav>
 
         <main>
           {activeLab === 'drag-merge' ? (
             <DragMergeLab
               theme={theme}
+              locale={locale}
               reducedMotion={effectiveReducedMotion}
               renderMode={renderMode}
             />
@@ -114,16 +144,22 @@ export function App(): ReactElement {
           {activeLab === 'segmented-dock' ? (
             <SegmentedDockLab
               theme={theme}
+              locale={locale}
               reducedMotion={effectiveReducedMotion}
               renderMode={renderMode}
             />
           ) : null}
           {activeLab === 'optics' ? (
-            <OpticsLab theme={theme} reducedMotion={effectiveReducedMotion} />
+            <OpticsLab
+              theme={theme}
+              locale={locale}
+              reducedMotion={effectiveReducedMotion}
+            />
           ) : null}
           {activeLab === 'popover-menu' ? (
             <PopoverMenuLab
               theme={theme}
+              locale={locale}
               reducedMotion={effectiveReducedMotion}
               renderMode={renderMode}
             />

@@ -3,5 +3,5 @@
   "compilerOptions": {
     "types": ["node"]
   },
-  "include": ["src/labDefaults.ts", "test/**/*.ts"]
+  "include": ["src/labDefaults.ts", "src/i18n.ts", "test/**/*.ts"]
 }

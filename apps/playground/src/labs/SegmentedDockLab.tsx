@@ -24,16 +24,19 @@ import {
 } from '@meniscus/presets'
 import { ControlPanel, SliderControl } from '../components/ControlPanel.tsx'
 import { LiveBackdrop } from '../components/LiveBackdrop.tsx'
+import { getMessages, type Locale } from '../i18n.ts'
 import { DOCK_SEGMENTS, type DockSegmentMeta } from '../labDefaults.ts'
 
 export interface SegmentedDockLabProps {
   theme: ThemeMode
+  locale: Locale
   reducedMotion: boolean
   renderMode: SurfaceRenderMode
 }
 
 interface DockButtonProps {
   item: DockSegmentMeta
+  label: string
   active: boolean
   reducedMotion: boolean
   registerButton: (id: string, el: HTMLButtonElement | null) => void
@@ -42,6 +45,7 @@ interface DockButtonProps {
 
 function DockButton({
   item,
+  label,
   active,
   reducedMotion,
   registerButton,
@@ -66,7 +70,7 @@ function DockButton({
       className="pg-dock-item"
       onClick={() => onSelect(item.id)}
     >
-      <span>{item.label}</span>
+      <span>{label}</span>
       {item.badge ? <span className="pg-dock-badge">{item.badge}</span> : null}
     </button>
   )
@@ -89,9 +93,13 @@ function makeFallbackSegments(): SegmentItem[] {
 
 export function SegmentedDockLab({
   theme,
+  locale,
   reducedMotion,
   renderMode,
 }: SegmentedDockLabProps): ReactElement {
+  const t = getMessages(locale)
+  const sd = t.segmentedDock
+
   const [activeId, setActiveId] = useState<string>(DOCK_SEGMENTS[0]!.id)
   const [orientation, setOrientation] = useState<'horizontal' | 'vertical'>('horizontal')
   const [blendK, setBlendK] = useState<number>(SEGMENTED_PILL_DEFAULTS.blendK)
@@ -102,7 +110,9 @@ export function SegmentedDockLab({
     SEGMENTED_PILL_DEFAULTS.squeezeRatio,
   )
 
+  const [dockContainerEl, setDockContainerEl] = useState<HTMLDivElement | null>(null)
   const dockContainerRef = useRef<HTMLDivElement | null>(null)
+  const [surfaceCtrl, setSurfaceCtrl] = useState<GlassSurfaceController | null>(null)
   const surfaceRef = useRef<GlassSurfaceController | null>(null)
   const buttonMapRef = useRef(new Map<string, HTMLButtonElement>())
   const loopRef = useRef<FrameLoop | null>(null)
@@ -225,17 +235,21 @@ export function SegmentedDockLab({
   }, [applyFrame, ensureLoop])
 
   useLayoutEffect(() => {
+    dockContainerRef.current = dockContainerEl
+    surfaceRef.current = surfaceCtrl
     configRef.current = { theme }
     activeIdRef.current = activeId
     reducedMotionRef.current = reducedMotion
-    if (ctrlRef.current) {
+    if (ctrlRef.current && surfaceCtrl) {
       applyFrame(ctrlRef.current.getState(), true)
     }
   })
 
   useLayoutEffect(() => {
-    measureSegments()
-  }, [orientation, measureSegments])
+    if (surfaceCtrl) {
+      measureSegments()
+    }
+  }, [surfaceCtrl, orientation, locale, measureSegments])
 
   useEffect(() => {
     const loop = createFrameLoop((dtSec) => {
@@ -259,12 +273,11 @@ export function SegmentedDockLab({
   }, [applyFrame])
 
   useEffect(() => {
-    const el = dockContainerRef.current
-    if (!el) return
-    return observeElementResize(el, () => {
+    if (!dockContainerEl) return
+    return observeElementResize(dockContainerEl, () => {
       measureSegments()
     })
-  }, [measureSegments])
+  }, [dockContainerEl, measureSegments])
 
   // Create and dispose SegmentedPillController symmetrically inside effect for StrictMode safety.
   useEffect(() => {
@@ -319,19 +332,23 @@ export function SegmentedDockLab({
     }, 115)
   }
 
+  const activeSegmentLabel =
+    sd.segments[telemetry.activeId as keyof typeof sd.segments] ?? telemetry.activeId
+
   return (
     <div className="pg-lab-grid">
       <div className="pg-stage" data-testid="segmented-dock-stage">
         <LiveBackdrop
-          title="Continuous Morphing Dock"
-          caption="Spring-led trailing and leading lobes elongate along travel and collapse cleanly to a crisp single capsule at rest."
+          title={sd.backdropTitle}
+          caption={sd.backdropCaption}
+          messages={t.backdrop}
         />
 
         <div className="pg-dock-wrap">
           <GlassField
             className="pg-dock-field"
-            containerRef={dockContainerRef}
-            controllerRef={surfaceRef}
+            containerRef={setDockContainerEl}
+            controllerRef={setSurfaceCtrl}
             mode={renderMode}
             theme={theme}
             blendK={initialField.blendK}
@@ -341,13 +358,14 @@ export function SegmentedDockLab({
             <div
               className="pg-dock-items"
               role="tablist"
-              aria-label="Morphing navigation dock"
+              aria-label={sd.dockAriaLabel}
               data-orientation={orientation}
             >
               {DOCK_SEGMENTS.map((item) => (
                 <DockButton
                   key={item.id}
                   item={item}
+                  label={sd.segments[item.id as keyof typeof sd.segments] ?? item.label}
                   active={activeId === item.id}
                   reducedMotion={reducedMotion}
                   registerButton={registerButton}
@@ -359,10 +377,7 @@ export function SegmentedDockLab({
         </div>
       </div>
 
-      <ControlPanel
-        title="Segmented Flow Parameters"
-        description="Lead/trail differential springs stretch the liquid indicator into two blended primitives only while in motion."
-      >
+      <ControlPanel title={sd.panelTitle} description={sd.panelDescription}>
         <div className="pg-btn-group">
           <button
             type="button"
@@ -370,7 +385,7 @@ export function SegmentedDockLab({
             aria-pressed={orientation === 'horizontal'}
             onClick={() => setOrientation('horizontal')}
           >
-            Horizontal
+            {sd.horizontal}
           </button>
           <button
             type="button"
@@ -378,13 +393,13 @@ export function SegmentedDockLab({
             aria-pressed={orientation === 'vertical'}
             onClick={() => setOrientation('vertical')}
           >
-            Vertical
+            {sd.vertical}
           </button>
         </div>
 
         <SliderControl
           id="dock-blend-k"
-          label="Bridge Blend (blendK)"
+          label={sd.blendKLabel}
           value={blendK}
           min={0}
           max={36}
@@ -393,7 +408,7 @@ export function SegmentedDockLab({
         />
         <SliderControl
           id="dock-max-stretch"
-          label="Max Separation Clamp"
+          label={sd.maxStretchLabel}
           value={maxStretchPx}
           min={0}
           max={42}
@@ -402,7 +417,7 @@ export function SegmentedDockLab({
         />
         <SliderControl
           id="dock-squeeze"
-          label="Cross-Axis Squeeze"
+          label={sd.squeezeLabel}
           value={squeezeRatio}
           min={0}
           max={0.3}
@@ -413,26 +428,28 @@ export function SegmentedDockLab({
 
         <div className="pg-btn-group">
           <button type="button" className="pg-btn" onClick={handleStressRetarget}>
-            Mid-Flight Retarget
+            {sd.retargetButton}
           </button>
         </div>
 
         <div className="pg-telemetry">
           <div>
-            <div className="pg-stat-label">Active Tab</div>
-            <div className="pg-stat-value">{telemetry.activeId}</div>
+            <div className="pg-stat-label">{sd.statActiveTab}</div>
+            <div className="pg-stat-value">{activeSegmentLabel}</div>
           </div>
           <div>
-            <div className="pg-stat-label">Lobes Active</div>
+            <div className="pg-stat-label">{sd.statLobes}</div>
             <div className="pg-stat-value">{telemetry.primitiveCount}</div>
           </div>
           <div>
-            <div className="pg-stat-label">Stretch Ratio</div>
+            <div className="pg-stat-label">{sd.statStretch}</div>
             <div className="pg-stat-value">{telemetry.stretchRatio.toFixed(2)}</div>
           </div>
           <div>
-            <div className="pg-stat-label">Motion</div>
-            <div className="pg-stat-value">{telemetry.isAnimating ? 'Flowing' : 'Settled'}</div>
+            <div className="pg-stat-label">{sd.statMotion}</div>
+            <div className="pg-stat-value">
+              {telemetry.isAnimating ? sd.motionFlowing : sd.motionSettled}
+            </div>
           </div>
         </div>
       </ControlPanel>

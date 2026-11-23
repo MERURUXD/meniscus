@@ -1,7 +1,7 @@
 /**
- * @meniscus/core WebGL2 + 2D Canvas 光学边缘渲染器单元测试。
- * 校验着色器契约、mount/capabilities、N=0/1/3/16 与 >16 截断时的 uniform 上传、
- * 2D Canvas 多图元降级绘制、WebGL context lost/restored 与 dispose 资源清理。
+ * Unit tests for the @meniscus/core WebGL2 + 2D Canvas optical edge renderer.
+ * Verifies shader contracts, mount/capabilities, uniform uploads for N=0/1/3/16 and >16 truncation,
+ * 2D Canvas multi-primitive fallback rendering, WebGL context lost/restored, and dispose cleanup.
  *
  * SPDX-License-Identifier: MPL-2.0
  */
@@ -206,7 +206,7 @@ test('overlayRenderer: WebGL2 mount, N=0/1/3/16 and >16 truncation uniform uploa
   assert.equal(caps.maxTextureSize, 8192)
   assert.equal(caps.fallbackNotice, undefined)
 
-  // N=0（空列表与全退化图元）应清理画布且不触发 drawArrays
+  // N=0 (empty and degenerate-only primitives) should clear canvas without calling drawArrays
   renderer.render(makeFrame([]))
   assert.equal(mock.clearCalls, 1)
   assert.equal(mock.drawCalls, 0)
@@ -217,7 +217,7 @@ test('overlayRenderer: WebGL2 mount, N=0/1/3/16 and >16 truncation uniform uploa
   assert.equal(mock.clearCalls, 2)
   assert.equal(mock.drawCalls, 0)
 
-  // N=1 上传与默认 rimOpacity/styleMix
+  // N=1 upload with default rimOpacity/styleMix
   resetUniformCalls(mock.uniformCalls)
   const p1 = createPrimitive(0)
   renderer.render(
@@ -245,7 +245,7 @@ test('overlayRenderer: WebGL2 mount, N=0/1/3/16 and >16 truncation uniform uploa
   assert.equal(rimOpUniform?.v, 1)
   assert.equal(styleMixUniform?.v, 0)
 
-  // N=3（混合有效与 1 个退化图元，验证过滤后为 3）
+  // N=3 (3 active + 1 degenerate primitive should upload count 3)
   resetUniformCalls(mock.uniformCalls)
   const three = [createPrimitive(1), createPrimitive(2), createPrimitive(3)]
   const degenerate: GlassPrimitive = { center: { x: 0, y: 0 }, size: { width: 0, height: 10 }, radius: 2 }
@@ -262,14 +262,14 @@ test('overlayRenderer: WebGL2 mount, N=0/1/3/16 and >16 truncation uniform uploa
     assert.equal(mock.uniformCalls.v1f[0]?.data[i], three[i].radius)
   }
 
-  // N=16 满载
+  // N=16 full capacity
   resetUniformCalls(mock.uniformCalls)
   const sixteen = Array.from({ length: 16 }, (_, i) => createPrimitive(i))
   renderer.render(makeFrame(sixteen))
   assert.deepEqual(mock.uniformCalls.i1, [{ loc: 'uPrimitiveCount', v: 16 }])
   assert.equal(mock.uniformCalls.v1f[0]?.data[15], sixteen[15].radius)
 
-  // N=20 超上限截断为 MAX_GPU_PRIMITIVES (16)
+  // N=20 exceeds limit and truncates to MAX_GPU_PRIMITIVES (16)
   resetUniformCalls(mock.uniformCalls)
   const twenty = Array.from({ length: 20 }, (_, i) => createPrimitive(i))
   renderer.render(makeFrame(twenty))
@@ -281,12 +281,12 @@ test('overlayRenderer: WebGL2 mount, N=0/1/3/16 and >16 truncation uniform uploa
     twenty[15].size.height * 0.5,
   ])
 
-  // opacity <= 0.001 仅清理，不绘制
+  // opacity <= 0.001 clears without drawing
   const prevDraws = mock.drawCalls
   renderer.render(makeFrame(three, { opacity: 0 }))
   assert.equal(mock.drawCalls, prevDraws)
 
-  // webglcontextlost 与 webglcontextrestored 生命周期
+  // webglcontextlost and webglcontextrestored lifecycle
   let prevented = false
   listeners.get('webglcontextlost')?.({
     preventDefault: () => {
@@ -333,7 +333,7 @@ test('overlayRenderer: 2D Canvas automatic fallback renders N-primitive shadows,
     lineWidth: 0,
   }
 
-  // 验证 WebGL2 编译失败时同样自动降级到 2D Canvas
+  // Verify WebGL2 compile failure also falls back automatically to 2D Canvas
   const failingGl = createMockWebGL2({ failCompile: true })
   const listeners = new Map<string, () => void>()
   const mockCanvas = {
@@ -365,18 +365,18 @@ test('overlayRenderer: 2D Canvas automatic fallback renders N-primitive shadows,
   assert.equal(mockCanvas.width, 800)
   assert.equal(mockCanvas.height, 600)
   assert.ok(calls.some((c) => c[0] === 'clip' && c[1] === 'evenodd'))
-  // 阴影(clip+fill)、外细线、等宽边框、高光(clip+stroke)共 6 次遍历 3 个活跃图元 => 18 次 roundRect
+  // Shadow (clip + fill), hairline, uniform border, rim (clip + stroke) = 6 passes x 3 active primitives => 18 roundRect calls
   const roundRectCalls = calls.filter((c) => c[0] === 'roundRect')
   assert.equal(roundRectCalls.length, 18)
   assert.equal(calls.filter((c) => c[0] === 'stroke').length, 3)
 
-  // N=0 时仅清屏，不绘制 roundRect
+  // N=0 clears without drawing roundRect
   calls.length = 0
   renderer.render(makeFrame([]))
   assert.ok(calls.some((c) => c[0] === 'clearRect'))
   assert.equal(calls.filter((c) => c[0] === 'roundRect').length, 0)
 
-  // clear() 调用 clearRect
+  // clear() invokes clearRect
   calls.length = 0
   renderer.clear()
   assert.ok(calls.some((c) => c[0] === 'clearRect'))

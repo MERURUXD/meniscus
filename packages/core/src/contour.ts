@@ -1,8 +1,8 @@
 /**
- * @meniscus/core 通用 N-图元 SVG 等值线轮廓提取器。
- * 单图元或无融合时直接输出解析圆角矩形路径；多图元平滑融合时通过自适应网格
- * Marching Squares（24..128 网格 + 3 次二分精修 + 鞍点消歧 + 有向边环路串联）
- * 提取零泄漏闭合 SVG 轮廓路径，支持多岛屿分离。
+ * Generic N-primitive SVG iso-contour extractor.
+ * Emits analytic rounded-rectangle paths for single or unblended primitives, and uses
+ * adaptive Marching Squares (24..128 grid, 3 bisection refinements, saddle disambiguation,
+ * and directed-edge loop chaining) to extract watertight closed paths with multi-island support.
  *
  * SPDX-License-Identifier: MPL-2.0
  */
@@ -16,23 +16,23 @@ const MAX_GRID_NODES = MAX_GRID_STEPS + 1
 const MAX_CELLS = MAX_GRID_STEPS * MAX_GRID_STEPS
 const MIN_ACTIVE_SIZE = 0.01
 
-// 预分配模块级复用缓冲，避免 60/120fps 形变期间每帧产生 TypedArray 垃圾回收。
+// Preallocated module-level buffers to avoid per-frame TypedArray GC during 60/120fps morphing.
 const fieldBuf = new Float64Array(MAX_GRID_NODES * MAX_GRID_NODES)
 const hEdgeX = new Float64Array(MAX_GRID_NODES * MAX_GRID_NODES)
 const hEdgeY = new Float64Array(MAX_GRID_NODES * MAX_GRID_NODES)
 const vEdgeX = new Float64Array(MAX_GRID_NODES * MAX_GRID_NODES)
 const vEdgeY = new Float64Array(MAX_GRID_NODES * MAX_GRID_NODES)
 
-// 有向边图唯一边 ID 映射：
-// 水平边 (ix, iy) -> id = iy * MAX_GRID_NODES + ix
-// 垂直边 (ix, iy) -> id = TOTAL_H + iy * MAX_GRID_NODES + ix
+// Unique directed-edge ID mapping:
+// Horizontal edge (ix, iy) -> id = iy * MAX_GRID_NODES + ix
+// Vertical edge   (ix, iy) -> id = TOTAL_H + iy * MAX_GRID_NODES + ix
 const TOTAL_H = MAX_GRID_NODES * MAX_GRID_NODES
 const TOTAL_EDGES = TOTAL_H * 2
 const nextEdgeBuf = new Int32Array(TOTAL_EDGES)
 const activeEdgeList = new Int32Array(MAX_CELLS * 2)
 const visitedBuf = new Uint8Array(TOTAL_EDGES)
 
-// 复用的 SoA 场缓冲与字符串拼接数组
+// Reusable SoA field buffer and string builders.
 const sharedPreparedField: PreparedField = createPreparedField(16)
 const reusableLoopStrings: string[] = []
 const reusableLoopParts: string[] = []
@@ -52,7 +52,7 @@ function isActivePrimitive(shape: GlassPrimitive): boolean {
   return shape.size.width > MIN_ACTIVE_SIZE && shape.size.height > MIN_ACTIVE_SIZE
 }
 
-/** 评估轮廓网格点处的场距离，并将严格落于零点邻域的采样微调至内侧，确保所有跨零边均严格在 (0, 1) 内。 */
+/** Samples the field at a grid node, nudging near-zero values inward so every crossing edge lies strictly within (0, 1). */
 function evalContourFieldPoint(x: number, y: number, prepared: PreparedField): number {
   const val = evaluateFieldDistance(x, y, prepared)
   return val > -1e-6 && val < 1e-6 ? -1e-6 : val
@@ -65,8 +65,9 @@ function addSegment(edgeFrom: number, edgeTo: number, activeCount: number): numb
 }
 
 /**
- * 将单个圆角矩形图元格式化为解析 SVG 路径（`M...A...Z`），退化圆角时回退为直角矩形，
- * 尺寸无效时返回空串。减去 `offset` 后输出局部坐标。
+ * Formats a single rounded-rectangle primitive as an analytic SVG path (`M...A...Z`),
+ * falling back to sharp corners for degenerate radii or `''` for inactive sizes.
+ * Outputs coordinates local to `offset`.
  */
 export function formatRoundedRectPath(
   primitive: GlassPrimitive,
@@ -106,11 +107,12 @@ export function formatRoundedRectPath(
 }
 
 /**
- * 提取 N-图元玻璃场的闭合 SVG 等值线路径（零水平集），减去 `offset` 以输出容器局部坐标。
- * - 0 个活跃图元：返回 `''`。
- * - 1 个活跃图元：直接解析输出单个圆角矩形路径。
- * - `blendK <= 0.001`：直接拼接所有活跃图元的解析圆角矩形路径（空格分隔）。
- * - `activeCount >= 2 && blendK > 0.001`：使用自适应 Marching Squares 提取平滑融合/分离轮廓。
+ * Extracts closed SVG zero-isosurface contour paths for an N-primitive glass field,
+ * translated by `-offset` into container-local coordinates.
+ * - 0 active primitives: returns `''`.
+ * - 1 active primitive: emits an analytic rounded-rectangle path.
+ * - `blendK <= 0.001`: concatenates space-separated analytic paths for all active primitives.
+ * - `activeCount >= 2 && blendK > 0.001`: extracts smooth merged/split contours via adaptive Marching Squares.
  */
 export function extractFieldContourPath(
   field: GlassFieldState,
@@ -152,7 +154,7 @@ export function extractFieldContourPath(
     return result
   }
 
-  // 从 SoA 缓冲直接计算联合包围盒，避免临时 Rect 对象分配
+  // Compute combined AABB directly from SoA buffers to avoid allocating a temporary Rect.
   let minX = prepared.minX[0]!
   let maxX = prepared.maxX[0]!
   let minY = prepared.minY[0]!
@@ -168,7 +170,7 @@ export function extractFieldContourPath(
     if (pMaxY > maxY) maxY = pMaxY
   }
 
-  // 多图元叠加 smin 外膨防截断边距，确保外边界节点全部严格为正并形成完全闭合环路
+  // Margin compensating for multi-primitive smin dilation so outer boundary nodes stay strictly positive and form closed loops.
   const msPadding = Math.min(Math.max(activeCount - 1, 1), 4) * blendK * 0.25 + 4
   const boundsX = minX - msPadding
   const boundsY = minY - msPadding
@@ -189,7 +191,7 @@ export function extractFieldContourPath(
   const ox = offset.x
   const oy = offset.y
 
-  // 1. 在 (cols+1) x (rows+1) 自适应网格上采样 SDF 场（复用 SoA + AABB 剪枝）
+  // 1. Sample the SDF over the (cols+1) x (rows+1) adaptive grid.
   for (let iy = 0; iy <= rows; iy++) {
     const y = boundsY + iy * dy
     const rowBase = iy * stride
@@ -198,7 +200,7 @@ export function extractFieldContourPath(
     }
   }
 
-  // 2. 对水平与垂直跨零边执行 3 次二分迭代精修 + 线性插值求交
+  // 2. Refine horizontal and vertical zero-crossing edges with 3 bisection steps and linear interpolation.
   for (let iy = 0; iy <= rows; iy++) {
     const yWorld = boundsY + iy * dy
     const yLocal = yWorld - oy
@@ -265,7 +267,7 @@ export function extractFieldContourPath(
     }
   }
 
-  // 3. 按单元格构建有向边连接图（Y 轴向下坐标系中沿内部顺时针绕向），对 case 5/10 中心采样消歧
+  // 3. Build directed cell-edge graph (clockwise around interior in Y-down coordinates), disambiguating saddle cases 5 and 10 at cell center.
   let segmentCount = 0
   for (let cy = 0; cy < rows; cy++) {
     const r0 = cy * stride
@@ -373,7 +375,7 @@ export function extractFieldContourPath(
     visitedBuf[activeEdgeList[i]!] = 0
   }
 
-  // 4. 沿有向边图串联各独立闭合环路（支持多岛屿与内部孔洞）
+  // 4. Chain directed edges into closed loops (supporting multiple islands and interior holes).
   reusableLoopStrings.length = 0
   const maxLoopSteps = segmentCount + 1
 

@@ -1,5 +1,5 @@
 /**
- * @meniscus/core 纯标准 CSS 光学解析与 OpticalMaterial 插值单元测试。
+ * @meniscus/core unit tests for CSS optics parsing and OpticalMaterial interpolation.
  *
  * SPDX-License-Identifier: MPL-2.0
  */
@@ -28,7 +28,7 @@ function approx(actual: number, expected: number, eps = 1e-4, label = ''): void 
   )
 }
 
-test('buildCircularBevelTable 数值对称、单调非递减与 Sobel 校准', () => {
+test('buildCircularBevelTable is antisymmetric, monotonic, and Sobel-calibrated', () => {
   const b20 = buildCircularBevelTable(20, 8.5)
   const vals = b20.tableValues.split(' ').map(Number)
   assert.equal(vals.length, 21)
@@ -43,7 +43,7 @@ test('buildCircularBevelTable 数值对称、单调非递减与 Sobel 校准', (
   approx(b20.peakSobelEffective / b20.divisor, 0.48, 0.02)
 })
 
-test('buildColorOpticsMatrix 单位矩阵与 contrastFirst 顺序差异', () => {
+test('buildColorOpticsMatrix handles identity and contrastFirst offset differences', () => {
   const identity = buildColorOpticsMatrix(1, 1, 1).trim().split(/\s+/).map(Number)
   assert.equal(identity.length, 20)
   approx(identity[0], 1, 1e-4)
@@ -54,20 +54,20 @@ test('buildColorOpticsMatrix 单位矩阵与 contrastFirst 顺序差异', () => 
 
   const brightnessFirst = buildColorOpticsMatrix(1.2, 1.5, 0.8, false).trim().split(/\s+/).map(Number)
   const contrastFirst = buildColorOpticsMatrix(1.2, 1.5, 0.8, true).trim().split(/\s+/).map(Number)
-  // contrastFirst=false 时 offset = 0.5*(1-0.8) = 0.1；contrastFirst=true 时 offset = 1.5*0.1 = 0.15
+  // contrastFirst=false -> offset = 0.5*(1-0.8) = 0.1; contrastFirst=true -> offset = 1.5*0.1 = 0.15.
   approx(brightnessFirst[4], 0.1, 1e-4)
   approx(contrastFirst[4], 0.15, 1e-4)
   approx(brightnessFirst[0], contrastFirst[0], 1e-4)
 })
 
-test('buildContourAlphaDataUrl 编码有效 SVG Data URL', () => {
+test('buildContourAlphaDataUrl encodes a valid SVG Data URL', () => {
   const url = buildContourAlphaDataUrl('M0 0 L10 0 Z', 120.4, 80.2)
   assert.ok(url.startsWith('data:image/svg+xml;charset=utf-8,'))
   const decoded = decodeURIComponent(url.slice('data:image/svg+xml;charset=utf-8,'.length))
   assert.ok(decoded.includes('viewBox="0 0 120 80"') && decoded.includes('fill="white"'))
 })
 
-test('parseCssRgba 支持 rgb/rgba/空格斜杠/srgb 与关键字', () => {
+test('parseCssRgba supports rgb, rgba, space-slash syntax, color(srgb), and keywords', () => {
   assert.deepEqual(parseCssRgba('transparent'), [0, 0, 0, 0])
   assert.deepEqual(parseCssRgba('none'), [0, 0, 0, 0])
   assert.deepEqual(parseCssRgba('rgba(255, 255, 255, 0.5)'), [1, 1, 1, 0.5])
@@ -76,7 +76,7 @@ test('parseCssRgba 支持 rgb/rgba/空格斜杠/srgb 与关键字', () => {
   assert.deepEqual(parseCssRgba('color(srgb 1 0 0)'), [1, 0, 0, 1])
 })
 
-test('parseCssFilterOptics 与 interpolateVeilOptics 保留顺序与乘积', () => {
+test('parseCssFilterOptics and interpolateVeilOptics preserve filter order and products', () => {
   const a = parseCssFilterOptics('blur(12px) saturate(1.75) brightness(1.1) contrast(0.94) url("#lens")')
   approx(a.brightness, 1.1, 1e-4)
   approx(a.contrast, 0.94, 1e-4)
@@ -93,7 +93,7 @@ test('parseCssFilterOptics 与 interpolateVeilOptics 保留顺序与乘积', () 
   assert.equal(mid.contrastFirst, true)
 })
 
-test('parseCssBoxShadow 解析多层嵌套与 inset', () => {
+test('parseCssBoxShadow parses multi-layer shadows and inset flags', () => {
   const layers = parseCssBoxShadow(
     'rgba(255, 255, 255, 0.34) 0px 1.5px 3px -0.5px inset, inset 0px -1px 2px -0.5px rgba(255, 255, 255, 0.16), rgba(0, 0, 0, 0.34) 0px 0px 0px 0.5px, 0px 24px 60px 0px rgba(0, 0, 0, 0.45)',
   )
@@ -106,7 +106,7 @@ test('parseCssBoxShadow 解析多层嵌套与 inset', () => {
   assert.equal(layers[3].offsetY, 24)
 })
 
-test('parseCssGlassSurface 与 interpolateCssGlassSurfaceToMaterial 准确映射标准 CSS', () => {
+test('parseCssGlassSurface and interpolateCssGlassSurfaceToMaterial map standard CSS accurately', () => {
   const surface = parseCssGlassSurface({
     backdropFilter: 'blur(12px) saturate(1.75) brightness(1.1) contrast(0.94)',
     borderWidthPx: 1,
@@ -131,7 +131,7 @@ test('parseCssGlassSurface 与 interpolateCssGlassSurfaceToMaterial 准确映射
   assert.ok(mat.rimOpacity > 0.2 && mat.rimOpacity < 0.3)
 })
 
-test('interpolateOpticalMaterial 与 resolveOpticalMaterial 支持跨预设及可选属性平滑插值', () => {
+test('interpolateOpticalMaterial and resolveOpticalMaterial interpolate across presets and optional fields', () => {
   const crispLight = resolveOpticalMaterial('light', 0)
   const frostedLight = resolveOpticalMaterial('light', 1)
   const midLight = resolveOpticalMaterial('light', 0.5)

@@ -1,7 +1,7 @@
 /**
- * @meniscus/core Stored-PNG 位移图生成器单元测试。
- * 校验 PNG 结构完整性、CRC32/Adler32 校验、N=0/1/2/4/16/20 光栅化路径、
- * 内外抗锯齿 Alpha、边缘位移方向、AABB 剪枝一致性与量化缓存行为。
+ * Unit tests for the @meniscus/core Stored-PNG displacement map generator.
+ * Verifies PNG chunk structure, CRC32/Adler32 checksums, N=0/1/2/4/16/20 rasterization paths,
+ * inward/outward AA alpha, edge displacement polarity, AABB pruning exactness, and quantized caching.
  *
  * SPDX-License-Identifier: MPL-2.0
  */
@@ -101,7 +101,7 @@ test('refractMap: N=0 empty & degenerate primitives produce neutral transparent 
     }
   }
 
-  // 仅包含无效退化图元时应命中相同的 :EMPTY 缓存键
+  // Degenerate-only primitives should hit the same :EMPTY cache key
   const degenerateRes = builder.build({
     bounds,
     field: {
@@ -121,7 +121,7 @@ test('refractMap: N=0 empty & degenerate primitives produce neutral transparent 
 test('refractMap: N=1 multi-block stored PNG (>65535B), inward normal polarity, bevel decay, cornerBend, and AA alpha', () => {
   const builder = createRefractMapBuilder()
 
-  // 400x400 CSS @ 0.5x => 200x200 PNG（160,200 扫描线字节，跨越多个 65535B Stored-DEFLATE 块）
+  // 400x400 CSS @ 0.5x => 200x200 PNG (160,200 scanline bytes, spanning multiple 65535B Stored-DEFLATE blocks)
   const bounds = { x: 0, y: 0, width: 400, height: 400 }
   const rectShape: GlassPrimitive = {
     center: { x: 200, y: 200 },
@@ -148,7 +148,7 @@ test('refractMap: N=1 multi-block stored PNG (>65535B), inward normal polarity, 
     return decoded.pixelAt(px, py)
   }
 
-  // 四条边的内向位移方向（指向玻璃内部）
+  // Inward displacement polarity along all four edges (pointing into the glass interior)
   const leftEdge = sampleCss(83, 200)
   assert.ok(leftEdge.r > 135 && Math.abs(leftEdge.g - 128) <= 1, `left expected R>135, got ${JSON.stringify(leftEdge)}`)
   const rightEdge = sampleCss(317, 200)
@@ -158,14 +158,14 @@ test('refractMap: N=1 multi-block stored PNG (>65535B), inward normal polarity, 
   const bottomEdge = sampleCss(200, 317)
   assert.ok(bottomEdge.g < 121 && Math.abs(bottomEdge.r - 128) <= 1, `bottom expected G<121, got ${JSON.stringify(bottomEdge)}`)
 
-  // 倒角衰减与深层内部中性值
+  // Bezel falloff and neutral deep interior
   const leftMid = sampleCss(91, 200)
   const centerPx = sampleCss(200, 200)
   assert.ok(Math.abs(leftEdge.r - 128) > Math.abs(leftMid.r - 128), 'displacement decays inward across bezel')
   assert.deepEqual(centerPx, { r: 128, g: 128, b: 128, a: 255 })
   assert.deepEqual(sampleCss(77, 200), { r: 128, g: 128, b: 128, a: 0 })
 
-  // radius < bezel 时触发 cornerBend 弯折角法线：左上角内侧位移同时指向 +X 与 +Y
+  // radius < bezel triggers cornerBend: inward displacement near top-left corner points (+X, +Y)
   const cornerBendRes = builder.build({
     bounds: { x: 0, y: 0, width: 64, height: 64 },
     field: {
@@ -176,11 +176,11 @@ test('refractMap: N=1 multi-block stored PNG (>65535B), inward normal polarity, 
     mapScale: 1,
   })
   const cornerPng = decodeStoredRgbaPng(cornerBendRes.dataUrl)
-  // 左上角位于 (8, 8)，取 (11.5, 11.5) -> px=11, py=11
+  // Top-left corner sits at (8, 8); sample (11.5, 11.5) -> px=11, py=11
   const topLeftCornerPx = cornerPng.pixelAt(11, 11)
   assert.ok(topLeftCornerPx.r > 128 && topLeftCornerPx.g > 128, `cornerBend must bend inward (+X,+Y), got ${JSON.stringify(topLeftCornerPx)}`)
 
-  // 精确边界抗锯齿 Alpha：sd=+0.5 -> 0, sd=0 -> 128, sd=-0.5 -> 255
+  // Exact boundary AA alpha: sd=+0.5 -> 0, sd=0 -> 128, sd=-0.5 -> 255
   const aaRes = builder.build({
     bounds: { x: 0, y: 0, width: 64, height: 64 },
     field: {
@@ -225,7 +225,7 @@ test('refractMap: N=2 smin neck vs hard union, and cache hit/reset lifecycle', (
   const sminPng = decodeStoredRgbaPng(sminRes.dataUrl)
   assert.equal(sminPng.pixelAt(100, 95).a, 255, 'smin blendK=28 bridges 10px gap')
 
-  // 量化缓存命中（<0.1px 抖动）
+  // Quantized cache hit (<0.1px jitter)
   const cachedRes = builder.build({
     bounds,
     field: {
@@ -241,7 +241,7 @@ test('refractMap: N=2 smin neck vs hard union, and cache hit/reset lifecycle', (
   assert.equal(cachedRes.changed, false)
   assert.equal(cachedRes.dataUrl, sminRes.dataUrl)
 
-  // 修改 blendK 应失效缓存
+  // Changing blendK must invalidate cache
   const hardRes = builder.build({
     bounds,
     field: { primitives: [shapeA, shapeB], blendK: 0 },
@@ -252,7 +252,7 @@ test('refractMap: N=2 smin neck vs hard union, and cache hit/reset lifecycle', (
   const hardPng = decodeStoredRgbaPng(hardRes.dataUrl)
   assert.equal(hardPng.pixelAt(100, 95).a, 0, 'blendK=0 leaves 10px gap transparent')
 
-  // reset() 必须清除缓存
+  // reset() must clear cache
   builder.reset()
   const afterReset = builder.build({
     bounds,
@@ -266,7 +266,7 @@ test('refractMap: N=2 smin neck vs hard union, and cache hit/reset lifecycle', (
 test('refractMap: N=4 and N=16/20 multi-primitive SoA rasterization, AABB pruning exactness, and stateless API', () => {
   const builder = createRefractMapBuilder()
 
-  // 验证 N=4 当两个额外图元处于远离区域时，A/B 附近的像素与 N=2 完全一致（AABB 剪枝零误差）
+  // Verify N=4 matches N=2 pixel-for-pixel near A/B when two extra primitives are far away (zero AABB pruning error)
   const bounds4 = { x: 0, y: 0, width: 320, height: 220 }
   const p0: GlassPrimitive = { center: { x: 80, y: 140 }, size: { width: 90, height: 80 }, radius: 18 }
   const p1: GlassPrimitive = { center: { x: 80, y: 74 }, size: { width: 52, height: 34 }, radius: 17 }
@@ -289,7 +289,7 @@ test('refractMap: N=4 and N=16/20 multi-primitive SoA rasterization, AABB prunin
   })
   const png4 = decodeStoredRgbaPng(res4.dataUrl)
 
-  // p0-p1 左侧区域（远距 p2/p3）应与 N=2 逐像素完全一致
+  // Left region around p0-p1 (far from p2/p3) must match N=2 pixel-for-pixel
   for (let py = 40; py <= 185; py += 5) {
     for (let px = 20; px <= 130; px += 5) {
       assert.deepEqual(
@@ -299,12 +299,12 @@ test('refractMap: N=4 and N=16/20 multi-primitive SoA rasterization, AABB prunin
       )
     }
   }
-  // 右侧 p2/p3 内部应不透明，且完全透明行在上下边缘保持中性透明
+  // Right-side p2/p3 interiors must be opaque, while empty rows stay neutral transparent
   assert.equal(png4.pixelAt(250, 60).a, 255)
   assert.equal(png4.pixelAt(250, 140).a, 255)
   assert.deepEqual(png4.pixelAt(10, 5), { r: 128, g: 128, b: 128, a: 0 })
 
-  // 验证 N=16 与 N=20（测试 SoA 缓冲从初始容量 16 倍增至 32）
+  // Verify N=16 and N=20 (exercises SoA buffer capacity doubling from initial 16 to 32)
   const buildGrid = (count: number): GlassPrimitive[] => {
     const out: GlassPrimitive[] = []
     for (let i = 0; i < count; i++) {
@@ -328,7 +328,7 @@ test('refractMap: N=4 and N=16/20 multi-primitive SoA rasterization, AABB prunin
   const png16 = decodeStoredRgbaPng(res16.dataUrl)
   assert.equal(png16.width, 110)
   assert.equal(png16.height, 90)
-  // 第 0 个图元中心 (30, 30) @ 0.5x => pixel (14, 14)
+  // Primitive 0 center (30, 30) @ 0.5x => pixel (14, 14)
   assert.equal(png16.pixelAt(14, 14).a, 255)
 
   const url20 = buildRefractMapDataUrl({
@@ -340,16 +340,16 @@ test('refractMap: N=4 and N=16/20 multi-primitive SoA rasterization, AABB prunin
   const png20 = decodeStoredRgbaPng(url20)
   assert.equal(png20.width, 110)
   assert.equal(png20.height, 90)
-  // 第 19 个图元位于 col=4, row=3 -> (174, 138) @ 0.5x => pixel (86, 68)
+  // Primitive 19 at col=4, row=3 -> (174, 138) @ 0.5x => pixel (86, 68)
   assert.equal(png20.pixelAt(86, 68).a, 255)
 })
 
 test('refractMap: signed AABB pruning preserves deep overlap bevel band when accDist < -blendK and blendK < bezel', () => {
   const builder = createRefractMapBuilder()
   const bounds = { x: 0, y: 0, width: 280, height: 160 }
-  // p0 覆盖 x:[30..90], y:[30..130]；p1 覆盖 x:[30..130], y:[30..130]
-  // 在 (78.5, 80.5) 处 p0 的有符号距离约为 -11.5 (< -blendK = -8)，但处于 p1 更深内部 (sd1 ≈ -48.5)；
-  // bezel=24 > blendK=8，若误用无符号 lb=0 会错误剪枝 p1，导致原本中性透明的深处出现虚假折射位移。
+  // p0 covers x:[30..90], y:[30..130]; p1 covers x:[30..130], y:[30..130].
+  // At (78.5, 80.5), p0's signed distance is ~ -11.5 (< -blendK = -8) while p1 is much deeper inside (sd1 ~ -48.5).
+  // With bezel=24 > blendK=8, an unsigned lb=0 would wrongly prune p1 and leave spurious refraction in the deep interior.
   const p0: GlassPrimitive = { center: { x: 60, y: 80 }, size: { width: 60, height: 100 }, radius: 8 }
   const p1: GlassPrimitive = { center: { x: 80, y: 80 }, size: { width: 100, height: 100 }, radius: 8 }
   const p2Far: GlassPrimitive = { center: { x: 240, y: 80 }, size: { width: 40, height: 40 }, radius: 8 }
@@ -370,10 +370,10 @@ test('refractMap: signed AABB pruning preserves deep overlap bevel band when acc
   })
   const multiPng = decodeStoredRgbaPng(multiRes.dataUrl)
 
-  // 深重叠区 (78, 80) 必须被 p1 拉入超过 effBezel 的深层内部（中性 RGBA 128,128,128,255）
+  // Deep overlap (78, 80) must be pulled past effBezel by p1 (neutral RGBA 128,128,128,255)
   assert.deepEqual(multiPng.pixelAt(78, 80), { r: 128, g: 128, b: 128, a: 255 })
 
-  // 整个 p0/p1 重叠倒角带（包含 accDist < -blendK 区域）与无剪枝 N=2 基线逐像素严格一致
+  // Entire p0/p1 overlap bevel band (including accDist < -blendK) must match the unpruned N=2 baseline pixel-for-pixel
   for (let py = 26; py <= 134; py += 2) {
     for (let px = 26; px <= 134; px += 2) {
       assert.deepEqual(

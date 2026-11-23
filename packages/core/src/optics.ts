@@ -1,9 +1,9 @@
 /**
- * @meniscus/core 纯标准 CSS 光学解析、SVG 光学矩阵生成与 OpticalMaterial 插值。
+ * @meniscus/core pure CSS optics parsing, SVG optical matrix generation, and OpticalMaterial interpolation.
  *
- * 从标准计算后 CSS（`backdrop-filter`、`border`、`box-shadow`）解析玻璃光学参数，
- * 生成圆形倒角查找表、Rec.709 色彩矩阵与轮廓 Alpha Data URL，
- * 并提供跨主题预设的 `OpticalMaterial` 平滑插值。
+ * Extracts glass surface optical metrics from standard computed CSS (`backdrop-filter`, `border`, `box-shadow`),
+ * builds circular-bevel lookup tables, Rec.709 color matrices, and contour alpha Data URLs,
+ * and interpolates `OpticalMaterial` across theme presets without hardcoded host CSS variables.
  *
  * SPDX-License-Identifier: MPL-2.0
  */
@@ -15,7 +15,7 @@ import {
 } from './contracts.ts'
 import { clamp, lerp } from './physics.ts'
 
-/** 圆形倒角查找表及校准后的 Sobel 导数参数。 */
+/** Circular bevel lookup table and calibrated Sobel derivative parameters. */
 export interface CircularBevelTable {
   tableValues: string
   peakSobelEffective: number
@@ -23,14 +23,14 @@ export interface CircularBevelTable {
   divisor: number
 }
 
-/** 背景遮罩（veil）光学参数，保留 brightness/contrast 乘积及先后顺序。 */
+/** Backdrop veil optical parameters preserving brightness/contrast products and filter order. */
 export interface BackdropVeilOptics {
   brightness: number
   contrast: number
   contrastFirst: boolean
 }
 
-/** 解析后的单层 CSS `box-shadow` 结构。 */
+/** Parsed single layer of a computed CSS `box-shadow` declaration. */
 export interface ParsedBoxShadowLayer {
   inset: boolean
   offsetX: number
@@ -40,7 +40,7 @@ export interface ParsedBoxShadowLayer {
   rgba: [number, number, number, number]
 }
 
-/** 从标准计算后 CSS 提取的归一化玻璃表面光学指标。 */
+/** Normalized glass surface optical metrics extracted from standard computed CSS. */
 export interface ExtractedCssGlassSurface {
   veil: BackdropVeilOptics
   borderWidth: number
@@ -57,7 +57,7 @@ export interface ExtractedCssGlassSurface {
   shadowAlpha: number
 }
 
-/** `parseCssGlassSurface` 的输入参数（均为标准 CSS 字符串/数值）。 */
+/** Input parameters for `parseCssGlassSurface` (standard computed CSS strings and pixel values). */
 export interface ParseCssGlassSurfaceInput {
   backdropFilter: string
   veilFallback?: string
@@ -92,8 +92,9 @@ function inverseHalfPlaneGaussian(a: number, sigma: number): number {
 }
 
 /**
- * 对圆形倒角斜率曲线 `1 - sqrt(1 - rise^2)` 按距离 `d` 积分，
- * 并映射至高斯模糊 Alpha 分布 `A(d)`，使离散 Sobel 滤波器产生连续内向高光梯度。
+ * Integrates the circular-bevel slope `1 - sqrt(1 - rise^2)` with respect to distance `d`,
+ * mapped onto the Gaussian-blurred alpha distribution `A(d)` so a discrete Sobel filter
+ * produces smooth inward rim gradients.
  */
 export function buildCircularBevelTable(
   bezel: number,
@@ -127,7 +128,7 @@ export function buildCircularBevelTable(
     raw.push(clamp(val, 0, 1))
   }
 
-  // [-1px, +1px] 范围内平均 Sobel 导数约为理论尖点导数的 0.78 倍
+  // Average Sobel derivative across [-1px, +1px] is ~0.78x the theoretical cusp slope.
   const peakSobelEffective = (4 / maxIntegral) * 0.78
   const divisor = Number((peakSobelEffective / 0.48).toFixed(2))
 
@@ -140,8 +141,9 @@ export function buildCircularBevelTable(
 }
 
 /**
- * 将 Rec.709 `saturate`、`brightness` 与 `contrast` 合并为单个 SVG `feColorMatrix` 矩阵字符串，
- * 精确匹配 CSS `contrast() brightness()`（`contrastFirst=true`）或 `brightness() contrast()`。
+ * Fuses Rec.709 `saturate`, `brightness`, and `contrast` into a single SVG `feColorMatrix` string.
+ * Adjusts the constant offset to match CSS `contrast() brightness()` (`contrastFirst=true`)
+ * versus `brightness() contrast()` (`contrastFirst=false`).
  */
 export function buildColorOpticsMatrix(
   saturate: number,
@@ -172,7 +174,7 @@ export function buildColorOpticsMatrix(
   return `${f(rr)} ${f(rg)} ${f(rb)} 0 ${f(offset)}  ${f(gr)} ${f(gg)} ${f(gb)} 0 ${f(offset)}  ${f(br)} ${f(bg)} ${f(bb)} 0 ${f(offset)}  0 0 0 1 0`
 }
 
-/** 将轮廓 SVG Path 编码为用于 `feImage` Alpha 遮罩的 Data URL。 */
+/** Encodes a contour SVG path as an inline Data URL for use as an `feImage` alpha mask. */
 export function buildContourAlphaDataUrl(
   contourPath: string,
   width: number,
@@ -184,7 +186,7 @@ export function buildContourAlphaDataUrl(
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgDoc)}`
 }
 
-/** 解析浏览器计算后的 `rgb(...)`、`rgba(...)` 或 `color(srgb ...)` 字符串为归一化 `[0..1]` RGBA。 */
+/** Parses a browser-computed `rgb(...)`, `rgba(...)`, or `color(srgb ...)` string into normalized `[0..1]` RGBA. */
 export function parseCssRgba(color: string): [number, number, number, number] {
   const trimmed = color.trim().toLowerCase()
   if (!trimmed || trimmed === 'none' || trimmed === 'transparent') {
@@ -230,7 +232,7 @@ export function parseCssRgba(color: string): [number, number, number, number] {
   return [0, 0, 0, 0]
 }
 
-/** 从标准 CSS `filter` / `backdrop-filter` 字符串提取 `brightness(...)` 与 `contrast(...)` 乘积及先后顺序。 */
+/** Extracts `brightness(...)` and `contrast(...)` products and application order from a CSS filter string. */
 export function parseCssFilterOptics(filterStr: string): BackdropVeilOptics {
   if (!filterStr || filterStr === 'none') {
     return { brightness: 1, contrast: 1, contrastFirst: false }
@@ -264,7 +266,7 @@ export function parseCssFilterOptics(filterStr: string): BackdropVeilOptics {
   }
 }
 
-/** 在两个背景遮罩光学参数之间按 `t ∈ [0, 1]` 线性插值。 */
+/** Linearly interpolates two backdrop veil optics states at `t` in `[0, 1]`. */
 export function interpolateVeilOptics(
   from: BackdropVeilOptics,
   to: BackdropVeilOptics,
@@ -296,7 +298,7 @@ function splitTopLevelCommas(input: string): string[] {
   return parts
 }
 
-/** 将计算后的 CSS `box-shadow` 字符串解析为结构化阴影层列表（支持前置或后置颜色语法）。 */
+/** Parses a computed CSS `box-shadow` string into structured layers (supports leading or trailing colors). */
 export function parseCssBoxShadow(boxShadowStr: string): ParsedBoxShadowLayer[] {
   if (!boxShadowStr || boxShadowStr === 'none') return []
   const layers: ParsedBoxShadowLayer[] = []
@@ -334,7 +336,7 @@ export function parseCssBoxShadow(boxShadowStr: string): ParsedBoxShadowLayer[] 
   return layers
 }
 
-/** 标准正态累积分布函数 Phi(z)，用于近似 CSS 高斯阴影模糊衰减。 */
+/** Standard normal CDF Phi(z) used to model Gaussian attenuation of CSS `inset box-shadow` edges. */
 function normalCdf(z: number): number {
   const x = z / Math.SQRT2
   const ax = Math.abs(x)
@@ -371,8 +373,8 @@ function resolveCssInsetShadowMetrics(
 }
 
 /**
- * 从实时 DOM 的标准计算后 CSS 属性中提取归一化玻璃表面光学指标。
- * 通用适配任意标准 CSS 玻璃表面，不依赖特定私有变量或业务预设。
+ * Extracts normalized glass surface optical metrics from standard computed DOM CSS properties.
+ * Works generically across any standard CSS glass surface without relying on private custom properties.
  */
 export function parseCssGlassSurface({
   backdropFilter,
@@ -471,8 +473,8 @@ export function parseCssGlassSurface({
 }
 
 /**
- * 在起点与终点实测 CSS 玻璃表面之间按 `styleMix ∈ [0, 1]` 插值，
- * 并覆写基础 `OpticalMaterial` 的边框、描边、内高光与阴影参数以实现无跳变着陆。
+ * Interpolates between two measured CSS glass surfaces at `styleMix` in `[0, 1]`,
+ * overriding the base `OpticalMaterial` border, hairline, rim, and shadow fields for seamless landing.
  */
 export function interpolateCssGlassSurfaceToMaterial(
   baseMaterial: OpticalMaterial,
@@ -507,9 +509,7 @@ export function interpolateCssGlassSurfaceToMaterial(
   }
 }
 
-/**
- * 在两个 `OpticalMaterial` 材质之间按 `t ∈ [0, 1]` 平滑插值（包含可选边框与底部高光比例）。
- */
+/** Smoothly interpolates two `OpticalMaterial` definitions at `t` in `[0, 1]`, including optional border fields. */
 export function interpolateOpticalMaterial(
   from: OpticalMaterial,
   to: OpticalMaterial,
@@ -567,9 +567,7 @@ export function interpolateOpticalMaterial(
   return result
 }
 
-/**
- * 便捷解析器：在指定主题下 `DEFAULT_OPTICAL_MATERIALS[theme].crisp` 与 `frosted` 之间按 `styleMix` 插值。
- */
+/** Convenience resolver interpolating between `DEFAULT_OPTICAL_MATERIALS[theme].crisp` and `.frosted` by `styleMix`. */
 export function resolveOpticalMaterial(
   theme: ThemeMode,
   styleMix: number,

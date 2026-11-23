@@ -21,7 +21,7 @@ function approx(actual: number, expected: number, eps = 1e-12, label = ''): void
   )
 }
 
-/** 暴力无剪枝迭代 smin 参考实现，用于验证 AABB 下界剪枝的数学无损性。 */
+/** Unpruned brute-force iterative smin reference to verify lossless AABB lower-bound pruning. */
 function bruteForceIterativeDistance(
   pointX: number,
   pointY: number,
@@ -56,41 +56,41 @@ function bruteForceIterativeSdf(
   return acc
 }
 
-test('单图元 SDF 与 smin 基础恒等式（对齐原 Sukimi 数学定义）', () => {
+test('single-primitive SDF and basic smin identities', () => {
   const box: GlassPrimitive = { center: { x: 100, y: 100 }, size: { width: 80, height: 40 }, radius: 12 }
 
-  // 顶边中点 (100, 80) -> distance = 0, normal = (0, -1)
+  // Top edge midpoint (100, 80) -> distance = 0, normal = (0, -1)
   const topEdge = computeRoundedBoxSdf({ x: 100, y: 80 }, box)
   approx(topEdge.distance, 0, 1e-12, 'topEdge.distance')
   approx(topEdge.normal.x, 0, 1e-12)
   approx(topEdge.normal.y, -1, 1e-12)
   approx(computeRoundedBoxDistance(100, 80, box), 0, 1e-12)
 
-  // 右侧外部 (150, 100) -> distance = 10, normal = (1, 0)
+  // Outside right (150, 100) -> distance = 10, normal = (1, 0)
   const rightOut = computeRoundedBoxSdf({ x: 150, y: 100 }, box)
   approx(rightOut.distance, 10, 1e-12)
   approx(rightOut.normal.x, 1, 1e-12)
   approx(rightOut.normal.y, 0, 1e-12)
 
-  // 宽矩形中心点 (100, 100) -> distance = -20，最近边为上下边 (0, 1)
+  // Wide box center (100, 100) -> distance = -20, nearest edge is top/bottom (0, 1)
   const center = computeRoundedBoxSdf({ x: 100, y: 100 }, box)
   approx(center.distance, -20, 1e-12)
   assert.deepEqual(center.normal, { x: 0, y: 1 })
 
-  // 正方形中心点退化保护 (0, -1)
+  // Degenerate square center normal fallback (0, -1)
   const square: GlassPrimitive = { center: { x: 100, y: 100 }, size: { width: 40, height: 40 }, radius: 12 }
   const squareCenter = computeRoundedBoxSdf({ x: 100, y: 100 }, square)
   approx(squareCenter.distance, -20, 1e-12)
   assert.deepEqual(squareCenter.normal, { x: 0, y: -1 })
 
-  // 圆角外斜向法线
+  // Diagonal normal outside rounded corner
   const cornerOut = computeRoundedBoxSdf({ x: 140, y: 120 }, box)
   const expectedCornerDist = Math.hypot(12, 12) - 12
   approx(cornerOut.distance, expectedCornerDist, 1e-12)
   approx(cornerOut.normal.x, Math.SQRT1_2, 1e-12)
   approx(cornerOut.normal.y, Math.SQRT1_2, 1e-12)
 
-  // smin 等距恒等式: dA == dB == 4, k = 28 -> 4 - 28 * 0.25 = -3
+  // Equidistant smin identity: dA == dB == 4, k = 28 -> 4 - 28 * 0.25 = -3
   const eq = computeSmin(4, 4, { x: 1, y: 0 }, { x: 0, y: 1 }, 28)
   approx(eq.blendH, 0.5, 1e-12)
   approx(eq.distance, -3, 1e-12)
@@ -98,14 +98,14 @@ test('单图元 SDF 与 smin 基础恒等式（对齐原 Sukimi 数学定义）'
   approx(eq.normal.x, Math.SQRT1_2, 1e-12)
   approx(computeSminDistance(4, 4, 28), -3, 1e-12)
 
-  // k = 0 退化为精确 min
+  // k = 0 reduces to exact min
   const hard = computeSmin(2, 5, { x: -1, y: 0 }, { x: 0, y: 1 }, 0)
   assert.equal(hard.distance, 2)
   assert.deepEqual(hard.normal, { x: -1, y: 0 })
   assert.equal(computeSminDistance(2, 5, 0), 2)
 })
 
-test('computeFieldBounds 与 computePairMergeStatus', () => {
+test('computeFieldBounds and computePairMergeStatus', () => {
   const emptyField: GlassFieldState = {
     primitives: [{ center: { x: 50, y: 50 }, size: { width: 0.005, height: 20 }, radius: 4 }],
     blendK: 20,
@@ -123,7 +123,7 @@ test('computeFieldBounds 与 computePairMergeStatus', () => {
     height: 262,
   })
 
-  // 完全融合检测
+  // Full absorption detection
   const merged = computePairMergeStatus(platter, dropletNear, 28, 8)
   assert.equal(merged.isMerged, true)
   assert.ok(merged.mergeDepth > 0)
@@ -138,7 +138,7 @@ test('computeFieldBounds 与 computePairMergeStatus', () => {
   assert.equal(collapsed.rimOpacity, 1)
 })
 
-test('N=0, 1, 2 场评估与 PreparedField 倍增扩容', () => {
+test('N=0, 1, 2 field evaluation and PreparedField capacity doubling', () => {
   // N = 0
   const field0: GlassFieldState = { primitives: [], blendK: 24 }
   assert.equal(evaluateFieldDistance(10, 20, field0), Infinity)
@@ -146,7 +146,7 @@ test('N=0, 1, 2 场评估与 PreparedField 倍增扩容', () => {
   assert.equal(sdf0.distance, Infinity)
   assert.deepEqual(sdf0.normal, { x: 0, y: -1 })
 
-  // N = 1（包含一个被过滤的无效图元）
+  // N = 1 (with one inactive primitive filtered out)
   const p1: GlassPrimitive = { center: { x: 60, y: 80 }, size: { width: 50, height: 30 }, radius: 10 }
   const inactive: GlassPrimitive = { center: { x: 0, y: 0 }, size: { width: 0.01, height: 40 }, radius: 0 }
   const field1: GlassFieldState = { primitives: [inactive, p1], blendK: 24 }
@@ -157,7 +157,7 @@ test('N=0, 1, 2 场评估与 PreparedField 倍增扩容', () => {
   approx(sdf1.normal.x, ref1.normal.x, 1e-12)
   approx(sdf1.normal.y, ref1.normal.y, 1e-12)
 
-  // N = 2（双体快路径）
+  // N = 2 (pair fast path)
   const p2: GlassPrimitive = { center: { x: 110, y: 80 }, size: { width: 40, height: 40 }, radius: 20 }
   const field2: GlassFieldState = { primitives: [p1, p2], blendK: 28 }
   const preparedSmall = createPreparedField(2)
@@ -182,7 +182,7 @@ test('N=0, 1, 2 场评估与 PreparedField 倍增扩容', () => {
     approx(sEval.normal.y, sRef.normal.y, 1e-12, `N=2 sdf.ny (${pt.x},${pt.y})`)
   }
 
-  // 容量不足倍增扩容验证
+  // Verify capacity doubling when insufficient
   const many: GlassPrimitive[] = Array.from({ length: 7 }, (_, i) => ({
     center: { x: i * 40, y: 0 },
     size: { width: 30, height: 30 },
@@ -193,7 +193,7 @@ test('N=0, 1, 2 场评估与 PreparedField 倍增扩容', () => {
   assert.equal(preparedSmall.capacity, 8)
 })
 
-test('N=3, 8, 16 开启 AABB 下界剪枝与暴力无剪枝误差 <= 1e-12（含大盒嵌套深内部边界情况）', () => {
+test('N=3, 8, 16 AABB lower-bound pruning matches brute-force within 1e-12 (including nested deep-interior case)', () => {
   const counts = [3, 8, 16]
   const blendKs = [0, 12, 28]
 
@@ -207,7 +207,7 @@ test('N=3, 8, 16 开启 AABB 下界剪枝与暴力无剪枝误差 <= 1e-12（含
         radius: 10 + (i % 3) * 4,
       }
     })
-    // 在 N=8/16 时放入一个嵌套包含的大盒，检验深内部点不会发生 AABB 下界误剪枝
+    // For N=8/16, include a large enclosing box to ensure deep-interior points are not falsely pruned.
     if (n >= 8) {
       primitives[0] = { center: { x: 120, y: 120 }, size: { width: 40, height: 40 }, radius: 10 }
       primitives[n - 1] = { center: { x: 120, y: 120 }, size: { width: 240, height: 240 }, radius: 24 }
@@ -217,7 +217,7 @@ test('N=3, 8, 16 开启 AABB 下界剪枝与暴力无剪枝误差 <= 1e-12（含
       const field: GlassFieldState = { primitives, blendK }
       const prepared = prepareField(field)
 
-      // 均匀采样网格 + 极近/极远测试点
+      // Uniform sample grid including near and far test points.
       for (let gy = -40; gy <= 360; gy += 37) {
         for (let gx = -40; gx <= 360; gx += 41) {
           const dPruned = evaluateFieldDistance(gx, gy, prepared)

@@ -1,13 +1,15 @@
 /**
- * Live-DOM 动态玻璃材料 WebGL2 + 2D Canvas 降级光学边缘渲染器。
+ * WebGL2 + 2D Canvas fallback optical edge renderer for Live-DOM dynamic glass materials.
  *
- * 仅在透明叠加层 `<canvas>` 上渲染光学边界层（最多支持 MAX_GPU_PRIMITIVES = 16 个活跃图元）：
- * 1. 纯外侧投影（`d > 0`，绝不渗入半透明玻璃内部）
- * 2. 暗色外细线（`hairlineWidth`），支持侧边 / 转角 / 平边 alpha 衰减
- * 3. 可选 1px 等宽内边框 + 方向性/柔和内侧边缘高光（`inset < 5px`，由 `styleMix` 与 `rimOpacity` 调节）
+ * Renders ONLY the optical boundary layer on a transparent overlay `<canvas>` (up to
+ * MAX_GPU_PRIMITIVES = 16 active primitives):
+ * 1. Outside-only drop shadow (`d > 0`, never bleeding into translucent glass)
+ * 2. Dark outer hairline (`hairlineWidth`) with side / corner / flat alpha falloff
+ * 3. Optional 1px uniform inner border + directional/soft inner rim highlight (`inset < 5px`),
+ *    modulated by `styleMix` and `rimOpacity`
  *
- * 玻璃内部平坦区域（`inset >= 5px`）严格保持透明（`alpha = 0`），以便下方经轮廓裁剪的实时 DOM
- * `backdrop-filter` 清晰透出。
+ * Leaves the flat interior (`inset >= 5px`) strictly transparent (`alpha = 0`) so live DOM
+ * `backdrop-filter` clipped by the contour shows through cleanly underneath.
  *
  * SPDX-License-Identifier: MPL-2.0
  */
@@ -56,7 +58,7 @@ uniform float uOpacity;
 uniform vec4 uRimParams;        // (material.rimOpacity, material.rimWidth, material.rimTail, material.rimFocus)
 uniform vec4 uHairline;         // (width, sideAlpha, cornerAlpha, flatAlpha)
 uniform vec3 uShadow;           // (blur, offsetY, alpha)
-uniform vec4 uBorderColor;      // 可选等宽内边框归一化 RGBA
+uniform vec4 uBorderColor;      // normalized RGBA of optional uniform inner border
 uniform vec2 uBorderParams;     // (borderWidthPx, rimBottomRatio)
 
 struct SdfSample {
@@ -89,7 +91,8 @@ SdfSample sdRoundedBoxRefined(vec2 p, vec2 center, vec2 halfSize, float r) {
     baseNormal = vec2(0.0, s.y);
   }
 
-  // 边界 5 CSS px 内的超椭圆角法线精修，平滑转角高光；dist 严格保持精确 baseDist，与 Marching Squares 轮廓 0px 对齐。
+  // Superellipse octant normal refinement within 5 CSS px of the boundary for smooth corner speculars;
+  // dist stays exact baseDist for 0px alignment with the Marching Squares contour.
   float rimProximity = smoothstep(5.0, 0.0, abs(baseDist));
   vec2 normal = baseNormal;
 
@@ -144,7 +147,7 @@ void main() {
     return;
   }
 
-  // 将 GL UV（左下原点）转换为局部 CSS 像素坐标（左上原点）。
+  // Convert GL UV (bottom-left origin) to local CSS px (top-left origin).
   vec2 pCss = vec2(vUv.x * uViewport.x, (1.0 - vUv.y) * uViewport.y);
   SdfSample sdf = evaluateGlassSdf(pCss);
   float d = sdf.dist;
@@ -154,7 +157,7 @@ void main() {
   float glassMask = smoothstep(0.5 * aa, -0.5 * aa, d);
   float outsideMask = 1.0 - glassMask;
 
-  // 1. 纯外侧投影（d > 0）
+  // 1. Outside-only drop shadow (d > 0)
   float shadowA = 0.0;
   if (outsideMask > 0.001 && uShadow.z > 0.001) {
     SdfSample shadowSdf = evaluateGlassSdf(pCss - vec2(0.0, uShadow.y));
@@ -163,7 +166,7 @@ void main() {
     shadowA = outsideMask * shadowFalloff * uShadow.z * uOpacity;
   }
 
-  // 2. 暗色外细线：存在等宽 CSS 内边框时严格处于外侧（d >= 0），否则跨外缘分布（d >= -0.25）
+  // 2. Dark outer hairline: strictly outside when a uniform CSS inner border is present (d >= 0), otherwise straddling the outer edge (d >= -0.25)
   float hw = max(uHairline.x, 0.5 / max(uDpr, 1.0));
   float hairlineHalfW = hw * 0.5;
   float hasUniformBorder = step(0.001, uBorderParams.x);
@@ -182,7 +185,7 @@ void main() {
     hairA = hairlineBand * hairlineProfileAlpha * uOpacity;
   }
 
-  // 3. 可选 1px 等宽内边框 + 方向性/柔和内侧边缘高光（inset < 5.0 CSS px）
+  // 3. Optional 1px uniform inner border + directional/soft inner rim highlight (inset < 5.0 CSS px)
   float inset = max(-d, 0.0);
   float borderMask = 0.0;
   float borderA = 0.0;
@@ -200,7 +203,7 @@ void main() {
     float wSoft = clamp(uStyleMix, 0.0, 1.0) * clamp(uRimOpacity, 0.0, 1.0);
 
     if (hasUniformBorder > 0.5) {
-      // 对齐 CSS inset box-shadow：将内侧高光约束在 padding 边界以内，避免对 1px 边框二次增亮
+      // Match CSS inset box-shadow: keep inner rim inside the padding edge so the 1px border is not double-brightened
       float padInset = max(inset - uBorderParams.x, 0.0);
       float padMask = 1.0 - borderMask;
       float topBias = clamp(-normal.y, 0.0, 1.0);
@@ -230,18 +233,18 @@ void main() {
         rimA += bandCurve * rimCoreBoost * angWeight * uRimParams.x * wSoft;
       }
 
-      // 提升高光亮度以匹配 source-over alpha 混合预期
+      // Boost specular luminance to match source-over alpha blending expectations
       rimA = clamp(rimA * 1.35 * glassMask * uOpacity, 0.0, 1.0);
     }
   }
 
-  // 当外投影、外细线、内边框与内高光全为零时，保持内部严格透明
+  // Keep interior strictly transparent when shadow, hairline, border, and rim are all zero
   if (shadowA <= 0.0001 && hairA <= 0.0001 && borderA <= 0.0001 && rimA <= 0.0001) {
     fragColor = vec4(0.0);
     return;
   }
 
-  // 预乘 Alpha 合成：等宽内边框 覆盖 内侧边缘高光 覆盖 外细线与投影
+  // Premultiplied alpha composite: uniform border over inner rim over hairline and shadow
   float darkA = clamp(shadowA + hairA * (1.0 - shadowA), 0.0, 1.0);
   vec3 afterRimRgb = vec3(rimA);
   float afterRimA = rimA + darkA * (1.0 - rimA);
@@ -350,7 +353,7 @@ function renderFallback2d(ctx: CanvasRenderingContext2D, frame: OverlayRenderFra
   }
   if (!hasActive) return
 
-  // 1. 使用 evenodd 裁剪排除所有活跃图元内部，绘制纯外侧投影
+  // 1. Outside-only drop shadow using evenodd clip to exclude all active primitive interiors
   if (material.shadowAlpha > 0.001) {
     ctx.save()
     ctx.beginPath()
@@ -369,7 +372,7 @@ function renderFallback2d(ctx: CanvasRenderingContext2D, frame: OverlayRenderFra
     ctx.restore()
   }
 
-  // 2. 暗色外细线
+  // 2. Dark outer hairline
   const hairlineAlpha = ((material.hairlineSideAlpha + material.hairlineCornerAlpha) * 0.5) * opacity
   if (hairlineAlpha > 0.001 && material.hairlineWidth > 0) {
     ctx.save()
@@ -381,7 +384,7 @@ function renderFallback2d(ctx: CanvasRenderingContext2D, frame: OverlayRenderFra
     ctx.restore()
   }
 
-  // 3. 可选等宽内边框
+  // 3. Optional uniform inner border
   const borderWidth = material.borderWidth ?? 0
   if (borderWidth > 0.001 && material.borderRgba && material.borderRgba[3] * opacity > 0.001) {
     const [r, g, b, a] = material.borderRgba
@@ -394,7 +397,7 @@ function renderFallback2d(ctx: CanvasRenderingContext2D, frame: OverlayRenderFra
     ctx.restore()
   }
 
-  // 4. 顶部渐变边缘高光
+  // 4. Top gradient rim catchlight
   const styleMix = field.styleMix ?? 0
   const fieldRimOpacity = field.rimOpacity ?? 1
   const effectiveRim =
@@ -419,7 +422,7 @@ function renderFallback2d(ctx: CanvasRenderingContext2D, frame: OverlayRenderFra
   }
 }
 
-/** 创建支持最多 MAX_GPU_PRIMITIVES (16) 个图元的光学边缘渲染器，内置 WebGL2 与 2D Canvas 自动降级。 */
+/** Creates an optical edge overlay renderer supporting up to MAX_GPU_PRIMITIVES (16) with WebGL2 and automatic 2D Canvas fallback. */
 export function createGlassOverlayRenderer(): IGlassOverlayRenderer {
   let capabilities: RendererCapabilities = {
     webgl2: false,
@@ -437,7 +440,7 @@ export function createGlassOverlayRenderer(): IGlassOverlayRenderer {
   let program: WebGLProgram | null = null
   let uniforms: OverlayUniforms | null = null
 
-  // 闭包内预分配上传缓冲，确保每帧渲染零 GC 分配。
+  // Pre-allocated upload buffers inside closure for zero per-frame GC allocation.
   const primitiveVecData = new Float32Array(MAX_GPU_PRIMITIVES * 4)
   const primitiveRadiiData = new Float32Array(MAX_GPU_PRIMITIVES)
 
@@ -554,7 +557,7 @@ export function createGlassOverlayRenderer(): IGlassOverlayRenderer {
         gl = null
       }
 
-      // WebGL2 不可用或初始化失败时自动降级到 2D Canvas
+      // Automatically fall back to 2D Canvas when WebGL2 is unavailable or initialization fails
       fallback2d = canvas.getContext('2d')
       capabilities = {
         webgl2: false,

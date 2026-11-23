@@ -1,7 +1,7 @@
 /**
- * @meniscus/core 统一核心契约定义。
- * 描述通用 N-图元连续玻璃场、物理弹簧参数、光学材质与渲染器接口，
- * 不包含任何特定宿主业务或菜单交互语义。
+ * Core contracts for `@meniscus/core`.
+ * Defines the generic N-primitive continuous glass field, spring physics,
+ * optical material presets, and renderer interfaces without host-specific semantics.
  *
  * SPDX-License-Identifier: MPL-2.0
  */
@@ -30,30 +30,30 @@ export interface EdgeInsets {
   left: number
 }
 
-/** WebGL2 片元着色器单次绘制支持的最大活跃图元数量。 */
+/** Maximum active primitives supported per WebGL2 fragment shader draw call. */
 export const MAX_GPU_PRIMITIVES = 16
 
-/** 逻辑 CSS 像素坐标系下的单个圆角矩形/胶囊玻璃图元。 */
+/** Single rounded-rectangle or capsule glass primitive in logical CSS pixels. */
 export interface GlassPrimitive {
   id?: string
   center: Point
   size: Size
   radius: number
-  /** 可选图元权重（预留扩展，默认 1）。 */
+  /** Optional primitive weight reserved for future extensions (defaults to 1). */
   weight?: number
 }
 
-/** N-图元玻璃场的瞬时几何与融合光学混合状态。 */
+/** Instantaneous geometry and optical blending state of an N-primitive glass field. */
 export interface GlassFieldState {
   primitives: readonly GlassPrimitive[]
   blendK: number
-  /** 柔和边缘高光强度系数，范围 [0, 1]（未指定时默认 1）。 */
+  /** Soft rim highlight intensity multiplier in [0, 1] (defaults to 1). */
   rimOpacity?: number
-  /** 从方向性高光到柔和边缘高光的材质过渡权重，范围 [0, 1]（未指定时默认 0）。 */
+  /** Material transition weight from directional to soft rim highlights in [0, 1] (defaults to 0). */
   styleMix?: number
 }
 
-/** 边缘高光模式：'directional' 偏向定向高光，'soft' 偏向宽柔散射高光。 */
+/** Rim highlight mode: 'directional' favors directional speculars; 'soft' favors wide diffuse glow. */
 export type RimMode = 'directional' | 'soft'
 
 export type ThemeMode = 'light' | 'dark'
@@ -68,7 +68,7 @@ export interface OpticalMaterial {
   saturation: number
   brightness: number
   contrast: number
-  /** 归一化线性/sRGB RGBA 染色通道 [r, g, b, a]，范围 [0, 1]。 */
+  /** Normalized RGBA tint channels [r, g, b, a] in [0, 1]. */
   tintRgba: readonly [number, number, number, number]
   rimMode: RimMode
   rimOpacity: number
@@ -83,11 +83,11 @@ export interface OpticalMaterial {
   shadowBlur: number
   shadowOffsetY: number
   shadowAlpha: number
-  /** 可选等宽内边框宽度（CSS px，0 或未定义表示仅使用方向性边缘高光）。 */
+  /** Optional uniform inner border width in CSS px; 0 or undefined uses directional rim highlights only. */
   borderWidth?: number
-  /** 可选归一化内边框 RGBA 颜色 [r, g, b, a]。 */
+  /** Optional normalized inner border RGBA color [r, g, b, a]. */
   borderRgba?: readonly [number, number, number, number]
-  /** 可选底部方向高光相对顶部的比例（默认 0.72）。 */
+  /** Optional bottom directional highlight ratio relative to the top edge (defaults to 0.72). */
   rimBottomRatio?: number
 }
 
@@ -221,7 +221,7 @@ export interface RendererCapabilities {
   fallbackNotice?: string
 }
 
-/** 叠加层光学边界渲染器的单帧输入。 */
+/** Per-frame input for the overlay optical border renderer. */
 export interface OverlayRenderFrame {
   viewport: Size
   dpr: number
@@ -232,7 +232,7 @@ export interface OverlayRenderFrame {
   blurBumpPx?: number
 }
 
-/** 光学边界渲染器契约（WebGL2 主路径 + 2D Canvas 降级）。 */
+/** Optical border renderer contract (WebGL2 primary path with 2D Canvas fallback). */
 export interface IGlassOverlayRenderer {
   readonly capabilities: RendererCapabilities
   mount(canvas: HTMLCanvasElement): RendererCapabilities

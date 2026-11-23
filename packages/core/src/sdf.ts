@@ -1,7 +1,7 @@
 /**
- * @meniscus/core 通用 N-图元圆角矩形平滑并集（smin）有向距离场内核。
- * 提供零分配标量热路径、SoA 预分配数据结构、AABB 下界剪枝与双体融合检测，
- * 不包含任何菜单、锚点或特定宿主业务语义。
+ * Generic N-primitive rounded-box smooth-union (smin) signed distance field kernel.
+ * Provides zero-allocation scalar hot paths, SoA preallocated buffers, lossless AABB
+ * lower-bound pruning, and pair merge detection without host-specific semantics.
  *
  * SPDX-License-Identifier: MPL-2.0
  */
@@ -15,18 +15,18 @@ import type {
   SminSample,
 } from './contracts.ts'
 
-/** 活跃图元的最小有效尺寸阈值（CSS px）。 */
+/** Minimum active primitive dimension threshold in CSS px. */
 const MIN_ACTIVE_SIZE = 0.01
 
-/** 退化法线与除零保护阈值。 */
+/** Threshold for degenerate normals and division-by-zero guards. */
 const EPSILON = 1e-6
 
-/** 默认 SoA 预分配容量。 */
+/** Default preallocated SoA capacity. */
 const DEFAULT_PREPARED_CAPACITY = 16
 
 /**
- * 面向每帧高频采样的 SoA（Structure of Arrays）预分配玻璃场结构。
- * 所有数值字段均以紧凑 Float64Array 存储，避免 60/120fps 热路径产生临时对象分配。
+ * Preallocated Structure-of-Arrays (SoA) glass field for high-frequency per-frame sampling.
+ * Stores all numeric fields in compact Float64Arrays to avoid GC pressure at 60/120fps.
  */
 export interface PreparedField {
   count: number
@@ -45,7 +45,7 @@ export interface PreparedField {
   maxY: Float64Array
 }
 
-/** 双图元融合状态结果。 */
+/** Merge state between two primitives. */
 export interface PairMergeStatus {
   mergeDepth: number
   isMerged: boolean
@@ -78,11 +78,11 @@ function isActivePrimitive(shape: GlassPrimitive): boolean {
   return shape.size.width > MIN_ACTIVE_SIZE && shape.size.height > MIN_ACTIVE_SIZE
 }
 
-/** 内部复用的全局 scratch PreparedField，用于传入原始 GlassFieldState 时的零 GC 评估。 */
+/** Shared scratch buffer for zero-GC evaluation when given a raw GlassFieldState. */
 const scratchPreparedField: PreparedField = createPreparedField(DEFAULT_PREPARED_CAPACITY)
 
 /**
- * 创建指定初始容量的 SoA 预分配场缓冲。
+ * Creates a preallocated SoA field buffer with the given initial capacity.
  */
 export function createPreparedField(capacity = DEFAULT_PREPARED_CAPACITY): PreparedField {
   const cap = Math.max(1, Math.floor(capacity))
@@ -127,7 +127,8 @@ function ensurePreparedCapacity(prepared: PreparedField, needed: number): void {
 }
 
 /**
- * 将 `GlassFieldState` 中的活跃图元打包写入 SoA `PreparedField`（容量不足时按倍增扩容）。
+ * Packs active primitives from `GlassFieldState` into a SoA `PreparedField`,
+ * doubling capacity when needed.
  */
 export function prepareField(field: GlassFieldState, out?: PreparedField): PreparedField {
   const target = out ?? createPreparedField(Math.max(DEFAULT_PREPARED_CAPACITY, field.primitives.length))
@@ -187,7 +188,8 @@ export function prepareField(field: GlassFieldState, out?: PreparedField): Prepa
 }
 
 /**
- * 零分配标量热路径：计算点 `(pointX, pointY)` 到轴对齐圆角矩形的有向距离。
+ * Zero-allocation scalar hot path: signed distance from `(pointX, pointY)`
+ * to an axis-aligned rounded rectangle.
  */
 export function computeRoundedBoxDistance(
   pointX: number,
@@ -205,7 +207,8 @@ export function computeRoundedBoxDistance(
 }
 
 /**
- * 计算点 `point` 到轴对齐圆角矩形的精确有向距离与外单位法线。
+ * Computes the exact signed distance and outward unit normal from `point`
+ * to an axis-aligned rounded rectangle.
  */
 export function computeRoundedBoxSdf(point: Point, shape: GlassPrimitive): SdfSample {
   const halfW = Math.max(0, shape.size.width * 0.5)
@@ -246,7 +249,7 @@ export function computeRoundedBoxSdf(point: Point, shape: GlassPrimitive): SdfSa
 }
 
 /**
- * 计算二次多项式平滑最小值（smin）标量距离。
+ * Computes the quadratic polynomial smooth-minimum (`smin`) scalar distance.
  */
 export function computeSminDistance(distA: number, distB: number, k: number): number {
   if (k <= EPSILON) {
@@ -257,7 +260,7 @@ export function computeSminDistance(distA: number, distB: number, k: number): nu
 }
 
 /**
- * 计算带平滑法线混合与归一化的二次多项式 `smin` 并集样本。
+ * Computes the quadratic polynomial `smin` union with smooth normal blending and normalization.
  */
 export function computeSmin(
   distA: number,
@@ -292,8 +295,9 @@ export function computeSmin(
 }
 
 /**
- * 计算所有活跃图元（`size.width > 0.01 && size.height > 0.01`）的联合轴对齐包围盒，
- * 并向外扩展 `padding`。无活跃图元时返回 `{ x: 0, y: 0, width: 0, height: 0 }`。
+ * Computes the combined axis-aligned bounding box of all active primitives
+ * (`size.width > 0.01 && size.height > 0.01`), expanded by `padding`.
+ * Returns `{ x: 0, y: 0, width: 0, height: 0 }` when no primitive is active.
  */
 export function computeFieldBounds(field: GlassFieldState, padding = 0): Rect {
   let minX = Infinity
@@ -335,8 +339,8 @@ export function computeFieldBounds(field: GlassFieldState, padding = 0): Rect {
 }
 
 /**
- * 双体完全融合检测：通过探测图元 `b` 四角在图元 `a` SDF 中的最深侵入度，
- * 判断是否完全吸纳并返回边缘高光透明度权重。
+ * Detects full absorption of primitive `b` into `a` by probing `b`'s four corners
+ * against `a`'s SDF, returning the merge depth and rim opacity weight.
  */
 export function computePairMergeStatus(
   a: GlassPrimitive,
@@ -371,7 +375,7 @@ export function computePairMergeStatus(
   return { mergeDepth, isMerged, rimOpacity }
 }
 
-/** 使用 SoA 字段内联评估第 `i` 个活跃图元的标量有向距离。 */
+/** Evaluates the scalar signed distance to the `i`-th active primitive from SoA fields. */
 function evalPreparedPrimitiveDistance(
   pointX: number,
   pointY: number,
@@ -387,7 +391,10 @@ function evalPreparedPrimitiveDistance(
   return out + (maxQ < 0 ? maxQ : 0) - prepared.radius[i]!
 }
 
-/** 计算点到第 `i` 个图元 AABB 的精确有向距离下界（圆角矩形 ⊆ AABB，全空间严格成立 d_i >= lb）。 */
+/**
+ * Exact signed distance lower bound to the `i`-th primitive's AABB.
+ * Since a rounded box is a subset of its AABB, `d_i >= lb` holds everywhere.
+ */
 function evalPreparedAabbLowerBound(
   pointX: number,
   pointY: number,
@@ -401,13 +408,13 @@ function evalPreparedAabbLowerBound(
     const oy = dy > 0 ? dy : 0
     return ox > 0 ? (oy > 0 ? Math.hypot(ox, oy) : ox) : oy
   }
-  // 点位于 AABB 内部时，使用带符号内部下界 max(dx, dy) <= 0，避免与负的 accDist + k 比较时误剪枝
+  // Inside the AABB, return the signed interior bound max(dx, dy) <= 0 so comparisons against negative (accDist + k) never falsely prune.
   return dx > dy ? dx : dy
 }
 
 /**
- * 评估 N-图元玻璃场在点 `(pointX, pointY)` 处的标量有向距离（零分配热路径）。
- * 当 `N >= 3` 时启用基于 AABB 有向距离下界的无损剪枝。
+ * Evaluates the scalar signed distance of an N-primitive glass field at `(pointX, pointY)`
+ * on a zero-allocation hot path, using lossless AABB lower-bound pruning for `N >= 3`.
  */
 export function evaluateFieldDistance(
   pointX: number,
@@ -471,8 +478,8 @@ export function evaluateFieldDistance(
 }
 
 /**
- * 评估 N-图元玻璃场在点 `point` 处的精确有向距离与外单位法线。
- * 支持 `N=0/1/2` 快路径及 `N>=3` 无损 AABB 下界剪枝。
+ * Evaluates the exact signed distance and outward unit normal of an N-primitive glass field
+ * at `point`, using `N=0/1/2` fast paths and lossless AABB lower-bound pruning for `N >= 3`.
  */
 export function evaluateFieldSdf(
   point: Point,

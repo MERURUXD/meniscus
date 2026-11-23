@@ -1,6 +1,6 @@
 /**
- * @meniscus/core 统一公共入口。
- * 零外部运行时依赖的 Live-DOM 动态玻璃连续形变内核。
+ * Public entry point for `@meniscus/core`.
+ * Zero-dependency Live-DOM continuous glass morphing kernel.
  *
  * SPDX-License-Identifier: MPL-2.0
  */

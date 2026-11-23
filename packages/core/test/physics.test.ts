@@ -1,5 +1,5 @@
 /**
- * @meniscus/core 弹簧物理、缓动数学与可打断形变时间线单元测试。
+ * @meniscus/core unit tests for spring physics, easing math, and interruptible morph timelines.
  *
  * SPDX-License-Identifier: MPL-2.0
  */
@@ -30,7 +30,7 @@ function approx(actual: number, expected: number, eps = 1e-4, label = ''): void 
   )
 }
 
-test('数学与缓动工具函数边界与单调性', () => {
+test('math and easing utilities respect boundaries and monotonicity', () => {
   assert.equal(clamp(-5, 0, 1), 0)
   assert.equal(clamp(5, 0, 1), 1)
   assert.equal(clamp(0.4, 0, 1), 0.4)
@@ -53,7 +53,7 @@ test('数学与缓动工具函数边界与单调性', () => {
   approx(cubicBezier(0.42, 0, 0.58, 1, 0.5), 0.5, 1e-5)
 })
 
-test('riseAndFall 在峰值处精确为 1.0 且 t <= 0 时为 0', () => {
+test('riseAndFall peaks at exactly 1.0 and returns 0 for t <= 0', () => {
   const cases: Array<[number, number]> = [
     [0.098, 2.2],
     [0.069, 3.0],
@@ -69,37 +69,37 @@ test('riseAndFall 在峰值处精确为 1.0 且 t <= 0 时为 0', () => {
   }
 })
 
-test('evaluateSpringState 覆盖欠阻尼、临界阻尼、过阻尼与非零初速度', () => {
+test('evaluateSpringState covers underdamped, critically damped, overdamped, and non-zero initial velocity', () => {
   const at0 = evaluateSpringState(0, DEFAULT_SPRINGS.standard)
   assert.equal(at0.value, 0)
   assert.equal(at0.velocity, 0)
 
-  // 欠阻尼弹簧应出现过冲并在 0.45s 附近收敛
+  // Underdamped standard spring should overshoot and settle near 0.45s.
   const peakOpen = evaluateSpringState(0.24, DEFAULT_SPRINGS.standard)
   assert.ok(peakOpen.value > 1.02, `expected overshoot > 1.02, got ${peakOpen.value}`)
   const endOpen = evaluateSpring(0.45, DEFAULT_SPRINGS.standard)
   approx(endOpen, 1.0, 0.005, 'standard spring at 0.45s')
 
-  // 临界阻尼永不过冲
+  // Critically damped spring must never overshoot.
   const critical = { mass: 1, stiffness: 400, dampingRatio: 1.0 }
   for (let t = 0.01; t <= 0.5; t += 0.02) {
     const s = evaluateSpringState(t, critical)
     assert.ok(s.value >= 0 && s.value <= 1.0 + 1e-9, `critical overshoot at t=${t}`)
   }
 
-  // 过阻尼收敛慢于临界阻尼
+  // Overdamped spring lags behind critical damping.
   const overdamped = { mass: 1, stiffness: 400, dampingRatio: 1.5 }
   const sCrit = evaluateSpringState(0.1, critical).value
   const sOver = evaluateSpringState(0.1, overdamped).value
   assert.ok(sOver < sCrit && sOver > 0, 'overdamped should lag critical damping')
 
-  // 非零初速度保持初值与方向连续
+  // Non-zero initial velocity preserves initial state and direction.
   const withVel = evaluateSpringState(0.01, critical, 0.2, 10, 1)
   assert.ok(withVel.value > 0.2, 'positive initial velocity should push value forward')
   assert.equal(evaluateSpringState(0, critical, 0.2, 10, 1).velocity, 10)
 })
 
-test('createSpringChannel 支持无跳变重锚定、impulse、snap、seek 与收敛', () => {
+test('createSpringChannel supports continuous re-anchoring, impulse, snap, seek, and settling', () => {
   const ch = createSpringChannel({
     params: DEFAULT_SPRINGS.standard,
     initialValue: 0,
@@ -112,7 +112,7 @@ test('createSpringChannel 支持无跳变重锚定、impulse、snap、seek 与�
   const mid = ch.step(0.1)
   assert.ok(mid.value > 0 && mid.velocity > 0)
 
-  // 飞行中途修改目标：位置与速度瞬间完全连续
+  // Mid-flight target change must preserve instantaneous position and velocity.
   const beforeInterrupt = ch.getState()
   ch.setTarget(0)
   const afterInterrupt = ch.getState()
@@ -120,12 +120,12 @@ test('createSpringChannel 支持无跳变重锚定、impulse、snap、seek 与�
   assert.equal(afterInterrupt.velocity, beforeInterrupt.velocity)
   assert.equal(afterInterrupt.target, 0)
 
-  // 施加脉冲应立刻改变速度但位置不变
+  // Impulse mutates velocity immediately without moving position.
   ch.impulse(5)
   assert.equal(ch.getState().value, afterInterrupt.value)
   approx(ch.getState().velocity, afterInterrupt.velocity + 5, 1e-12)
 
-  // seek 确定性跳转与步进收敛
+  // Deterministic seek and step-to-settle convergence.
   ch.snap(0, 0)
   ch.setTarget(1)
   const seeked = ch.seek(0.2)
@@ -139,7 +139,7 @@ test('createSpringChannel 支持无跳变重锚定、impulse、snap、seek 与�
   assert.equal(finalState.velocity, 0)
 })
 
-test('createMorphTimeline 正常开合、飞行中途反向打断无突变、seek 与 reducedMotion', () => {
+test('createMorphTimeline handles open/close, mid-flight reversals, seek, and reducedMotion', () => {
   const timeline = createMorphTimeline()
   const events: string[] = []
   const unsub = timeline.subscribe((s) => events.push(s.phase))
@@ -147,7 +147,7 @@ test('createMorphTimeline 正常开合、飞行中途反向打断无突变、see
   assert.equal(timeline.getState().phase, 'closed')
   assert.equal(timeline.getState().progress, 0)
 
-  // 70ms 圆角延迟验证
+  // Verify 70ms corner delay.
   timeline.open()
   const at50ms = timeline.step(0.05)
   assert.equal(at50ms.phase, 'opening')
@@ -157,7 +157,7 @@ test('createMorphTimeline 正常开合、飞行中途反向打断无突变、see
   const at120ms = timeline.step(0.07)
   assert.ok(at120ms.cornerProgress > 0, 'cornerProgress advances after 70ms delay')
 
-  // 飞行中途打断反向 close()：位置无突变
+  // Mid-flight close() reversal preserves progress and cornerProgress without snapping.
   timeline.close()
   const closeStart = timeline.getState()
   assert.equal(closeStart.phase, 'closing')
@@ -169,28 +169,28 @@ test('createMorphTimeline 正常开合、飞行中途反向打断无突变、see
     'mid-flight close preserves cornerProgress',
   )
 
-  // 小步进后继续平滑回落
+  // Smoothly decays over subsequent frame steps.
   const closeAfter16ms = timeline.step(1 / 60)
   assert.ok(Math.abs(closeAfter16ms.progress - closeStart.progress) < 0.2)
 
-  // 反向再次打断 open()：同样连续无突变
+  // Mid-flight open() reversal also remains continuous.
   timeline.open()
   const reopenStart = timeline.getState()
   approx(reopenStart.progress, closeAfter16ms.progress, 1e-12, 'mid-flight reopen preserves progress')
 
-  // 步进至完成 open
+  // Step through to open completion.
   timeline.step(0.5)
   assert.equal(timeline.getState().phase, 'open')
   assert.equal(timeline.getState().progress, 1)
   assert.equal(timeline.getState().styleMix, 1)
 
-  // 确定性 seek
+  // Deterministic seek.
   const seeked = timeline.seek('opening', 0.5)
   assert.equal(seeked.phase, 'opening')
   approx(seeked.normalizedT, 0.5, 1e-12)
   approx(seeked.progress, evaluateSpring(0.225, DEFAULT_SPRINGS.standard), 1e-6)
 
-  // reducedMotion 退化为 0.15s 线性平滑过渡
+  // reducedMotion falls back to a 0.15s linear transition.
   timeline.reset('closed')
   timeline.setReducedMotion(true)
   timeline.open()
@@ -209,7 +209,7 @@ test('createMorphTimeline 正常开合、飞行中途反向打断无突变、see
   assert.equal(events.length, countBeforeDispose)
 })
 
-test('createElasticPressController 按压放大、橡胶带拖拽与松手回弹', () => {
+test('createElasticPressController handles press growth, rubber-band drag, and release rebound', () => {
   const press = createElasticPressController()
   const box = { width: 120, height: 40 }
 

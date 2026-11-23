@@ -1,9 +1,10 @@
 /**
- * 0.5x Stored-PNG (`BTYPE=00`) RGBA 位移与内向抗锯齿 Alpha 图生成器。
+ * 0.5x Stored-PNG (`BTYPE=00`) RGBA displacement and inward-AA alpha map generator.
  *
- * 为 SVG `feDisplacementMap` 液态玻璃折射链路解析求值 N-图元圆角矩形 `smin` SDF 场，
- * 并利用可复用 TypedArray 缓冲、4-表切片 CRC32 与分块 Adler32 编码为零压缩 Stored-PNG Data URL，
- * 避免每帧产生额外 GC 分配。
+ * Analytically evaluates the N-primitive rounded-rect `smin` SDF field for SVG
+ * `feDisplacementMap` liquid glass refraction and encodes a zero-compression Stored-PNG
+ * data URL using reusable TypedArray buffers, 4-table slicing CRC32, and chunked Adler32
+ * to avoid per-frame GC allocations.
  *
  * SPDX-License-Identifier: MPL-2.0
  */
@@ -40,7 +41,7 @@ export interface RefractMapBuilder {
   reset(): void
 }
 
-// 4-表切片 IEEE 802.3 CRC32 查找表（1024 x uint32）。
+// 4-table slicing IEEE 802.3 CRC32 lookup (1024 x uint32).
 const CRC_TABLES = (() => {
   const tables = new Uint32Array(1024)
   for (let i = 0; i < 256; i++) {
@@ -127,11 +128,11 @@ function uint8ToBase64(bytes: Uint8Array, length: number): string {
   return btoa(chunks.join(''))
 }
 
-// 模块级可复用缓冲，避免 60/120fps 同步构建位移图时产生 GC 抖动。
+// Module-level reusable buffers to avoid per-frame GC churn at 60/120fps.
 let scanlineBuf = new Uint8Array(0)
 let pngOutBuf = new Uint8Array(0)
 
-// N >= 3 多图元路径使用的模块级 SoA 预分配缓冲，容量不足时倍增扩容。
+// Pre-allocated SoA buffers for the N >= 3 multi-primitive path, doubling capacity on growth.
 let soaCapacity = 0
 let soaCx = new Float64Array(0)
 let soaCy = new Float64Array(0)
@@ -148,7 +149,7 @@ let rowDySigned = new Float64Array(0)
 let rowQy = new Float64Array(0)
 let rowSy = new Float64Array(0)
 
-// 缓存单次构建中筛选出的有效图元下标，避免每帧创建临时数组。
+// Reusable index buffer for active primitives per build, avoiding per-frame array allocations.
 let activeIndicesBuf = new Int32Array(0)
 
 function ensureScanlineCapacity(needed: number): Uint8Array {
@@ -201,14 +202,14 @@ function encodeStoredRgbaPngDataUrl(
   const rawLen = pngH * rowBytes
   const numBlocks = Math.max(1, Math.ceil(rawLen / MAX_DEFLATE_BLOCK))
   const zlibLen = 2 + rawLen + numBlocks * 5 + 4
-  // 8 (签名) + 25 (IHDR) + 12 + zlibLen (IDAT) + 12 (IEND)
+  // 8 (signature) + 25 (IHDR) + 12 + zlibLen (IDAT) + 12 (IEND)
   const totalLen = 57 + zlibLen
   const out = ensurePngOutCapacity(totalLen)
 
-  // PNG 文件头签名 (0..7)
+  // PNG signature (0..7)
   out.set(PNG_SIGNATURE, 0)
 
-  // IHDR 数据块 (8..32)
+  // IHDR chunk (8..32)
   writeU32BE(out, 8, 13)
   out[12] = 73 // 'I'
   out[13] = 72 // 'H'
@@ -216,21 +217,21 @@ function encodeStoredRgbaPngDataUrl(
   out[15] = 82 // 'R'
   writeU32BE(out, 16, pngW)
   writeU32BE(out, 20, pngH)
-  out[24] = 8 // 8-bit 位深
-  out[25] = 6 // RGBA 色彩类型
-  out[26] = 0 // 压缩方法
-  out[27] = 0 // 滤波方法
-  out[28] = 0 // 隔行扫描
+  out[24] = 8 // 8-bit depth
+  out[25] = 6 // RGBA color type
+  out[26] = 0 // compression method
+  out[27] = 0 // filter method
+  out[28] = 0 // non-interlaced
   writeU32BE(out, 29, crc32(out, 12, 17))
 
-  // IDAT 数据块头 (33..40)
+  // IDAT chunk header (33..40)
   writeU32BE(out, 33, zlibLen)
   out[37] = 73 // 'I'
   out[38] = 68 // 'D'
   out[39] = 65 // 'A'
   out[40] = 84 // 'T'
 
-  // Zlib 头 (CMF=0x78, FLG=0x01)
+  // Zlib header (CMF=0x78, FLG=0x01)
   out[41] = 0x78
   out[42] = 0x01
 
@@ -256,13 +257,13 @@ function encodeStoredRgbaPngDataUrl(
     }
   }
 
-  // Adler32 校验尾 + IDAT CRC32
+  // Adler32 trailer + IDAT CRC32
   writeU32BE(out, dst, adler32(scanlines, rawLen))
   dst += 4
   writeU32BE(out, dst, crc32(out, 37, 4 + zlibLen))
   dst += 4
 
-  // IEND 数据块
+  // IEND chunk
   out.set(PNG_IEND, dst)
   dst += 12
 
@@ -362,7 +363,7 @@ function rasterizeEmptyScanlines(
 ): void {
   let offset = 0
   for (let py = 0; py < pngH; py++) {
-    scanlines[offset++] = 0 // PNG 滤波类型 0 (None)
+    scanlines[offset++] = 0 // PNG filter type 0 (None)
     for (let px = 0; px < pngW; px++) {
       scanlines[offset++] = 128
       scanlines[offset++] = 128
@@ -398,7 +399,7 @@ function rasterizeSingleRectScanlines(
 
   let offset = 0
   for (let py = 0; py < pngH; py++) {
-    scanlines[offset++] = 0 // PNG 滤波类型 0 (None)
+    scanlines[offset++] = 0 // PNG filter type 0 (None)
     const dy = originY + py * stepY - cy
     const absDy = dy < 0 ? -dy : dy
     const sy = dy >= 0 ? 1 : -1
@@ -700,7 +701,7 @@ function rasterizeMultiShapeScanlines(
     scanlines[offset++] = 0
     const wy = originY + py * stepY
 
-    // 按 Y 预计算各图元的行外下界距离与 X 影响区间，快速跳过完全在场外的扫描行或列段。
+    // Precompute per-primitive vertical lower bounds and horizontal reach for this row to skip empty rows/columns.
     let rowActive = false
     let rowXMin = Infinity
     let rowXMax = -Infinity
@@ -742,7 +743,7 @@ function rasterizeMultiShapeScanlines(
         continue
       }
 
-      // 0 号图元直接初始化累积场
+      // Initialize accumulator with primitive 0.
       const dx0 = wx - soaCx[0]
       const sx0 = dx0 >= 0 ? 1 : -1
       const qx0 = (dx0 < 0 ? -dx0 : dx0) - soaInnerW[0]
@@ -774,7 +775,7 @@ function rasterizeMultiShapeScanlines(
         accGy = sy0
       }
 
-      // 其余图元执行全空间带符号 AABB 下界剪枝后进行有序融合
+      // Fold remaining primitives in order after signed AABB lower-bound pruning.
       for (let i = 1; i < activeCount; i++) {
         const dx = wx - soaCx[i]
         const absDx = dx < 0 ? -dx : dx
@@ -885,7 +886,7 @@ function rasterizeMultiShapeScanlines(
   }
 }
 
-/** 创建带量化缓存的 Stored-PNG 位移图构建器，推荐跨帧复用实例。 */
+/** Creates a Stored-PNG displacement map builder with quantized caching; reuse the instance across frames. */
 export function createRefractMapBuilder(): RefractMapBuilder {
   let prevKey = ''
   let prevDataUrl = ''
@@ -1007,7 +1008,7 @@ export function createRefractMapBuilder(): RefractMapBuilder {
   }
 }
 
-/** 无状态单次构建；若需连续多帧复用，请改用 `createRefractMapBuilder()`。 */
+/** Stateless one-shot build; prefer `createRefractMapBuilder()` for multi-frame reuse. */
 export function buildRefractMapDataUrl(params: RefractMapParams): string {
   return createRefractMapBuilder().build(params).dataUrl
 }

@@ -4,7 +4,7 @@ import type { GlassFieldState, GlassPrimitive, Point } from '../src/contracts.ts
 import { extractFieldContourPath, formatRoundedRectPath } from '../src/contour.ts'
 import { computeFieldBounds, evaluateFieldDistance } from '../src/sdf.ts'
 
-/** 从 Marching Squares 输出的多边形 SVG 路径（M...L...Z）解析各环路顶点序列。 */
+/** Parses vertex loops from Marching Squares polygon SVG paths (M...L...Z). */
 function parsePolygonLoops(path: string): Point[][] {
   if (!path) return []
   const loops: Point[][] = []
@@ -18,7 +18,7 @@ function parsePolygonLoops(path: string): Point[][] {
       if (cmd === 'M' || cmd === 'L') {
         const x = Number(tokens[i + 1])
         const y = Number(tokens[i + 2])
-        assert.ok(Number.isFinite(x) && Number.isFinite(y), `非法顶点坐标: ${sub}`)
+        assert.ok(Number.isFinite(x) && Number.isFinite(y), `Invalid vertex coordinates: ${sub}`)
         pts.push({ x, y })
         i += 3
       } else {
@@ -30,18 +30,18 @@ function parsePolygonLoops(path: string): Point[][] {
   return loops
 }
 
-/** 校验 SVG 路径所有环路均严格闭合且不含 NaN。 */
+/** Asserts that all SVG subpaths are strictly closed and free of NaN. */
 function assertClosedValidPath(path: string, expectedLoops?: number): void {
-  assert.equal(path.includes('NaN'), false, '路径中不得包含 NaN')
+  assert.equal(path.includes('NaN'), false, 'Path must not contain NaN')
   const mCount = (path.match(/M/g) ?? []).length
   const zCount = (path.match(/Z/g) ?? []).length
-  assert.equal(mCount, zCount, '每个 M 子路径必须以 Z 闭合')
+  assert.equal(mCount, zCount, 'Each M subpath must close with Z')
   if (expectedLoops !== undefined) {
-    assert.equal(mCount, expectedLoops, `预期环路数=${expectedLoops}，实际=${mCount}`)
+    assert.equal(mCount, expectedLoops, `Expected ${expectedLoops} loops, got ${mCount}`)
   }
 }
 
-test('N=0, 1 与 blendK<=0.001 解析路径输出', () => {
+test('N=0, 1 and blendK<=0.001 analytic path output', () => {
   // N = 0
   assert.equal(extractFieldContourPath({ primitives: [], blendK: 28 }), '')
   assert.equal(
@@ -52,7 +52,7 @@ test('N=0, 1 与 blendK<=0.001 解析路径输出', () => {
     '',
   )
 
-  // N = 1 圆角矩形与直角矩形退化
+  // N = 1 rounded rectangle and sharp-corner fallback
   const platter: GlassPrimitive = { center: { x: 200, y: 200 }, size: { width: 120, height: 140 }, radius: 22 }
   const singlePath = extractFieldContourPath({ primitives: [platter], blendK: 28 }, { x: 100, y: 80 })
   assert.match(singlePath, /^M62 50/)
@@ -62,7 +62,7 @@ test('N=0, 1 与 blendK<=0.001 解析路径输出', () => {
   const sharpRect: GlassPrimitive = { center: { x: 50, y: 50 }, size: { width: 40, height: 20 }, radius: 0 }
   assert.equal(formatRoundedRectPath(sharpRect), 'M30 40L70 40L70 60L30 60Z')
 
-  // blendK <= 0.001 拼接多个解析子路径
+  // blendK <= 0.001 concatenates analytic subpaths
   const p2: GlassPrimitive = { center: { x: 400, y: 400 }, size: { width: 40, height: 40 }, radius: 12 }
   const unblended = extractFieldContourPath({ primitives: [platter, p2], blendK: 0 })
   assertClosedValidPath(unblended, 2)
@@ -70,23 +70,23 @@ test('N=0, 1 与 blendK<=0.001 解析路径输出', () => {
   assert.ok(unblended.includes('A12 12 0 0 1'))
 })
 
-test('N=2 桥接单环与分离双岛屿（对齐原 Sukimi contour 行为）', () => {
+test('N=2 bridged single loop and split dual islands', () => {
   const platter: GlassPrimitive = { center: { x: 200, y: 200 }, size: { width: 120, height: 140 }, radius: 22 }
   const dropletNear: GlassPrimitive = { center: { x: 200, y: 112 }, size: { width: 44, height: 44 }, radius: 22 }
   const dropletFar: GlassPrimitive = { center: { x: 200, y: 40 }, size: { width: 32, height: 32 }, radius: 16 }
 
-  // 桥接单环
+  // Bridged single loop
   const bridged = extractFieldContourPath({ primitives: [platter, dropletNear], blendK: 28 }, { x: 100, y: 80 })
   assertClosedValidPath(bridged, 1)
   assert.ok(bridged.includes('L'))
 
-  // 分离双岛屿
+  // Split dual islands
   const pinched = extractFieldContourPath({ primitives: [platter, dropletFar], blendK: 28 })
   assertClosedValidPath(pinched, 2)
 })
 
-test('N=3, 8, 16 轮廓闭合性、多岛屿支持、零等值面精度与防截断验证', () => {
-  // N = 3：两近一远（形成 2 个独立岛屿：一个 2-体融合桥 + 一个孤立圆角胶囊）
+test('N=3, 8, 16 contour closure, multi-island support, zero-isosurface accuracy, and anti-clipping', () => {
+  // N = 3: two nearby + one distant primitive (2 islands: a 2-body bridge + an isolated capsule)
   const field3: GlassFieldState = {
     primitives: [
       { center: { x: 100, y: 100 }, size: { width: 80, height: 60 }, radius: 18 },
@@ -98,7 +98,7 @@ test('N=3, 8, 16 轮廓闭合性、多岛屿支持、零等值面精度与防截
   const path3 = extractFieldContourPath(field3)
   assertClosedValidPath(path3, 2)
 
-  // N = 8：环形紧邻融合形成单闭环（含中心空洞或实心）
+  // N = 8: ring cluster merging into a closed loop (with optional interior hole)
   const primitives8: GlassPrimitive[] = Array.from({ length: 8 }, (_, i) => {
     const angle = (i * Math.PI * 2) / 8
     return {
@@ -109,12 +109,12 @@ test('N=3, 8, 16 轮廓闭合性、多岛屿支持、零等值面精度与防截
   })
   const field8: GlassFieldState = { primitives: primitives8, blendK: 28 }
   const path8 = extractFieldContourPath(field8)
-  // 外环 + 内孔至少 1~2 个合法闭合环路
+  // At least 1-2 valid closed loops (outer rim + optional inner hole)
   assertClosedValidPath(path8)
   const loops8 = parsePolygonLoops(path8)
   assert.ok(loops8.length >= 1)
 
-  // N = 16：密集聚类 + 大 blendK 防外膨截断检验
+  // N = 16: dense cluster with large blendK to verify anti-dilation clipping margin
   const primitives16: GlassPrimitive[] = Array.from({ length: 16 }, (_, i) => {
     const col = i % 4
     const row = Math.floor(i / 4)
@@ -139,13 +139,13 @@ test('N=3, 8, 16 轮廓闭合性、多岛屿支持、零等值面精度与防截
 
   let maxIsoError = 0
   for (const pt of loops16[0]!) {
-    // 顶点不得触及网格采样外边界（证明未发生外凸截断）
+    // Vertices must stay strictly inside the sampling bounds (no boundary clipping)
     assert.ok(
       pt.x > bounds16.x + 0.5 &&
         pt.x < bounds16.x + bounds16.width - 0.5 &&
         pt.y > bounds16.y + 0.5 &&
         pt.y < bounds16.y + bounds16.height - 0.5,
-      `N=16 轮廓顶点 (${pt.x}, ${pt.y}) 贴近或超出采样边界，疑似被截断`,
+      `N=16 contour vertex (${pt.x}, ${pt.y}) touches or exceeds sampling bounds`,
     )
     const d = Math.abs(evaluateFieldDistance(pt.x, pt.y, field16))
     if (d > maxIsoError) {
@@ -153,14 +153,14 @@ test('N=3, 8, 16 轮廓闭合性、多岛屿支持、零等值面精度与防截
     }
   }
 
-  // 3 次二分精修 + fmt(0.01) 舍入后，零等值面误差远小于网格步长（step16 ≈ 2.48px）
+  // After 3 bisection steps and fmt(0.01) rounding, isosurface error is well below grid step
   assert.ok(
     maxIsoError < step16 * 0.1,
-    `零等值面最大误差 ${maxIsoError} 应远小于网格步长 ${step16}`,
+    `Max zero-isosurface error ${maxIsoError} should be well below grid step ${step16}`,
   )
 })
 
-test('N=3 与 N=8 提取顶点代入 evaluateFieldDistance 零等值面误差验证（含 offset 偏移）', () => {
+test('N=3 and N=8 extracted vertices against evaluateFieldDistance with offset', () => {
   const offset: Point = { x: 40, y: 25 }
   const field: GlassFieldState = {
     primitives: [
@@ -184,5 +184,5 @@ test('N=3 与 N=8 提取顶点代入 evaluateFieldDistance 零等值面误差验
     const err = Math.abs(evaluateFieldDistance(worldX, worldY, field))
     if (err > maxErr) maxErr = err
   }
-  assert.ok(maxErr < gridStep * 0.1, `带 offset 轮廓零等值面最大误差 ${maxErr} 应远小于步长 ${gridStep}`)
+  assert.ok(maxErr < gridStep * 0.1, `Max zero-isosurface error with offset (${maxErr}) should be well below grid step ${gridStep}`)
 })

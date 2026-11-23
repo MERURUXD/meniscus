@@ -1,9 +1,10 @@
 /**
- * @meniscus/core 通用数学缓动、解析阻尼谐振弹簧与可打断形变时间线。
+ * @meniscus/core math easing, analytical damped-harmonic-oscillator springs,
+ * and interruptible morph timelines.
  *
- * 实现解析法欠阻尼/临界阻尼/过阻尼弹簧求解器、可打断 1D 弹簧通道、
- * 0↔1 形变时间线状态机及通用弹性按压/拖拽控制器。
- * 不包含任何特定宿主业务或菜单交互语义。
+ * Implements closed-form underdamped, critically damped, and overdamped spring
+ * solvers, interruptible 1D spring channels, a 0<->1 morph timeline state machine,
+ * and a generic elastic press/drag controller without host-specific semantics.
  *
  * SPDX-License-Identifier: MPL-2.0
  */
@@ -29,13 +30,13 @@ const DEFAULT_ELASTIC_MAX_GROWTH_RATIO = 0.25
 const DEFAULT_ELASTIC_MAX_GROWTH_PX = 16
 const DEFAULT_ELASTIC_DRAG_MAX_RATIO = 7 / 32
 
-/** 弹簧瞬时采样结果（位置与速度）。 */
+/** Instantaneous spring sample (position and velocity). */
 export interface SpringSample {
   value: number
   velocity: number
 }
 
-/** 1D 可打断弹簧通道配置选项。 */
+/** Configuration options for an interruptible 1D spring channel. */
 export interface SpringChannelOptions {
   params?: SpringParams
   initialValue?: number
@@ -45,7 +46,7 @@ export interface SpringChannelOptions {
   settleVelEps?: number
 }
 
-/** 1D 可打断弹簧通道瞬时状态。 */
+/** Instantaneous state of a 1D spring channel. */
 export interface SpringChannelState {
   value: number
   velocity: number
@@ -53,7 +54,7 @@ export interface SpringChannelState {
   settled: boolean
 }
 
-/** 1D 可打断弹簧通道接口。 */
+/** Interruptible 1D analytical spring channel interface. */
 export interface SpringChannel {
   setTarget(target: number): void
   impulse(deltaVelocity: number): void
@@ -64,10 +65,10 @@ export interface SpringChannel {
   getState(): SpringChannelState
 }
 
-/** 通用 0↔1 形变时间线阶段。 */
+/** Phase of a generic 0<->1 morph timeline. */
 export type MorphTimelinePhase = 'closed' | 'opening' | 'open' | 'closing'
 
-/** 通用 0↔1 形变时间线配置选项。 */
+/** Configuration options for a generic 0<->1 morph timeline. */
 export interface MorphTimelineOptions {
   openDurationSec?: number
   closeDurationSec?: number
@@ -79,7 +80,7 @@ export interface MorphTimelineOptions {
   initialPhase?: 'closed' | 'open'
 }
 
-/** 通用 0↔1 形变时间线瞬时输出状态。 */
+/** Instantaneous output state of a 0<->1 morph timeline. */
 export interface MorphTimelineState {
   phase: MorphTimelinePhase
   elapsedSec: number
@@ -91,7 +92,7 @@ export interface MorphTimelineState {
   reducedMotion: boolean
 }
 
-/** 通用 0↔1 形变时间线控制器接口。 */
+/** Controller interface for a generic 0<->1 morph timeline. */
 export interface MorphTimeline {
   open(): void
   close(): void
@@ -104,7 +105,7 @@ export interface MorphTimeline {
   dispose(): void
 }
 
-/** 通用弹性按压与拖拽控制器配置选项。 */
+/** Configuration options for the elastic press and rubber-band drag controller. */
 export interface ElasticPressOptions {
   spring?: SpringParams
   dragTrackSec?: number
@@ -114,7 +115,7 @@ export interface ElasticPressOptions {
   reducedMotion?: boolean
 }
 
-/** 通用弹性按压与拖拽控制器状态。 */
+/** Current state of the elastic press and drag controller. */
 export interface ElasticPressState {
   scaleX: number
   scaleY: number
@@ -125,7 +126,7 @@ export interface ElasticPressState {
   isAnimating: boolean
 }
 
-/** 通用弹性按压与拖拽控制器接口。 */
+/** Controller interface for elastic press and rubber-band drag interactions. */
 export interface ElasticPressController {
   pressStart(targetSize: Size): void
   pressMove(delta: Point, targetSize: Size): void
@@ -136,39 +137,39 @@ export interface ElasticPressController {
   getState(): ElasticPressState
 }
 
-/** 将数值限制在 [min, max] 区间内。 */
+/** Clamps `value` to the inclusive range `[min, max]`. */
 export function clamp(value: number, min: number, max: number): number {
   if (value <= min) return min
   if (value >= max) return max
   return value
 }
 
-/** 线性插值 `a + (b - a) * t`（不限制 `t` 范围以支持过冲插值）。 */
+/** Linearly interpolates `a + (b - a) * t` without clamping `t` so spring overshoot is preserved. */
 export function lerp(a: number, b: number, t: number): number {
   return a + (b - a) * t
 }
 
-/** 标准 Hermite 平滑阶跃函数，当 `edge1 <= edge0` 时退化为阶跃。 */
+/** Standard Hermite smoothstep; degrades to a step function when `edge1 <= edge0`. */
 export function smoothstep(edge0: number, edge1: number, x: number): number {
   if (edge1 <= edge0) return x >= edge1 ? 1 : 0
   const t = clamp((x - edge0) / (edge1 - edge0), 0, 1)
   return t * t * (3 - 2 * t)
 }
 
-/** 二次缓入曲线。 */
+/** Quadratic ease-in curve. */
 export function easeInQuad(t: number): number {
   const u = clamp(t, 0, 1)
   return u * u
 }
 
-/** 三次缓出曲线。 */
+/** Cubic ease-out curve. */
 export function easeOutCubic(t: number): number {
   const u = clamp(t, 0, 1)
   const inv = 1 - u
   return 1 - inv * inv * inv
 }
 
-/** 三次缓入缓出曲线。 */
+/** Cubic ease-in-out curve. */
 export function easeInOutCubic(t: number): number {
   const u = clamp(t, 0, 1)
   if (u < 0.5) {
@@ -179,8 +180,8 @@ export function easeInOutCubic(t: number): number {
 }
 
 /**
- * 求解标准 1D 三次贝塞尔时间曲线 B_y(s)，其中 B_x(s) = t。
- * 使用带区间二分兜底的牛顿迭代法保证收敛。
+ * Evaluates a 1D cubic Bezier timing curve `B_y(s)` where `B_x(s) = t`.
+ * Uses Newton-Raphson iteration with bisection fallback to guarantee convergence.
  */
 export function cubicBezier(
   x1: number,
@@ -227,8 +228,8 @@ export function cubicBezier(
 }
 
 /**
- * 归一化脉冲包络函数：在 `t === peak` 时精确达到峰值 `1.0`。
- * 公式：`(t / peak)^sharpness * exp(sharpness * (1 - t / peak))`。
+ * Normalized impulse envelope that peaks at exactly `1.0` when `t === peak`:
+ * `(t / peak)^sharpness * exp(sharpness * (1 - t / peak))`.
  */
 export function riseAndFall(t: number, peak: number, sharpness: number): number {
   if (t <= 0 || peak <= 0 || !Number.isFinite(t)) {
@@ -239,8 +240,8 @@ export function riseAndFall(t: number, peak: number, sharpness: number): number 
 }
 
 /**
- * 解析阻尼谐振弹簧求解器，返回任意时刻的位置与速度。
- * 完整支持欠阻尼（zeta < 1）、临界阻尼（zeta == 1）与过阻尼（zeta > 1）分支。
+ * Closed-form damped-harmonic-oscillator solver returning both position and velocity.
+ * Handles underdamped (`zeta < 1`), critically damped (`zeta == 1`), and overdamped (`zeta > 1`) regimes.
  */
 export function evaluateSpringState(
   timeSec: number,
@@ -300,7 +301,7 @@ export function evaluateSpringState(
   }
 }
 
-/** 解析阻尼谐振弹簧求值器，仅返回位移 `x(t)`。 */
+/** Evaluates an analytical damped-harmonic-oscillator spring and returns position `x(t)`. */
 export function evaluateSpring(
   timeSec: number,
   params: SpringParams,
@@ -312,8 +313,9 @@ export function evaluateSpring(
 }
 
 /**
- * 创建可打断的 1D 解析弹簧通道。
- * 每次修改目标或参数时从当前 `(value, velocity)` 重新锚定解析解，确保无跳变连续性。
+ * Creates an interruptible 1D analytical spring channel.
+ * Re-anchors the closed-form solution from the current `(value, velocity)` on every
+ * target or parameter change to guarantee C1 continuity without discontinuities.
  */
 export function createSpringChannel(options: SpringChannelOptions = {}): SpringChannel {
   let params: SpringParams = options.params ?? DEFAULT_SPRINGS.standard
@@ -418,9 +420,9 @@ export function createSpringChannel(options: SpringChannelOptions = {}): SpringC
 }
 
 /**
- * 创建通用可打断 0↔1 形变时间线。
- * 在 `opening` / `closing` 飞行中途打断反向时，直接从当前位置与速度重新锚定解析弹簧，
- * 确保主形变进度与延迟圆角曲线均连续无突变。
+ * Creates a generic interruptible 0<->1 morph timeline.
+ * Re-anchors the analytical springs from the instantaneous `(progress, velocity)` on
+ * mid-flight reversals so both the primary morph and delayed corner curves remain C1-continuous.
  */
 export function createMorphTimeline(options: MorphTimelineOptions = {}): MorphTimeline {
   const openDurationSec = Math.max(1e-4, options.openDurationSec ?? DEFAULT_OPEN_DURATION_SEC)
@@ -438,7 +440,7 @@ export function createMorphTimeline(options: MorphTimelineOptions = {}): MorphTi
   let elapsedSec = phase === 'open' ? openDurationSec : 0
   let disposed = false
 
-  // 用于飞行中途打断与连续求值的锚点状态
+  // Anchor state for mid-flight interruption and deterministic re-evaluation.
   let mainAnchorValue = phase === 'open' ? 1 : 0
   let mainAnchorVelocity = 0
   let cornerAnchorValue = phase === 'open' ? 1 : 0
@@ -491,7 +493,7 @@ export function createMorphTimeline(options: MorphTimelineOptions = {}): MorphTi
       cornerProgress = cornerSample.value
       cornerVelocity = cornerSample.velocity
     } else if (cornerDelayRemainingSec > 0) {
-      // 延迟等待期内保持当前圆角值并平滑衰减已有速度
+      // Hold corner progress during the initial delay window and zero out residual velocity.
       cornerProgress = cornerAnchorValue
       cornerVelocity = 0
     }
@@ -544,13 +546,13 @@ export function createMorphTimeline(options: MorphTimelineOptions = {}): MorphTi
     if (nextPhase === 'opening' && phase === 'closed') {
       cornerDelayRemainingSec = cornerDelaySec
     } else {
-      // 打断反向或关闭阶段不额外插入圆角延迟，直接连续过渡
+      // Skip the corner delay on mid-flight reversals and closes so corners respond immediately.
       cornerDelayRemainingSec = 0
     }
 
     phase = nextPhase
     const duration = getActiveDuration()
-    // 估算与当前进度对应的名义 elapsedSec，用于进度查询一致性
+    // Estimate nominal elapsedSec from current progress to keep normalizedT queries consistent.
     const target = nextPhase === 'opening' ? 1 : 0
     const approxFraction = nextPhase === 'opening' ? clamp(current.progress, 0, 1) : clamp(1 - current.progress, 0, 1)
     elapsedSec = approxFraction * duration
@@ -685,8 +687,9 @@ export function createMorphTimeline(options: MorphTimelineOptions = {}): MorphTi
 }
 
 /**
- * 创建通用弹性按压与橡胶带拖拽控制器。
- * 对齐弹性按压物理比例，在拖拽期间使用临界阻尼快速跟随，松手后使用弹性弹簧回弹。
+ * Creates a generic elastic press and rubber-band drag controller.
+ * Uses a critically damped tracking spring while dragging for tight pointer follow,
+ * then switches back to the underdamped elastic spring on release.
  */
 export function createElasticPressController(
   options: ElasticPressOptions = {},
@@ -697,7 +700,8 @@ export function createElasticPressController(
   const maxGrowthPx = options.maxGrowthPx ?? DEFAULT_ELASTIC_MAX_GROWTH_PX
   const dragMaxRatio = options.dragMaxRatio ?? DEFAULT_ELASTIC_DRAG_MAX_RATIO
 
-  // 临界阻尼追踪弹簧：在 dragTrackSec 内完成约 95% 收敛（w0 * t ≈ 4.744）
+  // Critically damped tracking spring (~95% settled in dragTrackSec):
+  // derived from 1 - exp(-w0 * t) * (1 + w0 * t) = 0.95 at w0 * t ≈ 4.744.
   const dragTrackSpring: SpringParams = {
     mass: 1,
     stiffness: Math.pow(4.744 / dragTrackSec, 2),

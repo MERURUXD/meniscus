@@ -1,5 +1,7 @@
-import { useEffect, useRef, type ReactElement } from 'react'
+import { useContext, useEffect, useRef, type ReactElement } from 'react'
 import type { PlaygroundMessages } from '../i18n.ts'
+import { BackdropContext } from './backdropSettings.ts'
+import { Wallpaper } from './Wallpaper.tsx'
 
 const STAR_SPOKES = 36
 const STAR_RADIUS = 100
@@ -36,9 +38,9 @@ export interface TestChartProps {
 }
 
 /**
- * Live, selectable DOM test target rendered beneath glass. Every layer keeps moving
- * (grid drift, star rotation, specimen scroll, elapsed clock) so refraction is visibly
- * continuous even while the glass itself is at rest.
+ * Live backdrop rendered beneath glass: either the procedural fold wallpaper or a selectable
+ * DOM test target (grid drift, star rotation, specimen scroll). Both keep moving so refraction
+ * is visibly continuous even while the glass itself is at rest.
  *
  * Animations use `transform` only and none of these elements wrap the glass, so the
  * chart never becomes a CSS Backdrop Root that would cut the glass off from what it bends.
@@ -50,6 +52,8 @@ export function TestChart({
   wordmark = true,
 }: TestChartProps): ReactElement {
   const clockRef = useRef<HTMLSpanElement | null>(null)
+  const { kind, theme, reducedMotion } = useContext(BackdropContext)
+  const isChart = kind === 'chart'
 
   useEffect(() => {
     const el = clockRef.current
@@ -63,15 +67,20 @@ export function TestChart({
   }, [])
 
   return (
-    <div className="chart">
-      <div className="chart-grid chart-anim" aria-hidden="true" />
-
-      <svg className="chart-star" viewBox="-100 -100 200 200" aria-hidden="true">
-        <g className="chart-star-spin chart-anim">
-          <path d={STAR_PATH} />
-        </g>
-        <circle r="3.2" className="chart-star-hub" />
-      </svg>
+    <div className="chart" data-backdrop={kind}>
+      {isChart ? (
+        <>
+          <div className="chart-grid chart-anim" aria-hidden="true" />
+          <svg className="chart-star" viewBox="-100 -100 200 200" aria-hidden="true">
+            <g className="chart-star-spin chart-anim">
+              <path d={STAR_PATH} />
+            </g>
+            <circle r="3.2" className="chart-star-hub" />
+          </svg>
+        </>
+      ) : (
+        <Wallpaper theme={theme} reducedMotion={reducedMotion} />
+      )}
 
       <header className="chart-head">
         {wordmark ? <p className="chart-wordmark">Meniscus</p> : null}
@@ -79,30 +88,34 @@ export function TestChart({
         <p className="chart-caption">{caption}</p>
       </header>
 
-      <div className="chart-specimen">
-        <div className="chart-specimen-track chart-anim">
-          <span>{messages.specimen}</span>
-          <span aria-hidden="true">{messages.specimen}</span>
+      {isChart ? (
+        <div className="chart-specimen">
+          <div className="chart-specimen-track chart-anim">
+            <span>{messages.specimen}</span>
+            <span aria-hidden="true">{messages.specimen}</span>
+          </div>
         </div>
-      </div>
+      ) : null}
 
       <footer className="chart-foot">
-        <figure className="chart-spectrum">
-          <div className="chart-spectrum-band" aria-hidden="true" />
-          <div className="chart-spectrum-ticks" aria-hidden="true">
-            {SPECTRUM_TICKS.map((nm) => (
-              <span
-                key={nm}
-                style={{
-                  left: `${((nm - SPECTRUM_MIN_NM) / (SPECTRUM_MAX_NM - SPECTRUM_MIN_NM)) * 100}%`,
-                }}
-              >
-                {nm}
-              </span>
-            ))}
-          </div>
-          <figcaption>{messages.spectrumCaption}</figcaption>
-        </figure>
+        {isChart ? (
+          <figure className="chart-spectrum">
+            <div className="chart-spectrum-band" aria-hidden="true" />
+            <div className="chart-spectrum-ticks" aria-hidden="true">
+              {SPECTRUM_TICKS.map((nm) => (
+                <span
+                  key={nm}
+                  style={{
+                    left: `${((nm - SPECTRUM_MIN_NM) / (SPECTRUM_MAX_NM - SPECTRUM_MIN_NM)) * 100}%`,
+                  }}
+                >
+                  {nm}
+                </span>
+              ))}
+            </div>
+            <figcaption>{messages.spectrumCaption}</figcaption>
+          </figure>
+        ) : null}
         <p className="chart-clock">
           {messages.clockLabel} <span ref={clockRef}>0.0 s</span>
         </p>

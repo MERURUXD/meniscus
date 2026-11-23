@@ -69,6 +69,9 @@ export interface PlaygroundMessages {
     themeDark: string
     themeGroupAria: string
     localeGroupAria: string
+    backdropGroupAria: string
+    backdropWallpaper: string
+    backdropChart: string
     reduceMotion: string
   }
   tabs: Record<LabId, { title: string; description: string }>
@@ -194,6 +197,9 @@ export const MESSAGES: Record<Locale, PlaygroundMessages> = {
       themeDark: 'Dark',
       themeGroupAria: 'Theme',
       localeGroupAria: 'Language',
+      backdropGroupAria: 'Background',
+      backdropWallpaper: 'Wallpaper',
+      backdropChart: 'Test chart',
       reduceMotion: 'Reduce motion',
     },
     tabs: {
@@ -276,7 +282,7 @@ export const MESSAGES: Record<Locale, PlaygroundMessages> = {
     optics: {
       backdropTitle: 'Optics bench',
       backdropCaption:
-        'Two lenses over a moving grid. Lines bend inside the rim; widen the bezel or raise refraction to see more of it.',
+        'Two lenses over the moving background. Edges bend inside the rim; widen the bezel or raise refraction to see more of it.',
       splitLeftTitle: 'Refraction',
       splitLeftCaption: 'What Chromium renders: the live page displaced through the rim.',
       splitRightTitle: 'Frosted fallback',
@@ -374,6 +380,9 @@ export const MESSAGES: Record<Locale, PlaygroundMessages> = {
       themeDark: '深色',
       themeGroupAria: '主题',
       localeGroupAria: '语言',
+      backdropGroupAria: '背景',
+      backdropWallpaper: '壁纸',
+      backdropChart: '测试图样',
       reduceMotion: '减弱动态',
     },
     tabs: {
@@ -455,7 +464,7 @@ export const MESSAGES: Record<Locale, PlaygroundMessages> = {
     },
     optics: {
       backdropTitle: '光学台',
-      backdropCaption: '两块镜片压在移动的网格上。线条在边缘内弯折；加宽镜缘或调高折射能看得更清楚。',
+      backdropCaption: '两块镜片压在流动的背景上。边缘内的线条和色块会弯折；加宽镜缘或调高折射能看得更清楚。',
       splitLeftTitle: '折射',
       splitLeftCaption: 'Chromium 的效果：实时页面在镜缘处发生位移。',
       splitRightTitle: '磨砂降级',

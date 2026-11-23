@@ -1,18 +1,14 @@
-import { useEffect, useState, type ReactElement } from 'react'
+import { useEffect, useMemo, useState, type ReactElement } from 'react'
 import type { ThemeMode } from '@meniscus/core'
 import { detectSurfaceCapabilities, type SurfaceCapabilities } from '@meniscus/dom'
 import { useReducedMotion } from '@meniscus/react'
-import {
-  detectInitialLocale,
-  getMessages,
-  persistLocale,
-  type Locale,
-} from './i18n.ts'
+import { detectInitialLocale, getMessages, persistLocale, type Locale } from './i18n.ts'
 import { DragMergeLab } from './labs/DragMergeLab.tsx'
 import { OpticsLab } from './labs/OpticsLab.tsx'
 import { PopoverMenuLab } from './labs/PopoverMenuLab.tsx'
 import { SegmentedDockLab } from './labs/SegmentedDockLab.tsx'
 import { LAB_IDS, type LabId } from './labDefaults.ts'
+import { BackdropContext, type BackdropKind } from './components/backdropSettings.ts'
 import './styles/theme.css'
 import './styles/app.css'
 
@@ -40,6 +36,7 @@ export function App(): ReactElement {
   const [activeLab, setActiveLab] = useState<LabId>('drag-merge')
   const [theme, setTheme] = useState<ThemeMode>(() => detectInitialTheme())
   const [locale, setLocale] = useState<Locale>(() => detectInitialLocale())
+  const [backdrop, setBackdrop] = useState<BackdropKind>('wallpaper')
   const [forceReducedMotion, setForceReducedMotion] = useState<boolean | null>(null)
   const [capabilities] = useState<SurfaceCapabilities>(() => detectSurfaceCapabilities())
   const [hasWebgl2] = useState<boolean>(() => detectWebgl2Support())
@@ -61,106 +58,125 @@ export function App(): ReactElement {
   }, [locale, t.documentTitle])
 
   const renderMode = capabilities.svgBackdropRefraction ? 'refract' : 'frosted'
+  const backdropSettings = useMemo(
+    () => ({ kind: backdrop, theme, reducedMotion }),
+    [backdrop, theme, reducedMotion],
+  )
 
   return (
-    <div className="bench">
-      <nav className="bench-nav" aria-label={t.shell.labsNavAria}>
-        <p className="bench-brand">
-          Meniscus
-          <span>{t.shell.tagline}</span>
-        </p>
-        <div className="bench-labs" role="tablist" aria-label={t.shell.labsNavAria}>
-          {LAB_IDS.map((id) => (
+    <BackdropContext value={backdropSettings}>
+      <div className="bench">
+        <nav className="bench-nav" aria-label={t.shell.labsNavAria}>
+          <p className="bench-brand">
+            Meniscus
+            <span>{t.shell.tagline}</span>
+          </p>
+          <div className="bench-labs" role="tablist" aria-label={t.shell.labsNavAria}>
+            {LAB_IDS.map((id) => (
+              <button
+                key={id}
+                type="button"
+                role="tab"
+                className="bench-lab-tab"
+                aria-selected={activeLab === id}
+                onClick={() => setActiveLab(id)}
+              >
+                <span className="bench-lab-title">{t.tabs[id].title}</span>
+                <span className="bench-lab-desc">{t.tabs[id].description}</span>
+              </button>
+            ))}
+          </div>
+        </nav>
+
+        <div className="bench-lab">
+          {activeLab === 'drag-merge' ? (
+            <DragMergeLab
+              theme={theme}
+              locale={locale}
+              reducedMotion={reducedMotion}
+              renderMode={renderMode}
+            />
+          ) : null}
+          {activeLab === 'segmented-dock' ? (
+            <SegmentedDockLab
+              theme={theme}
+              locale={locale}
+              reducedMotion={reducedMotion}
+              renderMode={renderMode}
+            />
+          ) : null}
+          {activeLab === 'optics' ? (
+            <OpticsLab theme={theme} locale={locale} reducedMotion={reducedMotion} />
+          ) : null}
+          {activeLab === 'popover-menu' ? (
+            <PopoverMenuLab
+              theme={theme}
+              locale={locale}
+              reducedMotion={reducedMotion}
+              renderMode={renderMode}
+            />
+          ) : null}
+        </div>
+
+        <footer className="bench-meta">
+          <p className="bench-status">
+            <strong>
+              {capabilities.svgBackdropRefraction ? t.shell.statusRefract : t.shell.statusFrosted}
+            </strong>{' '}
+            {hasWebgl2 ? t.shell.statusRimWebgl2 : t.shell.statusRimCanvas2d}
+          </p>
+          <div className="bench-prefs">
+            <div className="pg-btn-group" role="group" aria-label={t.shell.backdropGroupAria}>
+              {(['wallpaper', 'chart'] as const).map((kind) => (
+                <button
+                  key={kind}
+                  type="button"
+                  className="pg-btn"
+                  aria-pressed={backdrop === kind}
+                  onClick={() => setBackdrop(kind)}
+                >
+                  {kind === 'wallpaper' ? t.shell.backdropWallpaper : t.shell.backdropChart}
+                </button>
+              ))}
+            </div>
+            <div className="pg-btn-group" role="group" aria-label={t.shell.themeGroupAria}>
+              {(['light', 'dark'] as const).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  className="pg-btn"
+                  aria-pressed={theme === mode}
+                  onClick={() => setTheme(mode)}
+                >
+                  {mode === 'light' ? t.shell.themeLight : t.shell.themeDark}
+                </button>
+              ))}
+            </div>
+            <div className="pg-btn-group" role="group" aria-label={t.shell.localeGroupAria}>
+              {LOCALES.map((option) => (
+                <button
+                  key={option.id}
+                  type="button"
+                  className="pg-btn"
+                  lang={option.id === 'zh' ? 'zh-CN' : 'en'}
+                  aria-pressed={locale === option.id}
+                  onClick={() => setLocale(option.id)}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
             <button
-              key={id}
               type="button"
-              role="tab"
-              className="bench-lab-tab"
-              aria-selected={activeLab === id}
-              onClick={() => setActiveLab(id)}
+              className="pg-btn"
+              aria-pressed={reducedMotion}
+              onClick={() => setForceReducedMotion(!reducedMotion)}
             >
-              <span className="bench-lab-title">{t.tabs[id].title}</span>
-              <span className="bench-lab-desc">{t.tabs[id].description}</span>
+              {t.shell.reduceMotion}
             </button>
-          ))}
-        </div>
-      </nav>
-
-      <div className="bench-lab">
-        {activeLab === 'drag-merge' ? (
-          <DragMergeLab
-            theme={theme}
-            locale={locale}
-            reducedMotion={reducedMotion}
-            renderMode={renderMode}
-          />
-        ) : null}
-        {activeLab === 'segmented-dock' ? (
-          <SegmentedDockLab
-            theme={theme}
-            locale={locale}
-            reducedMotion={reducedMotion}
-            renderMode={renderMode}
-          />
-        ) : null}
-        {activeLab === 'optics' ? (
-          <OpticsLab theme={theme} locale={locale} reducedMotion={reducedMotion} />
-        ) : null}
-        {activeLab === 'popover-menu' ? (
-          <PopoverMenuLab
-            theme={theme}
-            locale={locale}
-            reducedMotion={reducedMotion}
-            renderMode={renderMode}
-          />
-        ) : null}
+          </div>
+        </footer>
       </div>
-
-      <footer className="bench-meta">
-        <p className="bench-status">
-          <strong>
-            {capabilities.svgBackdropRefraction ? t.shell.statusRefract : t.shell.statusFrosted}
-          </strong>{' '}
-          {hasWebgl2 ? t.shell.statusRimWebgl2 : t.shell.statusRimCanvas2d}
-        </p>
-        <div className="bench-prefs">
-          <div className="pg-btn-group" role="group" aria-label={t.shell.themeGroupAria}>
-            {(['light', 'dark'] as const).map((mode) => (
-              <button
-                key={mode}
-                type="button"
-                className="pg-btn"
-                aria-pressed={theme === mode}
-                onClick={() => setTheme(mode)}
-              >
-                {mode === 'light' ? t.shell.themeLight : t.shell.themeDark}
-              </button>
-            ))}
-          </div>
-          <div className="pg-btn-group" role="group" aria-label={t.shell.localeGroupAria}>
-            {LOCALES.map((option) => (
-              <button
-                key={option.id}
-                type="button"
-                className="pg-btn"
-                lang={option.id === 'zh' ? 'zh-CN' : 'en'}
-                aria-pressed={locale === option.id}
-                onClick={() => setLocale(option.id)}
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>
-          <button
-            type="button"
-            className="pg-btn"
-            aria-pressed={reducedMotion}
-            onClick={() => setForceReducedMotion(!reducedMotion)}
-          >
-            {t.shell.reduceMotion}
-          </button>
-        </div>
-      </footer>
-    </div>
+    </BackdropContext>
   )
 }

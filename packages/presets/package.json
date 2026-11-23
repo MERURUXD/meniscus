@@ -1,0 +1,19 @@
+{
+  "name": "@meniscus/presets",
+  "version": "0.0.0",
+  "type": "module",
+  "license": "MPL-2.0",
+  "description": "Optional interaction presets (morphing menu, segmented pill, drag-merge) built on Meniscus.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@meniscus/core": "workspace:*",
+    "@meniscus/dom": "workspace:*"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node -e \"console.log('@meniscus/presets: tests not yet implemented')\"",
+    "build": "node -e \"console.log('@meniscus/presets: build placeholder')\""
+  }
+}

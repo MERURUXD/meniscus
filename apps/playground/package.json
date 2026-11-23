@@ -1,0 +1,20 @@
+{
+  "name": "@meniscus/playground",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "license": "MPL-2.0",
+  "description": "Interactive showcase and optics lab for Meniscus.",
+  "dependencies": {
+    "@meniscus/core": "workspace:*",
+    "@meniscus/dom": "workspace:*",
+    "@meniscus/react": "workspace:*",
+    "@meniscus/presets": "workspace:*"
+  },
+  "scripts": {
+    "dev": "node -e \"console.log('@meniscus/playground: dev server not yet configured')\"",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node -e \"console.log('@meniscus/playground: tests not yet implemented')\"",
+    "build": "node -e \"console.log('@meniscus/playground: build placeholder')\""
+  }
+}

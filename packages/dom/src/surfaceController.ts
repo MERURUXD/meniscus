@@ -213,6 +213,28 @@ function setBackdropFilterCached(
   cache.backdropFilter = value
 }
 
+/** A backdrop-filter that changes nothing but keeps the veil's filtered compositing state. */
+const VEIL_IDENTITY_BACKDROP_FILTER = 'blur(0px)'
+
+/**
+ * Chromium (seen in 156) loses a composited element's `clip-path: path()` mask when its
+ * backdrop-filter is removed and clips it to the path's bounding box instead, so a
+ * frosted -> refract/solid switch left the veil tint as a rectangle. Once the veil has carried a
+ * filter it keeps an identity one instead of `none`; a veil that never had one stays filter-free.
+ */
+function setVeilBackdropFilterCached(
+  el: HTMLElement | null,
+  cache: LayerStyleCache,
+  value: string,
+): void {
+  const hadFilter = cache.backdropFilter !== undefined && cache.backdropFilter !== 'none'
+  setBackdropFilterCached(
+    el,
+    cache,
+    value === 'none' && hadFilter ? VEIL_IDENTITY_BACKDROP_FILTER : value,
+  )
+}
+
 function setClipPathCached(el: HTMLElement, cache: LayerStyleCache, value: string): void {
   if (cache.clipPath === value) return
   el.style.clipPath = value
@@ -657,7 +679,7 @@ export class GlassSurfaceController {
     if (this.effectiveMode === 'solid') {
       this.hideRefractBackdrop()
       if (this.veilEl) {
-        setBackdropFilterCached(this.veilEl, this.veilCache, 'none')
+        setVeilBackdropFilterCached(this.veilEl, this.veilCache, 'none')
         setBackgroundCached(
           this.veilEl,
           this.veilCache,
@@ -704,7 +726,7 @@ export class GlassSurfaceController {
         setBackdropFilterCached(this.refractBackdropEl, this.refractCache, urlRef)
 
         if (this.veilEl) {
-          setBackdropFilterCached(this.veilEl, this.veilCache, 'none')
+          setVeilBackdropFilterCached(this.veilEl, this.veilCache, 'none')
           setBackgroundCached(
             this.veilEl,
             this.veilCache,
@@ -750,7 +772,7 @@ export class GlassSurfaceController {
       saturation: material.saturation,
       veil: veilOptics,
     })
-    setBackdropFilterCached(this.veilEl, this.veilCache, bf)
+    setVeilBackdropFilterCached(this.veilEl, this.veilCache, bf)
     setBackgroundCached(
       this.veilEl,
       this.veilCache,
@@ -763,7 +785,7 @@ export class GlassSurfaceController {
     this.lastRenderedFrame = null
     this.hideRefractBackdrop()
     setVisibilityCached(this.veilEl, this.veilCache, 'hidden')
-    setBackdropFilterCached(this.veilEl, this.veilCache, 'none')
+    setVeilBackdropFilterCached(this.veilEl, this.veilCache, 'none')
     setVisibilityCached(this.overlayCanvasEl, this.overlayCache, 'hidden')
     this.overlayRenderer?.clear()
   }

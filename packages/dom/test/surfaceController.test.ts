@@ -222,11 +222,12 @@ test('GlassSurfaceController downgrades Safari to frosted without SVG mount and 
   assert.equal(canvasEl.style.visibility, 'visible')
   assert.equal(spy.renders.length, 1)
 
-  // Dynamic mode switch to solid clears stale backdropFilter completely.
+  // Dynamic mode switch to solid drops the stale blur but keeps an identity filter, so the
+  // veil's path clip survives in Chromium.
   assert.equal(controller.setMode('solid'), 'solid')
   controller.render({ field: SAMPLE_FIELD, material, opacity: 1 })
-  assert.equal(veilEl.style.backdropFilter, 'none')
-  assert.equal(veilEl.style.getPropertyValue('-webkit-backdrop-filter'), 'none')
+  assert.equal(veilEl.style.backdropFilter, 'blur(0px)')
+  assert.equal(veilEl.style.getPropertyValue('-webkit-backdrop-filter'), 'blur(0px)')
   assert.ok(veilEl.style.background.startsWith('rgb('))
 
   // Empty/transparent field hides all layers and clears overlay renderer.
@@ -290,6 +291,10 @@ test('GlassSurfaceController clears stale filters across mode switches and honor
   // Render in refract first, then switch through frosted -> solid -> refract.
   controller.render({ field: SAMPLE_FIELD })
   assert.equal(extRefract.style.backdropFilter.startsWith('url(#'), true)
+  // A veil that never carried a filter stays filter-free on the Route B3 path.
+  // Assert on a copy: asserting the property itself would narrow its type for the rest of the test.
+  const initialVeilFilter: string = extVeil.style.backdropFilter
+  assert.equal(initialVeilFilter, 'none')
 
   controller.setMode('frosted')
   controller.render({ field: SAMPLE_FIELD })
@@ -300,7 +305,9 @@ test('GlassSurfaceController clears stale filters across mode switches and honor
   controller.setMode('refract')
   controller.render({ field: SAMPLE_FIELD })
   assert.equal(extRefract.style.visibility, 'visible')
-  assert.equal(extVeil.style.backdropFilter, 'none')
+  // Removing the frosted blur outright would make Chromium clip the veil tint to the path's
+  // bounding box, so it keeps an identity filter from here on.
+  assert.equal(extVeil.style.backdropFilter, 'blur(0px)')
 
   // Live prefers-reduced-motion switch with disableRefractOnReducedMotion=true downgrades refract
   // and immediately repaints the resting frosted fallback without requiring a new caller render().
@@ -317,7 +324,11 @@ test('GlassSurfaceController clears stale filters across mode switches and honor
   assert.equal(controller.getEffectiveMode(), 'refract')
   assert.equal(extRefract.style.visibility, 'visible')
   assert.equal(extRefract.style.backdropFilter.startsWith('url(#'), true)
-  assert.equal(extVeil.style.backdropFilter, 'none')
+  assert.equal(extVeil.style.backdropFilter, 'blur(0px)')
+
+  controller.setMode('solid')
+  controller.render({ field: SAMPLE_FIELD })
+  assert.equal(extVeil.style.backdropFilter, 'blur(0px)')
 
   // Caller-owned external elements must remain attached to container after dispose().
   controller.dispose()

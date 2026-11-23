@@ -38,6 +38,7 @@ let clusterCapacity = 16
 let activeOrigIndicesBuf = new Int32Array(clusterCapacity)
 let clusterQueueBuf = new Int32Array(clusterCapacity)
 let clusterVisitedBuf = new Int32Array(clusterCapacity)
+let clusterMemberMarkBuf = new Int32Array(clusterCapacity)
 let clusterPreparedField: PreparedField = createPreparedField(clusterCapacity)
 const reusableLoopStrings: string[] = []
 const reusableLoopParts: string[] = []
@@ -54,32 +55,57 @@ function ensureClusterCapacity(needed: number): void {
   activeOrigIndicesBuf = new Int32Array(nextCap)
   clusterQueueBuf = new Int32Array(nextCap)
   clusterVisitedBuf = new Int32Array(nextCap)
+  clusterMemberMarkBuf = new Int32Array(nextCap)
   clusterPreparedField = createPreparedField(nextCap)
 }
 
+/**
+ * Packs members of the cluster marked with `clusterTag` in ascending original
+ * primitive order so non-associative `smin` folding matches `GlassFieldState.primitives`.
+ */
 function packClusterPreparedField(
   prepared: PreparedField,
-  memberIndices: Int32Array,
-  clusterSize: number,
+  activeCount: number,
+  clusterTag: number,
 ): PreparedField {
   const dst = clusterPreparedField
-  for (let i = 0; i < clusterSize; i++) {
-    const srcIdx = memberIndices[i]!
-    dst.cx[i] = prepared.cx[srcIdx]!
-    dst.cy[i] = prepared.cy[srcIdx]!
-    dst.halfW[i] = prepared.halfW[srcIdx]!
-    dst.halfH[i] = prepared.halfH[srcIdx]!
-    dst.radius[i] = prepared.radius[srcIdx]!
-    dst.innerW[i] = prepared.innerW[srcIdx]!
-    dst.innerH[i] = prepared.innerH[srcIdx]!
-    dst.minX[i] = prepared.minX[srcIdx]!
-    dst.maxX[i] = prepared.maxX[srcIdx]!
-    dst.minY[i] = prepared.minY[srcIdx]!
-    dst.maxY[i] = prepared.maxY[srcIdx]!
+  let writeIdx = 0
+  for (let i = 0; i < activeCount; i++) {
+    if (clusterMemberMarkBuf[i]! !== clusterTag) {
+      continue
+    }
+    dst.cx[writeIdx] = prepared.cx[i]!
+    dst.cy[writeIdx] = prepared.cy[i]!
+    dst.halfW[writeIdx] = prepared.halfW[i]!
+    dst.halfH[writeIdx] = prepared.halfH[i]!
+    dst.radius[writeIdx] = prepared.radius[i]!
+    dst.innerW[writeIdx] = prepared.innerW[i]!
+    dst.innerH[writeIdx] = prepared.innerH[i]!
+    dst.minX[writeIdx] = prepared.minX[i]!
+    dst.maxX[writeIdx] = prepared.maxX[i]!
+    dst.minY[writeIdx] = prepared.minY[i]!
+    dst.maxY[writeIdx] = prepared.maxY[i]!
+    writeIdx++
   }
-  dst.count = clusterSize
+  dst.count = writeIdx
   dst.blendK = prepared.blendK
   return dst
+}
+
+/**
+ * Computes the tight upper bound `u_n` on cumulative quadratic `smin` outward dilation
+ * (in multiples of `blendK`) for `count` primitives via the recurrence
+ * `u_1 = 0`, `u_{n+1} = (1 + u_n)^2 / 4 < 1`.
+ */
+export function computeMaxSminDilationFactor(count: number): number {
+  if (count <= 1) {
+    return 0
+  }
+  let u = 0
+  for (let i = 1; i < count; i++) {
+    u = ((1 + u) * (1 + u)) * 0.25
+  }
+  return u
 }
 
 const ZERO_POINT: Point = { x: 0, y: 0 }
@@ -211,22 +237,27 @@ export function extractFieldContourPath(
 
   for (let i = 0; i < activeCount; i++) {
     clusterVisitedBuf[i] = 0
+    clusterMemberMarkBuf[i] = 0
   }
 
   const minXArr = prepared.minX
   const maxXArr = prepared.maxX
   const minYArr = prepared.minY
   const maxYArr = prepared.maxY
-  const connectThreshold = blendK + 4
+  const maxDilation = computeMaxSminDilationFactor(activeCount)
+  const connectThreshold = (1 + 2 * maxDilation) * blendK + 4
 
   reusableLoopStrings.length = 0
+  let clusterTag = 0
 
-  // Partition active primitives into connected clusters by AABB Euclidean gap <= blendK + 4.
+  // Partition active primitives into connected clusters using the cumulative smin dilation bound.
   for (let start = 0; start < activeCount; start++) {
     if (clusterVisitedBuf[start]!) {
       continue
     }
+    clusterTag++
     clusterVisitedBuf[start] = 1
+    clusterMemberMarkBuf[start] = clusterTag
     let head = 0
     let tail = 0
     clusterQueueBuf[tail++] = start
@@ -255,6 +286,7 @@ export function extractFieldContourPath(
         const gy = Math.max(0, uMinY - vMaxY, vMinY - uMaxY)
         if (gx <= connectThreshold && gy <= connectThreshold && Math.hypot(gx, gy) <= connectThreshold) {
           clusterVisitedBuf[v] = 1
+          clusterMemberMarkBuf[v] = clusterTag
           clusterQueueBuf[tail++] = v
           if (vMinX < cMinX) cMinX = vMinX
           if (vMaxX > cMaxX) cMaxX = vMaxX
@@ -265,18 +297,18 @@ export function extractFieldContourPath(
     }
 
     if (tail === 1) {
-      // Isolated primitive (> blendK + 4 from all others) has an exact analytic rounded-rect zero isosurface.
+      // Isolated primitive (> connectThreshold from all others) has an exact analytic rounded-rect zero isosurface.
       const origIdx = activeOrigIndicesBuf[start]!
       const sub = formatRoundedRectPath(primitives[origIdx]!, offset)
       if (sub) {
         reusableLoopStrings.push(sub)
       }
     } else {
-      // Pack only this cluster's primitives so disconnected islands inside a concave cluster AABB are not duplicated or clipped.
+      // Pack only this cluster's primitives in original order so disconnected islands are neither duplicated nor reordered.
       const clusterPrepared =
         tail === activeCount
           ? prepared
-          : packClusterPreparedField(prepared, clusterQueueBuf, tail)
+          : packClusterPreparedField(prepared, activeCount, clusterTag)
       appendClusterMarchingSquaresLoops(
         cMinX,
         cMaxX,
@@ -308,8 +340,8 @@ function appendClusterMarchingSquaresLoops(
   offset: Point,
   outLoops: string[],
 ): void {
-  // Margin compensating for multi-primitive smin dilation so outer boundary nodes stay strictly positive and form closed loops.
-  const msPadding = Math.min(Math.max(clusterSize - 1, 1), 4) * blendK * 0.25 + 4
+  // Margin compensating for multi-primitive cumulative smin dilation so outer boundary nodes stay strictly positive and form closed loops.
+  const msPadding = computeMaxSminDilationFactor(clusterSize) * blendK + 4
   const boundsX = minX - msPadding
   const boundsY = minY - msPadding
   const boundsW = maxX - minX + msPadding * 2

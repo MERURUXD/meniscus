@@ -66,10 +66,12 @@ interface MockGlState {
   clearCalls: number
   deletedVaos: number
   deletedPrograms: number
+  deletedShaders: number
+  loseContextCalls: number
   contextLostFlag: boolean
 }
 
-function createMockWebGL2(options: { failCompile?: boolean } = {}): MockGlState {
+function createMockWebGL2(options: { failCompile?: boolean; failLink?: boolean } = {}): MockGlState {
   const uniformCalls: MockGlState['uniformCalls'] = {
     i1: [],
     f1: [],
@@ -86,6 +88,8 @@ function createMockWebGL2(options: { failCompile?: boolean } = {}): MockGlState 
     clearCalls: 0,
     deletedVaos: 0,
     deletedPrograms: 0,
+    deletedShaders: 0,
+    loseContextCalls: 0,
     contextLostFlag: false,
   }
 
@@ -103,7 +107,17 @@ function createMockWebGL2(options: { failCompile?: boolean } = {}): MockGlState 
     DEPTH_TEST: 0x0b71,
     TRIANGLES: 0x0004,
     isContextLost: () => state.contextLostFlag,
-    getExtension: (name: string) => (name === 'EXT_color_buffer_float' ? {} : null),
+    getExtension: (name: string) => {
+      if (name === 'EXT_color_buffer_float') return {}
+      if (name === 'WEBGL_lose_context') {
+        return {
+          loseContext: () => {
+            state.loseContextCalls++
+          },
+        }
+      }
+      return null
+    },
     getParameter: (param: number) => (param === 0x0d33 ? 8192 : 0),
     createShader: (type: number) => ({ id: nextId++, type }),
     shaderSource: (shader: object, src: string) => {
@@ -112,12 +126,14 @@ function createMockWebGL2(options: { failCompile?: boolean } = {}): MockGlState 
     compileShader: () => {},
     getShaderParameter: () => !options.failCompile,
     getShaderInfoLog: () => (options.failCompile ? 'Mock compile error' : ''),
-    deleteShader: () => {},
+    deleteShader: () => {
+      state.deletedShaders++
+    },
     createProgram: () => ({ id: nextId++ }),
     attachShader: () => {},
     linkProgram: () => {},
-    getProgramParameter: () => true,
-    getProgramInfoLog: () => '',
+    getProgramParameter: () => !options.failLink,
+    getProgramInfoLog: () => (options.failLink ? 'Mock link error' : ''),
     deleteProgram: () => {
       state.deletedPrograms++
     },
@@ -578,4 +594,146 @@ test('overlayRenderer: traceSvgPath2d accurately decodes M, L, clockwise arc A, 
   // Top-right corner center is (65, 35) with radius 5, clockwise (anticlockwise=false)
   assert.deepEqual(arcCalls[0], ['arc', 65, 35, 5, -Math.PI / 2, 0, false])
   assert.equal(mock2d.calls.filter((c) => c[0] === 'closePath').length, 1)
+})
+
+function createSpecLockedCanvas(options: {
+  targetGl?: Record<string, unknown> | null
+  target2d: Record<string, unknown> | null
+  probeGl: Record<string, unknown> | null
+}): {
+  canvas: HTMLCanvasElement
+  getWebgl2Calls: () => number
+  get2dCalls: () => number
+} {
+  let lockedMode: 'webgl2' | '2d' | null = null
+  let webgl2Calls = 0
+  let twoDCalls = 0
+
+  const probeCanvas = {
+    getContext: (kind: string) => (kind === 'webgl2' ? options.probeGl : null),
+  }
+
+  const canvas = {
+    width: 10,
+    height: 10,
+    ownerDocument: {
+      createElement: (tag: string) => (tag === 'canvas' ? probeCanvas : null),
+    },
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    getContext: (kind: string) => {
+      if (kind === 'webgl2') {
+        webgl2Calls++
+        if (lockedMode !== null && lockedMode !== 'webgl2') return null
+        if (options.targetGl) {
+          lockedMode = 'webgl2'
+          return options.targetGl
+        }
+        return null
+      }
+      if (kind === '2d') {
+        twoDCalls++
+        if (lockedMode !== null && lockedMode !== '2d') return null
+        if (options.target2d) {
+          lockedMode = '2d'
+          return options.target2d
+        }
+        return null
+      }
+      return null
+    },
+  } as unknown as HTMLCanvasElement
+
+  return {
+    canvas,
+    getWebgl2Calls: () => webgl2Calls,
+    get2dCalls: () => twoDCalls,
+  }
+}
+
+test('overlayRenderer: offscreen probe prevents WebGL2 context lock on targetCanvas and falls back to 2D Canvas', () => {
+  const compileFailProbe = createMockWebGL2({ failCompile: true })
+  const targetGl = createMockWebGL2()
+  const mock2d = createMock2d()
+  const locked = createSpecLockedCanvas({
+    targetGl: targetGl.gl,
+    target2d: mock2d.ctx,
+    probeGl: compileFailProbe.gl,
+  })
+
+  const renderer = createGlassOverlayRenderer()
+  const caps = renderer.mount(locked.canvas)
+
+  assert.equal(locked.getWebgl2Calls(), 0, 'must probe offscreen before calling getContext("webgl2") on targetCanvas')
+  assert.equal(locked.get2dCalls(), 1)
+  assert.equal(caps.webgl2, false)
+  assert.ok(caps.fallbackNotice?.includes('2D Canvas'))
+  assert.ok(compileFailProbe.deletedShaders >= 1)
+  assert.equal(compileFailProbe.loseContextCalls, 1)
+
+  renderer.render(makeFrame([createPrimitive(0)]))
+  assert.ok(mock2d.calls.filter((c) => c[0] === 'roundRect').length > 0)
+  assert.ok(mock2d.calls.filter((c) => c[0] === 'stroke').length > 0)
+  renderer.dispose()
+
+  // Also verify probe program deletion + loseContext cleanup on link failure and healthy probe
+  const linkFailProbe = createMockWebGL2({ failLink: true })
+  const linkMock2d = createMock2d()
+  const linkLocked = createSpecLockedCanvas({
+    targetGl: targetGl.gl,
+    target2d: linkMock2d.ctx,
+    probeGl: linkFailProbe.gl,
+  })
+
+  const linkRenderer = createGlassOverlayRenderer()
+  const linkCaps = linkRenderer.mount(linkLocked.canvas)
+  assert.equal(linkLocked.getWebgl2Calls(), 0)
+  assert.equal(linkCaps.webgl2, false)
+  assert.ok(linkCaps.fallbackNotice?.includes('2D Canvas'))
+  assert.equal(linkFailProbe.deletedPrograms, 1)
+  assert.equal(linkFailProbe.loseContextCalls, 1)
+  linkRenderer.render(makeFrame([createPrimitive(1)]))
+  assert.ok(linkMock2d.calls.filter((c) => c[0] === 'roundRect').length > 0)
+  assert.ok(linkMock2d.calls.filter((c) => c[0] === 'stroke').length > 0)
+  linkRenderer.dispose()
+
+  const healthyProbe = createMockWebGL2()
+  const healthyTargetGl = createMockWebGL2()
+  const healthyLocked = createSpecLockedCanvas({
+    targetGl: healthyTargetGl.gl,
+    target2d: createMock2d().ctx,
+    probeGl: healthyProbe.gl,
+  })
+  const healthyRenderer = createGlassOverlayRenderer()
+  const healthyCaps = healthyRenderer.mount(healthyLocked.canvas)
+  assert.equal(healthyLocked.getWebgl2Calls(), 1)
+  assert.equal(healthyCaps.webgl2, true)
+  assert.equal(healthyProbe.deletedPrograms, 1)
+  assert.equal(healthyProbe.loseContextCalls, 1)
+  healthyRenderer.dispose()
+})
+
+test('overlayRenderer: fragment shader applies isotropic computeDirectionalRimWeight for both bordered and borderless modes', () => {
+  assert.ok(OVERLAY_FRAGMENT_SHADER.includes('float computeDirectionalRimWeight('))
+  assert.ok(OVERLAY_FRAGMENT_SHADER.includes('if (focus < 0.05)'))
+
+  const borderedIdx = OVERLAY_FRAGMENT_SHADER.indexOf('if (hasUniformBorder > 0.5)')
+  const elseIdx = OVERLAY_FRAGMENT_SHADER.indexOf('} else {', borderedIdx)
+  const directionalIdx = OVERLAY_FRAGMENT_SHADER.indexOf('if (wDirectional > 0.001)', elseIdx)
+  const softIdx = OVERLAY_FRAGMENT_SHADER.indexOf('if (wSoft > 0.001)', directionalIdx)
+
+  assert.ok(borderedIdx !== -1 && elseIdx > borderedIdx)
+  assert.ok(directionalIdx > elseIdx && softIdx > directionalIdx)
+
+  const borderedBranch = OVERLAY_FRAGMENT_SHADER.slice(borderedIdx, elseIdx)
+  const borderlessDirectionalBranch = OVERLAY_FRAGMENT_SHADER.slice(directionalIdx, softIdx)
+
+  assert.ok(
+    borderedBranch.includes('computeDirectionalRimWeight(normal, uRimParams.w, uBorderParams.y)'),
+    'bordered branch must use computeDirectionalRimWeight',
+  )
+  assert.ok(
+    borderlessDirectionalBranch.includes('computeDirectionalRimWeight(normal, uRimParams.w, uBorderParams.y)'),
+    'borderless directional branch must use computeDirectionalRimWeight so rimFocus=0 preserves vertical side highlights',
+  )
 })

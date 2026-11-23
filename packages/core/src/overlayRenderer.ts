@@ -72,6 +72,15 @@ float safePow(float x, float y) {
   return (x <= 1e-6) ? 0.0 : pow(x, y);
 }
 
+float computeDirectionalRimWeight(vec2 normal, float focus, float bottomRatio) {
+  if (focus < 0.05) {
+    return 1.0;
+  }
+  float topBias = clamp(-normal.y, 0.0, 1.0);
+  float botBias = clamp(normal.y, 0.0, 1.0);
+  return safePow(max(topBias, botBias * clamp(bottomRatio, 0.0, 1.0)), max(focus, 0.25));
+}
+
 SdfSample sdRoundedBoxRefined(vec2 p, vec2 center, vec2 halfSize, float r) {
   vec2 safeHalf = max(halfSize, vec2(0.001));
   float rad = clamp(r, 0.0, min(safeHalf.x, safeHalf.y));
@@ -208,19 +217,13 @@ void main() {
       // Match CSS inset box-shadow: keep inner rim inside the padding edge so the 1px border is not double-brightened
       float padInset = max(inset - uBorderParams.x, 0.0);
       float padMask = 1.0 - borderMask;
-      float topBias = clamp(-normal.y, 0.0, 1.0);
-      float botBias = clamp(normal.y, 0.0, 1.0);
-      float dirWeight = (uRimParams.w < 0.05)
-        ? 1.0
-        : safePow(max(topBias, botBias * clamp(uBorderParams.y, 0.0, 1.0)), max(uRimParams.w, 0.25));
+      float dirWeight = computeDirectionalRimWeight(normal, uRimParams.w, uBorderParams.y);
       float core = smoothstep(max(uRimParams.y, 0.4) + 0.6, 0.0, padInset);
       float tail = exp(-padInset / 1.8) * uRimParams.z * smoothstep(5.0, 3.2, inset);
       rimA = clamp((core + tail) * dirWeight * uRimParams.x * padMask * glassMask * uOpacity, 0.0, 1.0);
     } else {
       if (wDirectional > 0.001) {
-        float topBias = clamp(-normal.y, 0.0, 1.0);
-        float botBias = clamp(normal.y, 0.0, 1.0);
-        float dirWeight = safePow(max(topBias, botBias * clamp(uBorderParams.y, 0.0, 1.0)), max(uRimParams.w, 0.25));
+        float dirWeight = computeDirectionalRimWeight(normal, uRimParams.w, uBorderParams.y);
         float core = smoothstep(max(uRimParams.y, 0.4) + 0.6, 0.0, inset);
         float tail = exp(-inset / 1.8) * uRimParams.z * smoothstep(5.0, 3.2, inset);
         rimA += (core + tail) * dirWeight * uRimParams.x * wDirectional;
@@ -255,6 +258,76 @@ void main() {
   fragColor = vec4(outRgb, outA);
 }
 `
+
+const WEBGL2_CONTEXT_ATTRS: WebGLContextAttributes = {
+  alpha: true,
+  antialias: false,
+  premultipliedAlpha: true,
+  depth: false,
+  stencil: false,
+  preserveDrawingBuffer: false,
+}
+
+type ProbeCanvasLike = {
+  getContext: (contextId: 'webgl2', options?: WebGLContextAttributes) => unknown
+}
+
+function createProbeCanvas(targetCanvas: HTMLCanvasElement): ProbeCanvasLike | null {
+  const ownerCanvas = (
+    targetCanvas as { ownerDocument?: { createElement?: (tag: string) => HTMLCanvasElement } }
+  ).ownerDocument?.createElement?.('canvas')
+  if (ownerCanvas) {
+    return ownerCanvas as unknown as ProbeCanvasLike
+  }
+
+  if (typeof document !== 'undefined' && typeof document.createElement === 'function') {
+    return document.createElement('canvas') as unknown as ProbeCanvasLike
+  }
+
+  if (typeof OffscreenCanvas === 'function') {
+    return new OffscreenCanvas(1, 1) as unknown as ProbeCanvasLike
+  }
+
+  return null
+}
+
+function probeWebGL2OverlaySupport(
+  targetCanvas: HTMLCanvasElement,
+): { supported: boolean; reason?: string } {
+  const probeCanvas = createProbeCanvas(targetCanvas)
+  if (!probeCanvas) {
+    // Restricted environments without DOM or OffscreenCanvas fall through to targetCanvas directly.
+    return { supported: true }
+  }
+
+  const probeGl = probeCanvas.getContext(
+    'webgl2',
+    WEBGL2_CONTEXT_ATTRS,
+  ) as WebGL2RenderingContext | null
+  if (!probeGl || probeGl.isContextLost()) {
+    return {
+      supported: false,
+      reason: 'WebGL2 unavailable; using 2D Canvas overlay fallback.',
+    }
+  }
+
+  let probeProgram: WebGLProgram | null = null
+  try {
+    probeProgram = linkProgram(probeGl, OVERLAY_VERTEX_SHADER, OVERLAY_FRAGMENT_SHADER)
+    return { supported: true }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'WebGL2 overlay shader initialization failed.'
+    return {
+      supported: false,
+      reason: msg,
+    }
+  } finally {
+    if (probeProgram) {
+      probeGl.deleteProgram(probeProgram)
+    }
+    ;(probeGl.getExtension('WEBGL_lose_context') as { loseContext?: () => void } | null)?.loseContext?.()
+  }
+}
 
 interface OverlayUniforms {
   uViewport: WebGLUniformLocation | null
@@ -694,14 +767,12 @@ export function createGlassOverlayRenderer(): IGlassOverlayRenderer {
       canvas.addEventListener('webglcontextlost', handleContextLost)
       canvas.addEventListener('webglcontextrestored', handleContextRestored)
 
-      const glCtx = canvas.getContext('webgl2', {
-        alpha: true,
-        antialias: false,
-        premultipliedAlpha: true,
-        depth: false,
-        stencil: false,
-        preserveDrawingBuffer: false,
-      })
+      // Probe shader compilation on an offscreen canvas first so a failing WebGL2 context
+      // never locks targetCanvas out of acquiring a 2D fallback context per the HTML Canvas spec.
+      const probe = probeWebGL2OverlaySupport(targetCanvas)
+      const glCtx = probe.supported
+        ? canvas.getContext('webgl2', WEBGL2_CONTEXT_ATTRS)
+        : null
 
       if (glCtx) {
         gl = glCtx
@@ -721,12 +792,19 @@ export function createGlassOverlayRenderer(): IGlassOverlayRenderer {
 
       // Automatically fall back to 2D Canvas when WebGL2 is unavailable or initialization fails
       fallback2d = canvas.getContext('2d')
+      const fallbackReason =
+        probe.reason ??
+        (glCtx && capabilities.fallbackNotice ? capabilities.fallbackNotice : undefined)
+      const fallback2dNotice =
+        fallbackReason && !fallbackReason.includes('2D Canvas')
+          ? `${fallbackReason} Using 2D Canvas overlay fallback.`
+          : (fallbackReason ?? 'WebGL2 unavailable; using 2D Canvas overlay fallback.')
       capabilities = {
         webgl2: false,
         floatFbo: false,
         maxTextureSize: 0,
         fallbackNotice: fallback2d
-          ? 'WebGL2 unavailable; using 2D Canvas overlay fallback.'
+          ? fallback2dNotice
           : 'Neither WebGL2 nor 2D Canvas context is available.',
       }
       return capabilities

@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { GlassFieldState, GlassPrimitive, Point } from '../src/contracts.ts'
-import { extractFieldContourPath, formatRoundedRectPath } from '../src/contour.ts'
+import {
+  computeMaxSminDilationFactor,
+  extractFieldContourPath,
+  formatRoundedRectPath,
+} from '../src/contour.ts'
 import { computeFieldBounds, evaluateFieldDistance } from '../src/sdf.ts'
 
 /** Parses vertex loops from Marching Squares polygon SVG paths (M...L...Z). */
@@ -129,7 +133,7 @@ test('N=3, 8, 16 contour closure, multi-island support, zero-isosurface accuracy
   const path16 = extractFieldContourPath(field16)
   assertClosedValidPath(path16, 1)
 
-  const padding16 = Math.min(Math.max(16 - 1, 1), 4) * blendK16 * 0.25 + 4
+  const padding16 = computeMaxSminDilationFactor(16) * blendK16 + 4
   const bounds16 = computeFieldBounds(field16, padding16)
   const step16 = Math.max(bounds16.width, bounds16.height) / 128
 
@@ -173,7 +177,7 @@ test('N=3 and N=8 extracted vertices against evaluateFieldDistance with offset',
   const path = extractFieldContourPath(field, offset)
   assertClosedValidPath(path, 1)
 
-  const bounds = computeFieldBounds(field, 2 * 24 * 0.25 + 4)
+  const bounds = computeFieldBounds(field, computeMaxSminDilationFactor(3) * 24 + 4)
   const gridStep = Math.max(bounds.width, bounds.height) / 128
   const loops = parsePolygonLoops(path)
 
@@ -295,4 +299,147 @@ test('dynamic cluster buffer expansion supports more than 16 active primitives',
   }))
   const path = extractFieldContourPath({ primitives, blendK: 28 })
   assertClosedValidPath(path, 20)
+})
+
+/** Checks whether `pt` lies strictly inside a closed polygon via ray casting. */
+function isPointInPolygon(pt: Point, polygon: Point[]): boolean {
+  let inside = false
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const xi = polygon[i]!.x
+    const yi = polygon[i]!.y
+    const xj = polygon[j]!.x
+    const yj = polygon[j]!.y
+    const intersects = yi > pt.y !== yj > pt.y && pt.x < ((xj - xi) * (pt.y - yi)) / (yj - yi) + xi
+    if (intersects) {
+      inside = !inside
+    }
+  }
+  return inside
+}
+
+test('computeMaxSminDilationFactor follows exact u_{n+1} = (1 + u_n)^2 / 4 recurrence', () => {
+  assert.equal(computeMaxSminDilationFactor(0), 0)
+  assert.equal(computeMaxSminDilationFactor(1), 0)
+  assert.equal(computeMaxSminDilationFactor(2), 0.25)
+  assert.equal(computeMaxSminDilationFactor(3), 0.390625)
+
+  let prev = 0
+  for (let n = 2; n <= 32; n++) {
+    const next = computeMaxSminDilationFactor(n)
+    const expected = ((1 + prev) * (1 + prev)) * 0.25
+    assert.ok(Math.abs(next - expected) < 1e-12)
+    assert.ok(next > prev && next < 1)
+    prev = next
+  }
+})
+
+test('cluster packing preserves original primitive folding order (Codex Round 2 P1 regression)', () => {
+  const clusterPrimitives: GlassPrimitive[] = [
+    { center: { x: 0, y: 0 }, size: { width: 20, height: 20 }, radius: 5 },
+    { center: { x: 130, y: 0 }, size: { width: 20, height: 20 }, radius: 5 },
+    { center: { x: 65, y: 0 }, size: { width: 20, height: 20 }, radius: 5 },
+  ]
+  const isolated: GlassPrimitive = {
+    center: { x: 1000, y: 1000 },
+    size: { width: 20, height: 20 },
+    radius: 5,
+  }
+  const blendK = 100
+  const fieldWithIsolated: GlassFieldState = {
+    primitives: [...clusterPrimitives, isolated],
+    blendK,
+  }
+  const fieldClusterOnly: GlassFieldState = {
+    primitives: clusterPrimitives,
+    blendK,
+  }
+
+  const fullPath = extractFieldContourPath(fieldWithIsolated)
+  assertClosedValidPath(fullPath, 2)
+
+  const subpaths = fullPath.match(/M[^Z]*Z/g) ?? []
+  assert.equal(subpaths.length, 2)
+
+  const clusterOnlyPath = extractFieldContourPath(fieldClusterOnly)
+  assert.equal(
+    subpaths[0],
+    clusterOnlyPath,
+    'First cluster contour must be character-for-character identical regardless of distant isolated primitives',
+  )
+
+  const padding = computeMaxSminDilationFactor(3) * blendK + 4
+  const bounds = computeFieldBounds(fieldClusterOnly, padding)
+  const gridStep = Math.max(bounds.width, bounds.height) / 128
+
+  const loops = parsePolygonLoops(subpaths[0]!)
+  assert.equal(loops.length, 1)
+  let maxErr = 0
+  for (const pt of loops[0]!) {
+    const err = Math.abs(evaluateFieldDistance(pt.x, pt.y, fieldWithIsolated))
+    if (err > maxErr) {
+      maxErr = err
+    }
+  }
+  assert.ok(
+    maxErr < gridStep * 0.1,
+    `Max zero-isosurface error ${maxErr} must be well below grid step ${gridStep}`,
+  )
+})
+
+test('cumulative smin dilation groups 8 coincident boxes with gap=120 box without clipping (Codex Round 2 P1 regression)', () => {
+  const primitives: GlassPrimitive[] = [
+    ...Array.from({ length: 8 }, () => ({
+      center: { x: 0, y: 0 },
+      size: { width: 20, height: 20 },
+      radius: 0,
+    })),
+    { center: { x: 140, y: 0 }, size: { width: 20, height: 20 }, radius: 0 },
+  ]
+  const blendK = 100
+  const field: GlassFieldState = { primitives, blendK }
+
+  const path = extractFieldContourPath(field)
+  assertClosedValidPath(path, 2)
+  assert.equal(
+    path.includes('M130 -10L150 -10L150 10L130 10Z'),
+    false,
+    'Must not emit an isolated analytic rectangle for the 9th primitive',
+  )
+
+  const padding = computeMaxSminDilationFactor(9) * blendK + 4
+  const bounds = computeFieldBounds(field, padding)
+  const gridStep = Math.max(bounds.width, bounds.height) / 128
+
+  const loops = parsePolygonLoops(path)
+  assert.equal(loops.length, 2)
+  let maxErr = 0
+  for (const loop of loops) {
+    assert.ok(loop.length >= 4)
+    for (const pt of loop) {
+      assert.ok(
+        pt.x > bounds.x + 0.5 &&
+          pt.x < bounds.x + bounds.width - 0.5 &&
+          pt.y > bounds.y + 0.5 &&
+          pt.y < bounds.y + bounds.height - 0.5,
+        `Vertex (${pt.x}, ${pt.y}) must stay strictly inside sampling bounds`,
+      )
+      const err = Math.abs(evaluateFieldDistance(pt.x, pt.y, field))
+      if (err > maxErr) {
+        maxErr = err
+      }
+    }
+  }
+  assert.ok(
+    maxErr < gridStep * 0.1,
+    `Max zero-isosurface error ${maxErr} must be well below grid step ${gridStep}`,
+  )
+
+  const probe: Point = { x: 130, y: 0 }
+  const probeDist = evaluateFieldDistance(probe.x, probe.y, field)
+  assert.ok(probeDist < -5, `Expected probe distance near -5.59, got ${probeDist}`)
+  assert.equal(
+    loops.some((loop) => isPointInPolygon(probe, loop)),
+    true,
+    'Point (130, 0) must lie strictly inside an extracted contour loop rather than being isolated or clipped',
+  )
 })

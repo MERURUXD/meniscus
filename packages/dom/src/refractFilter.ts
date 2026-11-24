@@ -178,7 +178,18 @@ export function resolveEffectiveMapScale(
     const cssH = Math.max(1, Math.round(boundsHeight))
     const rawPixels = cssW * cssH * scale * scale
     if (rawPixels > maxMapPixels) {
-      scale = Math.max(0.05, scale * Math.sqrt(maxMapPixels / rawPixels))
+      scale = scale * Math.sqrt(maxMapPixels / rawPixels)
+      // Guard against Math.round() pushing encoded dimensions slightly past maxMapPixels.
+      const pngW = Math.max(1, Math.round(cssW * scale))
+      const pngH = Math.max(1, Math.round(cssH * scale))
+      if (pngW * pngH > maxMapPixels && (pngW > 1 || pngH > 1)) {
+        const targetW = Math.max(1, Math.floor(cssW * scale))
+        const targetH = Math.max(1, Math.floor(cssH * scale))
+        const downScale = Math.min(targetW / cssW, targetH / cssH)
+        if (downScale > 0) {
+          scale = Math.min(scale, downScale)
+        }
+      }
     }
   }
   return scale

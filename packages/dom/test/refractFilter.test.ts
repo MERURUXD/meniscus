@@ -508,6 +508,23 @@ test('resolveEffectiveMapScale promotes compact controls and caps large full-map
 
   assert.equal(resolveEffectiveMapScale(1200, 800, 0.5, 0), 0.5)
 
+  // Budget cap must reduce scale below 0.05 without ever inflating small requested scales.
+  const tinyRequestedScale = resolveEffectiveMapScale(4000, 4000, 0.01, 1000)
+  assert.ok(tinyRequestedScale > 0 && tinyRequestedScale <= 0.01)
+  assert.ok(
+    Math.max(1, Math.round(4000 * tinyRequestedScale)) *
+      Math.max(1, Math.round(4000 * tinyRequestedScale)) <=
+      1000,
+  )
+
+  const hugeDefaultScale = resolveEffectiveMapScale(8000, 8000, 0.5)
+  assert.ok(hugeDefaultScale > 0 && hugeDefaultScale < 0.05)
+  assert.ok(
+    Math.max(1, Math.round(8000 * hugeDefaultScale)) *
+      Math.max(1, Math.round(8000 * hugeDefaultScale)) <=
+      DEFAULT_MAX_REFRACT_MAP_PIXELS,
+  )
+
   const doc = new MockDocument()
   const controller = createRefractFilterController({
     id: 'sessile-budget-test',

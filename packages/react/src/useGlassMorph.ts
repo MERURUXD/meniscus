@@ -1,6 +1,6 @@
 /**
- * React hook driving `@meniscus/core`'s interruptible 0<->1 morph timeline with
- * `@meniscus/dom`'s clamped rAF loop and native reduced-motion detection.
+ * React hook driving `@sessile/core`'s interruptible 0<->1 morph timeline with
+ * `@sessile/dom`'s clamped rAF loop and native reduced-motion detection.
  *
  * SPDX-License-Identifier: MPL-2.0
  */
@@ -12,13 +12,13 @@ import {
   type MorphTimelineOptions,
   type MorphTimelinePhase,
   type MorphTimelineState,
-} from '@meniscus/core'
+} from '@sessile/core'
 import {
   createFrameLoop,
   type CapabilityEnv,
   type FrameLoop,
   type FrameScheduler,
-} from '@meniscus/dom'
+} from '@sessile/dom'
 import { useReducedMotion } from './useReducedMotion.ts'
 
 export interface UseGlassMorphOptions extends MorphTimelineOptions {

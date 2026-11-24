@@ -1,10 +1,10 @@
 /**
- * Shared `happy-dom` and deterministic rAF scheduler test utilities for `@meniscus/react`.
+ * Shared `happy-dom` and deterministic rAF scheduler test utilities for `@sessile/react`.
  *
  * SPDX-License-Identifier: MPL-2.0
  */
 
-import type { FrameScheduler } from '@meniscus/dom'
+import type { FrameScheduler } from '@sessile/dom'
 import { Window as HappyWindow } from 'happy-dom'
 
 export interface DomTestEnv {
@@ -14,7 +14,7 @@ export interface DomTestEnv {
 }
 
 /** Installs an isolated `happy-dom` window/document onto `globalThis` with React 19 `act` enabled. */
-export function installDomEnv(url = 'https://meniscus.test/'): DomTestEnv {
+export function installDomEnv(url = 'https://sessile.test/'): DomTestEnv {
   const win = new HappyWindow({ url })
   const saved = new Map<PropertyKey, PropertyDescriptor | undefined>()
 

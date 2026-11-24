@@ -83,7 +83,7 @@ export function TestChart({
       )}
 
       <header className="chart-head">
-        {wordmark ? <p className="chart-wordmark">Meniscus</p> : null}
+        {wordmark ? <p className="chart-wordmark">Sessile</p> : null}
         <h2 className="chart-title">{title}</h2>
         <p className="chart-caption">{caption}</p>
       </header>

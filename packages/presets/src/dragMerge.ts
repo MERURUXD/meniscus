@@ -1,5 +1,5 @@
 /**
- * Drag-Merge N-primitive preset for Meniscus.
+ * Drag-Merge N-primitive preset for Sessile.
  *
  * Manages draggable rounded-box glass primitives with exact rounded-box hit testing,
  * spring-coupled inertia, soft magnetic attraction, elastic neighbor tugging,
@@ -19,7 +19,7 @@ import {
   type Size,
   type SpringChannel,
   type SpringParams,
-} from '@meniscus/core'
+} from '@sessile/core'
 
 /** Initial node descriptor for `createDragMergeController`. */
 export interface DragMergeNodeInput {

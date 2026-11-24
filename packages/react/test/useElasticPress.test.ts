@@ -100,7 +100,7 @@ test('useElasticPress animates press growth, drag tracking, intensity scaling, a
     const el = buttonEl
 
     el.dispatchEvent(makePointerEvent('pointerdown', { clientX: 100, clientY: 100 }))
-    assert.equal(el.getAttribute('data-meniscus-elastic-press'), 'true')
+    assert.equal(el.getAttribute('data-sessile-elastic-press'), 'true')
     assert.ok(clock.getPendingCount() > 0)
 
     clock.stepFrame(16)
@@ -131,7 +131,7 @@ test('useElasticPress animates press growth, drag tracking, intensity scaling, a
 
     window.dispatchEvent(makePointerEvent('pointerup', { clientX: 140, clientY: 120 }))
     clock.flushUntilIdle(16)
-    assert.equal(el.hasAttribute('data-meniscus-elastic-press'), false)
+    assert.equal(el.hasAttribute('data-sessile-elastic-press'), false)
     assert.equal(el.style.transform, '')
     assert.equal(clock.getPendingCount(), 0)
 
@@ -175,45 +175,45 @@ test('useElasticPress ignores secondary mouse clicks, disabled targets, and morp
 
     // Secondary mouse button is ignored.
     el.dispatchEvent(makePointerEvent('pointerdown', { pointerType: 'mouse', button: 2 }))
-    assert.equal(el.hasAttribute('data-meniscus-elastic-press'), false)
+    assert.equal(el.hasAttribute('data-sessile-elastic-press'), false)
 
     // Disabled and aria-disabled states are ignored.
     el.setAttribute('disabled', '')
     el.dispatchEvent(makePointerEvent('pointerdown'))
-    assert.equal(el.hasAttribute('data-meniscus-elastic-press'), false)
+    assert.equal(el.hasAttribute('data-sessile-elastic-press'), false)
     el.removeAttribute('disabled')
 
     el.setAttribute('aria-disabled', 'true')
     el.dispatchEvent(makePointerEvent('pointerdown'))
-    assert.equal(el.hasAttribute('data-meniscus-elastic-press'), false)
+    assert.equal(el.hasAttribute('data-sessile-elastic-press'), false)
     el.removeAttribute('aria-disabled')
 
     // ignoreAttribute blocks start and aborts an active press mid-flight.
-    el.setAttribute('data-meniscus-morphing', 'true')
+    el.setAttribute('data-sessile-morphing', 'true')
     el.dispatchEvent(makePointerEvent('pointerdown'))
-    assert.equal(el.hasAttribute('data-meniscus-elastic-press'), false)
-    el.removeAttribute('data-meniscus-morphing')
+    assert.equal(el.hasAttribute('data-sessile-elastic-press'), false)
+    el.removeAttribute('data-sessile-morphing')
 
     el.dispatchEvent(makePointerEvent('pointerdown'))
     clock.stepFrame(16)
-    assert.equal(el.hasAttribute('data-meniscus-elastic-press'), true)
+    assert.equal(el.hasAttribute('data-sessile-elastic-press'), true)
 
-    el.setAttribute('data-meniscus-morphing', 'true')
+    el.setAttribute('data-sessile-morphing', 'true')
     clock.stepFrame(16)
-    assert.equal(el.hasAttribute('data-meniscus-elastic-press'), false)
+    assert.equal(el.hasAttribute('data-sessile-elastic-press'), false)
     assert.equal(el.style.transform, '')
 
     // Clean window listeners via blur and verify disabled / reducedMotion prop clears transforms.
     window.dispatchEvent(new Event('blur'))
-    el.removeAttribute('data-meniscus-morphing')
+    el.removeAttribute('data-sessile-morphing')
     el.dispatchEvent(makePointerEvent('pointerdown'))
     clock.stepFrame(16)
-    assert.equal(el.hasAttribute('data-meniscus-elastic-press'), true)
+    assert.equal(el.hasAttribute('data-sessile-elastic-press'), true)
 
     await act(async () => {
       root.render(createElement(Harness, { reducedMotion: true }))
     })
-    assert.equal(el.hasAttribute('data-meniscus-elastic-press'), false)
+    assert.equal(el.hasAttribute('data-sessile-elastic-press'), false)
     assert.equal(el.style.transform, '')
 
     await act(async () => {
@@ -221,13 +221,13 @@ test('useElasticPress ignores secondary mouse clicks, disabled targets, and morp
     })
     el.dispatchEvent(makePointerEvent('pointerdown'))
     clock.stepFrame(16)
-    assert.equal(el.hasAttribute('data-meniscus-elastic-press'), true)
+    assert.equal(el.hasAttribute('data-sessile-elastic-press'), true)
 
     // Unmounting mid-drag removes listeners and resets transforms cleanly.
     await act(async () => {
       root.unmount()
     })
-    assert.equal(el.hasAttribute('data-meniscus-elastic-press'), false)
+    assert.equal(el.hasAttribute('data-sessile-elastic-press'), false)
     assert.equal(el.style.transform, '')
     assert.equal(clock.getPendingCount(), 0)
   } finally {
@@ -275,17 +275,17 @@ test('useElasticPress reattaches listeners when a conditionally rendered target 
     assert.ok(firstBtn)
     firstBtn.dispatchEvent(makePointerEvent('pointerdown'))
     clock.stepFrame(16)
-    assert.equal(firstBtn.getAttribute('data-meniscus-elastic-press'), 'true')
+    assert.equal(firstBtn.getAttribute('data-sessile-elastic-press'), 'true')
 
     // Swapping to a new DOM element cleans up the old node and attaches to the new node.
     await act(async () => {
       root.render(createElement(ConditionalHarness, { mode: 'second' }))
     })
-    assert.equal(firstBtn.hasAttribute('data-meniscus-elastic-press'), false)
+    assert.equal(firstBtn.hasAttribute('data-sessile-elastic-press'), false)
     assert.ok(secondBtn)
     secondBtn.dispatchEvent(makePointerEvent('pointerdown'))
     clock.stepFrame(16)
-    assert.equal(secondBtn.getAttribute('data-meniscus-elastic-press'), 'true')
+    assert.equal(secondBtn.getAttribute('data-sessile-elastic-press'), 'true')
 
     await act(async () => {
       root.unmount()

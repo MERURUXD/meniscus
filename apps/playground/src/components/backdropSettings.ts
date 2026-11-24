@@ -1,5 +1,5 @@
 import { createContext } from 'react'
-import type { ThemeMode } from '@meniscus/core'
+import type { ThemeMode } from '@sessile/core'
 import { WALLPAPER_SCENES, type WallpaperScene } from './wallpaperScenes.ts'
 
 /** A live wallpaper scene, or the selectable DOM test chart. */

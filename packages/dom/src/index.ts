@@ -1,6 +1,6 @@
 /**
- * Public entry point for `@meniscus/dom`.
- * Framework-agnostic headless Live-DOM glass surface driver built on `@meniscus/core`.
+ * Public entry point for `@sessile/dom`.
+ * Framework-agnostic headless Live-DOM glass surface driver built on `@sessile/core`.
  *
  * SPDX-License-Identifier: MPL-2.0
  */

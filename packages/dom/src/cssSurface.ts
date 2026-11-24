@@ -1,5 +1,5 @@
 /**
- * Pure standard CSS optical surface extraction and material composition for `@meniscus/dom`.
+ * Pure standard CSS optical surface extraction and material composition for `@sessile/dom`.
  *
  * Reads only standard DOM computed styles (`backdrop-filter`, `background-color`,
  * `border-top-*`, `box-shadow`, `border-top-left-radius`, `color-scheme`) without any
@@ -19,7 +19,7 @@ import {
   type OpticalMaterial,
   type OpticalPresetVariant,
   type ThemeMode,
-} from '@meniscus/core'
+} from '@sessile/core'
 
 export interface MeasuredCssGlassSurface {
   surface: ExtractedCssGlassSurface
@@ -37,7 +37,7 @@ export interface ResolveElementThemeOptions {
 }
 
 export interface ReadElementGlassSurfaceOptions extends ResolveElementThemeOptions {
-  /** Attribute temporarily stripped while reading resting computed styles (defaults to `'data-meniscus-morphing'`). */
+  /** Attribute temporarily stripped while reading resting computed styles (defaults to `'data-sessile-morphing'`). */
   temporarilyClearAttribute?: string | null
 }
 
@@ -54,7 +54,7 @@ export interface BuildBackdropFilterCssParams {
   veil?: BackdropVeilOptics
 }
 
-const DEFAULT_MORPH_ATTRIBUTE = 'data-meniscus-morphing'
+const DEFAULT_MORPH_ATTRIBUTE = 'data-sessile-morphing'
 const DEFAULT_LIGHT_SOLID = 'rgb(250, 250, 252)'
 const DEFAULT_DARK_SOLID = 'rgb(32, 32, 36)'
 

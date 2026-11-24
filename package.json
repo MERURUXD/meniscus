@@ -1,5 +1,5 @@
 {
-  "name": "meniscus",
+  "name": "sessile",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -9,7 +9,7 @@
     "node": ">=24.0.0"
   },
   "scripts": {
-    "dev": "pnpm --filter @meniscus/playground dev",
+    "dev": "pnpm --filter @sessile/playground dev",
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",

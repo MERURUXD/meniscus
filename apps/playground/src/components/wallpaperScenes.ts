@@ -7,7 +7,7 @@
  * something crisp under the rim: fold ridges, metaball edges, contour rules, aurora hems
  * or bokeh rims. The soft mesh gradient is the exception and is kept as a calm reference.
  */
-import type { ThemeMode } from '@meniscus/core'
+import type { ThemeMode } from '@sessile/core'
 
 export const WALLPAPER_SCENES = ['folds', 'lava', 'contours', 'aurora', 'bokeh', 'mesh'] as const
 export type WallpaperScene = (typeof WALLPAPER_SCENES)[number]
@@ -126,7 +126,7 @@ void main() {
 }`
 
 // Metaballs drifting on Lissajous paths. The iso-edge is anti-aliased but hard, with a bright
-// meniscus line just inside it: the closest thing in the set to liquid under glass.
+// sessile line just inside it: the closest thing in the set to liquid under glass.
 const LAVA = `${PRELUDE}
 void main() {
   vec2 uv = gl_FragCoord.xy / uRes;

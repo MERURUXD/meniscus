@@ -13,7 +13,7 @@ import {
   type IGlassOverlayRenderer,
   type OverlayRenderFrame,
   type RendererCapabilities,
-} from '@meniscus/core'
+} from '@sessile/core'
 import {
   GlassSurfaceController,
   computeAutoSurfaceBounds,
@@ -111,7 +111,7 @@ test('GlassSurfaceController places live content between veil and overlayCanvas 
     env: CHROME_ENV,
     theme: 'light',
     mode: 'refract',
-    filterId: 'meniscus-b3-test',
+    filterId: 'sessile-b3-test',
     overlayRenderer: spy.renderer,
   })
 
@@ -144,7 +144,7 @@ test('GlassSurfaceController places live content between veil and overlayCanvas 
 
   const svgs = doc.body.querySelectorAll('svg')
   assert.equal(svgs.length, 1)
-  assert.equal(svgs[0]!.querySelectorAll('filter')[0]!.getAttribute('id'), 'meniscus-b3-test')
+  assert.equal(svgs[0]!.querySelectorAll('filter')[0]!.getAttribute('id'), 'sessile-b3-test')
 
   const refractEl = elements.refractBackdrop as unknown as MockElement
   const veilEl = elements.veil as unknown as MockElement
@@ -152,8 +152,8 @@ test('GlassSurfaceController places live content between veil and overlayCanvas 
 
   assert.equal(refractEl.style.visibility, 'visible')
   assert.equal(refractEl.style.clipPath, '')
-  assert.equal(refractEl.style.backdropFilter, 'url(#meniscus-b3-test)')
-  assert.equal(refractEl.style.getPropertyValue('-webkit-backdrop-filter'), 'url(#meniscus-b3-test)')
+  assert.equal(refractEl.style.backdropFilter, 'url(#sessile-b3-test)')
+  assert.equal(refractEl.style.getPropertyValue('-webkit-backdrop-filter'), 'url(#sessile-b3-test)')
 
   assert.equal(veilEl.style.visibility, 'visible')
   assert.ok(veilEl.style.clipPath.startsWith('path("M'))

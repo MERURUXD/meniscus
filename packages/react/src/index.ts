@@ -1,6 +1,6 @@
 /**
- * Public entry point for `@meniscus/react`.
- * Lightweight React 19 components and hooks for Meniscus glass morphing surfaces.
+ * Public entry point for `@sessile/react`.
+ * Lightweight React 19 components and hooks for Sessile glass morphing surfaces.
  *
  * SPDX-License-Identifier: MPL-2.0
  */

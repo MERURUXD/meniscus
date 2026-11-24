@@ -1,11 +1,11 @@
-import type { RimMode } from '@meniscus/core'
-import type { PopoverPlacement } from '@meniscus/presets'
+import type { RimMode } from '@sessile/core'
+import type { PopoverPlacement } from '@sessile/presets'
 import type { BackdropKind } from './components/backdropSettings.ts'
 import type { LabId, OpticsViewMode } from './labDefaults.ts'
 
 export type Locale = 'en' | 'zh'
 
-export const LOCALE_STORAGE_KEY = 'meniscus-playground-locale'
+export const LOCALE_STORAGE_KEY = 'sessile-playground-locale'
 
 export interface LocaleDetectionEnv {
   storage?: Pick<Storage, 'getItem'> | null
@@ -184,7 +184,7 @@ export interface PlaygroundMessages {
 
 export const MESSAGES: Record<Locale, PlaygroundMessages> = {
   en: {
-    documentTitle: 'Meniscus playground',
+    documentTitle: 'Sessile playground',
     shell: {
       tagline: 'Liquid glass over live, clickable DOM',
       labsNavAria: 'Labs',
@@ -228,7 +228,7 @@ export const MESSAGES: Record<Locale, PlaygroundMessages> = {
       },
     },
     chart: {
-      specimen: 'The meniscus is the curve a liquid makes where it meets glass.',
+      specimen: 'A sessile drop is a bead of liquid resting on a surface, curved by its own surface tension.',
       spectrumCaption: 'Visible spectrum, nm',
       clockLabel: 'This chart has been live for',
     },
@@ -376,7 +376,7 @@ export const MESSAGES: Record<Locale, PlaygroundMessages> = {
     },
   },
   zh: {
-    documentTitle: 'Meniscus 演示场',
+    documentTitle: 'Sessile 演示场',
     shell: {
       tagline: '覆在可点击实时 DOM 上的液态玻璃',
       labsNavAria: '实验',
@@ -419,7 +419,7 @@ export const MESSAGES: Record<Locale, PlaygroundMessages> = {
       },
     },
     chart: {
-      specimen: '弯月面，是液体与玻璃相接处弯出的那道弧线。',
+      specimen: '座滴，是静止在表面上、被自身表面张力托成弧形的那一滴液体。',
       spectrumCaption: '可见光谱，单位 nm',
       clockLabel: '图样已实时运行',
     },

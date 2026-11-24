@@ -1,5 +1,5 @@
 /**
- * Unit tests for the @meniscus/core WebGL2 + 2D Canvas optical edge renderer.
+ * Unit tests for the @sessile/core WebGL2 + 2D Canvas optical edge renderer.
  * Verifies shader contracts, mount/capabilities, uniform uploads for N=0/1/3/16 and >16 truncation,
  * 2D Canvas multi-primitive fallback rendering, WebGL context lost/restored, and dispose cleanup.
  *

@@ -26,16 +26,16 @@ importers:
       '@fontsource-variable/schibsted-grotesk':
         specifier: ^5.3.0
         version: 5.3.0
-      '@meniscus/core':
+      '@sessile/core':
         specifier: workspace:*
         version: link:../../packages/core
-      '@meniscus/dom':
+      '@sessile/dom':
         specifier: workspace:*
         version: link:../../packages/dom
-      '@meniscus/presets':
+      '@sessile/presets':
         specifier: workspace:*
         version: link:../../packages/presets
-      '@meniscus/react':
+      '@sessile/react':
         specifier: workspace:*
         version: link:../../packages/react
       react:
@@ -65,22 +65,22 @@ importers:
 
   packages/dom:
     dependencies:
-      '@meniscus/core':
+      '@sessile/core':
         specifier: workspace:*
         version: link:../core
 
   packages/presets:
     dependencies:
-      '@meniscus/core':
+      '@sessile/core':
         specifier: workspace:*
         version: link:../core
 
   packages/react:
     dependencies:
-      '@meniscus/core':
+      '@sessile/core':
         specifier: workspace:*
         version: link:../core
-      '@meniscus/dom':
+      '@sessile/dom':
         specifier: workspace:*
         version: link:../dom
     devDependencies:

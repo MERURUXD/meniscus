@@ -7,7 +7,7 @@
 
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { DEFAULT_OPTICAL_MATERIALS } from '@meniscus/core'
+import { DEFAULT_OPTICAL_MATERIALS } from '@sessile/core'
 import {
   buildBackdropFilterCss,
   buildMaterialFromCssSurface,
@@ -77,7 +77,7 @@ test('readElementGlassSurface extracts standard CSS optics and restores morph at
   const doc = new MockDocument()
   const el = doc.createElement('div')
   el.setAttribute('data-theme', 'light')
-  el.setAttribute('data-meniscus-morphing', 'true')
+  el.setAttribute('data-sessile-morphing', 'true')
   el.style.transition = 'transform 200ms ease'
 
   let sawMorphAttributeWhileReading = true
@@ -86,7 +86,7 @@ test('readElementGlassSurface extracts standard CSS optics and restores morph at
 
   const measured = readElementGlassSurface(el, {
     getComputedStyle: (target) => {
-      sawMorphAttributeWhileReading = target.hasAttribute('data-meniscus-morphing')
+      sawMorphAttributeWhileReading = target.hasAttribute('data-sessile-morphing')
       sawTransitionWhileReading = (target as HTMLElement).style.transition
       return {
         backdropFilter: 'blur(16px) saturate(1.9) brightness(1.08) contrast(0.95)',
@@ -108,7 +108,7 @@ test('readElementGlassSurface extracts standard CSS optics and restores morph at
   // Attribute and transition must be temporarily removed during measurement and restored afterwards.
   assert.equal(sawMorphAttributeWhileReading, false)
   assert.equal(sawTransitionWhileReading, 'none')
-  assert.equal(el.getAttribute('data-meniscus-morphing'), 'true')
+  assert.equal(el.getAttribute('data-sessile-morphing'), 'true')
   assert.equal(el.style.transition, 'transform 200ms ease')
 
   // Must never query private host CSS custom properties.
@@ -136,32 +136,32 @@ test('readElementGlassSurface extracts standard CSS optics and restores morph at
       },
     }),
   )
-  assert.equal(el.getAttribute('data-meniscus-morphing'), 'true')
+  assert.equal(el.getAttribute('data-sessile-morphing'), 'true')
   assert.equal(el.style.transition, 'transform 200ms ease')
 
   // Live CSSStyleDeclaration properties must be snapshotted before `finally` restores the morph attribute.
   const liveStyleDecl = {
     get backdropFilter() {
-      return el.hasAttribute('data-meniscus-morphing') ? 'none' : 'blur(18px) saturate(1.6)'
+      return el.hasAttribute('data-sessile-morphing') ? 'none' : 'blur(18px) saturate(1.6)'
     },
     get borderTopWidth() {
-      return el.hasAttribute('data-meniscus-morphing') ? '0px' : '1px'
+      return el.hasAttribute('data-sessile-morphing') ? '0px' : '1px'
     },
     get borderTopColor() {
-      return el.hasAttribute('data-meniscus-morphing')
+      return el.hasAttribute('data-sessile-morphing')
         ? 'transparent'
         : 'rgba(255, 255, 255, 0.35)'
     },
     get backgroundColor() {
-      return el.hasAttribute('data-meniscus-morphing')
+      return el.hasAttribute('data-sessile-morphing')
         ? 'rgba(0, 0, 0, 0)'
         : 'rgba(240, 240, 245, 0.5)'
     },
     get borderTopLeftRadius() {
-      return el.hasAttribute('data-meniscus-morphing') ? '0px' : '22px'
+      return el.hasAttribute('data-sessile-morphing') ? '0px' : '22px'
     },
     get boxShadow() {
-      return el.hasAttribute('data-meniscus-morphing')
+      return el.hasAttribute('data-sessile-morphing')
         ? 'none'
         : '0px 8px 20px 0px rgba(0, 0, 0, 0.2)'
     },

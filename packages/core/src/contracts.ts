@@ -1,5 +1,5 @@
 /**
- * Core contracts for `@meniscus/core`.
+ * Core contracts for `@sessile/core`.
  * Defines the generic N-primitive continuous glass field, spring physics,
  * optical material presets, and renderer interfaces without host-specific semantics.
  *

@@ -1,5 +1,5 @@
 /**
- * Unit tests for the @meniscus/core Stored-PNG displacement map generator.
+ * Unit tests for the @sessile/core Stored-PNG displacement map generator.
  * Verifies PNG chunk structure, CRC32/Adler32 checksums, N=0/1/2/4/16/20 rasterization paths,
  * inward/outward AA alpha, edge displacement polarity, AABB pruning exactness, and quantized caching.
  *

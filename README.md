@@ -1,8 +1,8 @@
-# Meniscus
+# Sessile
 
 **Live-DOM Continuous Glass Morphing Engine for the Web.**
 
-Meniscus enables real, interactive HTML elements to morph continuously as physical glass materials — merging via smooth-minimum (`smin`) signed distance fields, stretching liquid bridges, pinching off, and bouncing back with interruptible spring physics.
+Sessile enables real, interactive HTML elements to morph continuously as physical glass materials — merging via smooth-minimum (`smin`) signed distance fields, stretching liquid bridges, pinching off, and bouncing back with interruptible spring physics.
 
 ## Key Capabilities
 
@@ -19,19 +19,19 @@ Meniscus enables real, interactive HTML elements to morph continuously as physic
 
 | Package | Description |
 | --- | --- |
-| `@meniscus/core` | Zero-dependency pure TypeScript kernel: N-primitive SDF field, optics parser/interpolator, spring physics, stored-PNG displacement map builder, Marching Squares contour extractor, and WebGL2/2D edge renderer. |
-| `@meniscus/dom` | Framework-agnostic headless DOM surface controller managing the 3-layer hybrid architecture, capability detection, `ResizeObserver`, and `requestAnimationFrame` frame sync. |
-| `@meniscus/react` | Thin React bindings (`<GlassField>`, `<GlassPrimitive>`, `useGlassMorph`, `useElasticPress`). |
-| `@meniscus/presets` | Optional interaction presets (morphing popover/menu, segmented pill, drag-and-merge) decoupled from the core material engine. |
-| `@meniscus/playground` | Interactive online lab showcasing multi-primitive fusion, optics tuning, degradation comparison, and production presets. |
+| `@sessile/core` | Zero-dependency pure TypeScript kernel: N-primitive SDF field, optics parser/interpolator, spring physics, stored-PNG displacement map builder, Marching Squares contour extractor, and WebGL2/2D edge renderer. |
+| `@sessile/dom` | Framework-agnostic headless DOM surface controller managing the 3-layer hybrid architecture, capability detection, `ResizeObserver`, and `requestAnimationFrame` frame sync. |
+| `@sessile/react` | Thin React bindings (`<GlassField>`, `<GlassPrimitive>`, `useGlassMorph`, `useElasticPress`). |
+| `@sessile/presets` | Optional interaction presets (morphing popover/menu, segmented pill, drag-and-merge) decoupled from the core material engine. |
+| `@sessile/playground` | Interactive online lab showcasing multi-primitive fusion, optics tuning, degradation comparison, and production presets. |
 
 ## Status
 
 Pre-release (`0.x`). APIs may change between minor versions. Published packages ship compiled ES modules and type declarations from `dist/`; inside this workspace they resolve to `src/` so tests and the playground run against the sources.
 
 ```sh
-pnpm add @meniscus/core @meniscus/dom @meniscus/presets
-pnpm add @meniscus/react   # React 19 bindings, optional
+pnpm add @sessile/core @sessile/dom @sessile/presets
+pnpm add @sessile/react   # React 19 bindings, optional
 ```
 
 ## Development

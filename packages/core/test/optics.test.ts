@@ -1,5 +1,5 @@
 /**
- * @meniscus/core unit tests for CSS optics parsing and OpticalMaterial interpolation.
+ * @sessile/core unit tests for CSS optics parsing and OpticalMaterial interpolation.
  *
  * SPDX-License-Identifier: MPL-2.0
  */

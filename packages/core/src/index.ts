@@ -1,5 +1,5 @@
 /**
- * Public entry point for `@meniscus/core`.
+ * Public entry point for `@sessile/core`.
  * Zero-dependency Live-DOM continuous glass morphing kernel.
  *
  * SPDX-License-Identifier: MPL-2.0

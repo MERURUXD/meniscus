@@ -1,17 +1,17 @@
 {
-  "name": "@meniscus/dom",
+  "name": "@sessile/dom",
   "version": "0.1.0",
   "type": "module",
   "license": "MPL-2.0",
-  "description": "Framework-agnostic headless DOM surface controller for Meniscus.",
+  "description": "Framework-agnostic headless DOM surface controller for Sessile.",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/MERURUXD/meniscus.git",
+    "url": "git+https://github.com/MERURUXD/sessile.git",
     "directory": "packages/dom"
   },
-  "homepage": "https://github.com/MERURUXD/meniscus#readme",
+  "homepage": "https://github.com/MERURUXD/sessile#readme",
   "bugs": {
-    "url": "https://github.com/MERURUXD/meniscus/issues"
+    "url": "https://github.com/MERURUXD/sessile/issues"
   },
   "exports": {
     ".": "./src/index.ts"
@@ -29,7 +29,7 @@
     }
   },
   "dependencies": {
-    "@meniscus/core": "workspace:*"
+    "@sessile/core": "workspace:*"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",

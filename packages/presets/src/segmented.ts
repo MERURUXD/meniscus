@@ -1,5 +1,5 @@
 /**
- * Segmented Pill continuous-flow preset for Meniscus.
+ * Segmented Pill continuous-flow preset for Sessile.
  *
  * Drives a spring-coupled active indicator pill that smoothly stretches into a
  * two-lobe smin liquid bridge during segment transitions and settles back into
@@ -17,7 +17,7 @@ import {
   type Rect,
   type SpringChannel,
   type SpringParams,
-} from '@meniscus/core'
+} from '@sessile/core'
 
 /** Layout descriptor for a single selectable segment in the control. */
 export interface SegmentItem {

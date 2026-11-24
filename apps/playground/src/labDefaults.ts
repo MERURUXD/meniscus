@@ -5,9 +5,9 @@ import {
   type RimMode,
   type Size,
   type ThemeMode,
-} from '@meniscus/core'
-import type { SurfaceRenderMode } from '@meniscus/dom'
-import type { DragMergeNodeInput, PopoverPlacement } from '@meniscus/presets'
+} from '@sessile/core'
+import type { SurfaceRenderMode } from '@sessile/dom'
+import type { DragMergeNodeInput, PopoverPlacement } from '@sessile/presets'
 
 export type LabId = 'drag-merge' | 'segmented-dock' | 'optics' | 'popover-menu'
 

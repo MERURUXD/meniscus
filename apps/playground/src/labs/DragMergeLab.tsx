@@ -6,6 +6,7 @@ import {
   useState,
   type PointerEvent as ReactPointerEvent,
   type ReactElement,
+  type ReactNode,
 } from 'react'
 import {
   MAX_GPU_PRIMITIVES,
@@ -18,7 +19,6 @@ import {
   createFrameLoop,
   observeElementResize,
   type FrameLoop,
-  type SurfaceRenderMode,
 } from '@sessile/dom'
 import { GlassField } from '@sessile/react'
 import {
@@ -28,21 +28,31 @@ import {
   type DragMergeNodeInput,
   type DragMergeState,
 } from '@sessile/presets'
-import { ControlPanel, SliderControl } from '../components/ControlPanel.tsx'
+import {
+  ControlPanel,
+  ControlSection,
+  SliderControl,
+  SwitchControl,
+  TelemetryGrid,
+  TelemetryItem,
+} from '../components/ControlPanel.tsx'
 import { TestChart } from '../components/TestChart.tsx'
 import { getMessages, type Locale, type PlaygroundMessages } from '../i18n.ts'
 import {
   INITIAL_DRAG_NODE_META,
-  SHOWCASE_MATERIALS,
   createExtraDropletInput,
   createInitialDragMergeNodes,
+  updateWireframeDom,
+  type GlobalGlassMaterial,
 } from '../labDefaults.ts'
 
 export interface DragMergeLabProps {
   theme: ThemeMode
   locale: Locale
   reducedMotion: boolean
-  renderMode: SurfaceRenderMode
+  glass: GlobalGlassMaterial
+  showScenePanel: boolean
+  panelHeaderSlot?: ReactNode
 }
 
 interface TelemetrySnapshot {
@@ -121,7 +131,9 @@ export function DragMergeLab({
   theme,
   locale,
   reducedMotion,
-  renderMode,
+  glass,
+  showScenePanel,
+  panelHeaderSlot,
 }: DragMergeLabProps): ReactElement {
   const t = getMessages(locale)
   const dm = t.dragMerge
@@ -172,28 +184,37 @@ export function DragMergeLab({
   })
 
   const hitboxMapRef = useRef(new Map<string, HTMLDivElement>())
+  const wirePathRef = useRef<SVGPathElement | null>(null)
+  const wireRectRefs = useRef<Array<SVGRectElement | null>>([])
   const loopRef = useRef<FrameLoop | null>(null)
   const lastTelemetryAtRef = useRef(0)
-  const configRef = useRef({ theme, blendK, renderMode })
+  const configRef = useRef({ theme, blendK, glass })
   const reducedMotionRef = useRef(reducedMotion)
 
   const applyFrameToDom = useCallback((state: DragMergeState, forceTelemetry = false) => {
     const surface = surfaceRef.current
     const activeBlendK = configRef.current.blendK
     const activeTheme = configRef.current.theme
-    const activeMaterials = SHOWCASE_MATERIALS[configRef.current.renderMode]
+    const activeGlass = configRef.current.glass
+
+    const renderedField: GlassFieldState = {
+      primitives: state.field.primitives,
+      blendK: activeBlendK,
+      rimOpacity: state.field.rimOpacity,
+      styleMix: activeGlass.styleMix,
+    }
 
     if (surface) {
       surface.render({
-        field: {
-          primitives: state.field.primitives,
-          blendK: activeBlendK,
-          rimOpacity: state.field.rimOpacity,
-          styleMix: state.field.styleMix,
-        },
-        material: activeMaterials[activeTheme],
+        field: renderedField,
+        material: activeGlass.material,
+        refraction: activeGlass.refraction,
         theme: activeTheme,
       })
+    }
+
+    if (activeGlass.config.showWireframe) {
+      updateWireframeDom(renderedField, wirePathRef.current, wireRectRefs.current)
     }
 
     for (const node of state.nodes) {
@@ -234,7 +255,7 @@ export function DragMergeLab({
 
   useLayoutEffect(() => {
     surfaceRef.current = surfaceCtrl
-    configRef.current = { theme, blendK, renderMode }
+    configRef.current = { theme, blendK, glass }
     reducedMotionRef.current = reducedMotion
     if (ctrlRef.current && surfaceCtrl) {
       applyFrameToDom(ctrlRef.current.getState(), true)
@@ -454,24 +475,22 @@ export function DragMergeLab({
     telemetry.aId && telemetry.bId
       ? `${resolveNodeDisplay(telemetry.aId, extraIndices, dm).label} ↔ ${resolveNodeDisplay(telemetry.bId, extraIndices, dm).label}`
       : dm.nonePair
-  const gapText = Number.isFinite(telemetry.minGap) ? `${telemetry.minGap.toFixed(1)}px` : '—'
+  const gapText = Number.isFinite(telemetry.minGap) ? `${telemetry.minGap.toFixed(1)}px` : dm.nonePair
 
   return (
     <>
       <div className="pg-stage" ref={stageRef} data-testid="drag-merge-stage">
-        <TestChart
-          title={dm.backdropTitle}
-          caption={dm.backdropCaption}
-          messages={t.chart}
-        />
+        <TestChart messages={t.chart} />
         <GlassField
           className="pg-glass-stage"
           controllerRef={setSurfaceCtrl}
-          mode={renderMode}
+          mode={glass.renderMode}
           theme={theme}
           blendK={blendK}
+          styleMix={glass.styleMix}
           primitives={initialSeed.field.primitives}
-          material={SHOWCASE_MATERIALS[renderMode][theme]}
+          material={glass.material}
+          refraction={glass.refraction}
         >
           {nodeIds.map((id) => {
             const meta = resolveNodeDisplay(id, extraIndices, dm)
@@ -499,96 +518,107 @@ export function DragMergeLab({
             )
           })}
         </GlassField>
+        {glass.config.showWireframe ? (
+          <svg className="pg-wireframe-svg" aria-hidden="true">
+            {nodeIds.map((id, idx) => (
+              <rect
+                key={id}
+                ref={(el) => {
+                  wireRectRefs.current[idx] = el
+                }}
+                className="pg-wire-prim"
+              />
+            ))}
+            <path ref={wirePathRef} className="pg-wire-contour" />
+          </svg>
+        ) : null}
       </div>
 
-      <ControlPanel title={dm.panelTitle} description={dm.panelDescription}>
-        <SliderControl
-          id="drag-blend-k"
-          label={dm.blendKLabel}
-          value={blendK}
-          min={0}
-          max={48}
-          unit="px"
-          onChange={setBlendK}
-        />
-        <SliderControl
-          id="drag-magnetic-r"
-          label={dm.magneticRadiusLabel}
-          value={magneticRadiusPx}
-          min={0}
-          max={96}
-          unit="px"
-          onChange={setMagneticRadiusPx}
-        />
+      {showScenePanel ? (
+        <ControlPanel
+          title={dm.panelTitle}
+          description={dm.panelDescription}
+          headerSlot={panelHeaderSlot}
+        >
+        <ControlSection title={dm.sectionField}>
+          <SliderControl
+            id="drag-blend-k"
+            label={dm.blendKLabel}
+            value={blendK}
+            defaultValue={DRAG_MERGE_DEFAULTS.blendK}
+            min={0}
+            max={48}
+            unit="px"
+            onChange={setBlendK}
+          />
+          <SliderControl
+            id="drag-magnetic-r"
+            label={dm.magneticRadiusLabel}
+            value={magneticRadiusPx}
+            defaultValue={DRAG_MERGE_DEFAULTS.magneticRadiusPx}
+            min={0}
+            max={96}
+            unit="px"
+            onChange={setMagneticRadiusPx}
+          />
+        </ControlSection>
 
-        <div className="pg-btn-group">
-          <button
-            type="button"
-            className="pg-btn"
-            aria-pressed={returnToRest}
-            onClick={() => {
-              setReturnToRest((v) => !v)
-              if (!returnToRest) setSnapToNearest(false)
+        <ControlSection title={dm.sectionBehavior}>
+          <SwitchControl
+            id="drag-return-rest"
+            label={dm.returnOnRelease}
+            checked={returnToRest}
+            onChange={(checked) => {
+              setReturnToRest(checked)
+              if (checked) setSnapToNearest(false)
             }}
-          >
-            {dm.returnOnRelease}
-          </button>
-          <button
-            type="button"
-            className="pg-btn"
-            aria-pressed={snapToNearest}
-            onClick={() => {
-              setSnapToNearest((v) => !v)
-              if (!snapToNearest) setReturnToRest(false)
+          />
+          <SwitchControl
+            id="drag-snap-nearest"
+            label={dm.snapNearest}
+            checked={snapToNearest}
+            onChange={(checked) => {
+              setSnapToNearest(checked)
+              if (checked) setReturnToRest(false)
             }}
-          >
-            {dm.snapNearest}
-          </button>
-        </div>
+          />
+        </ControlSection>
 
-        <div className="pg-btn-group">
-          <button
-            type="button"
-            className="pg-btn"
-            disabled={nodeIds.length >= MAX_GPU_PRIMITIVES}
-            onClick={handleAddDroplet}
-          >
-            {dm.addDroplet}
-          </button>
-          <button
-            type="button"
-            className="pg-btn"
-            disabled={nodeIds.length <= 2}
-            onClick={handleRemoveLastDroplet}
-          >
-            {dm.remove}
-          </button>
-          <button type="button" className="pg-btn" onClick={handleReset}>
-            {dm.reset}
-          </button>
-        </div>
+        <ControlSection title={dm.sectionDroplets}>
+          <div className="pg-btn-group">
+            <button
+              type="button"
+              className="pg-btn"
+              disabled={nodeIds.length >= MAX_GPU_PRIMITIVES}
+              onClick={handleAddDroplet}
+            >
+              {dm.addDroplet}
+            </button>
+            <button
+              type="button"
+              className="pg-btn"
+              disabled={nodeIds.length <= 2}
+              onClick={handleRemoveLastDroplet}
+            >
+              {dm.remove}
+            </button>
+            <button type="button" className="pg-btn" onClick={handleReset}>
+              {dm.reset}
+            </button>
+          </div>
+        </ControlSection>
 
-        <div className="pg-telemetry">
-          <div>
-            <div className="pg-stat-label">{dm.statPrimitives}</div>
-            <div className="pg-stat-value">
-              {telemetry.activeCount} / {MAX_GPU_PRIMITIVES}
-            </div>
-          </div>
-          <div>
-            <div className="pg-stat-label">{dm.statBridges}</div>
-            <div className="pg-stat-value">{telemetry.mergedCount}</div>
-          </div>
-          <div>
-            <div className="pg-stat-label">{dm.statClosestPair}</div>
-            <div className="pg-stat-value">{closestPairText}</div>
-          </div>
-          <div>
-            <div className="pg-stat-label">{dm.statSurfaceGap}</div>
-            <div className="pg-stat-value">{gapText}</div>
-          </div>
-        </div>
-      </ControlPanel>
+        <TelemetryGrid>
+          <TelemetryItem
+            label={dm.statPrimitives}
+            value={`${telemetry.activeCount} / ${MAX_GPU_PRIMITIVES}`}
+          />
+          <TelemetryItem label={dm.statBridges} value={telemetry.mergedCount} />
+          <TelemetryItem label={dm.statClosestPair} value={closestPairText} />
+          <TelemetryItem label={dm.statSurfaceGap} value={gapText} />
+        </TelemetryGrid>
+        </ControlPanel>
+      ) : null}
     </>
   )
 }

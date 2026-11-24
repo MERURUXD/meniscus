@@ -15,7 +15,7 @@ export interface BackdropSettings {
 
 /** Shared by every stage so split panes and lab switches agree on what sits under the glass. */
 export const BackdropContext = createContext<BackdropSettings>({
-  kind: 'folds',
+  kind: 'prism',
   theme: 'light',
   reducedMotion: false,
 })

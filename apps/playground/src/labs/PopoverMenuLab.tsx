@@ -7,6 +7,7 @@ import {
   useState,
   type MouseEvent as ReactMouseEvent,
   type ReactElement,
+  type ReactNode,
 } from 'react'
 import {
   type Rect,
@@ -18,7 +19,6 @@ import {
   createFrameLoop,
   observeElementResize,
   type FrameLoop,
-  type SurfaceRenderMode,
 } from '@sessile/dom'
 import { GlassField, useElasticPress } from '@sessile/react'
 import {
@@ -31,20 +31,30 @@ import {
   type PopoverPanelConfig,
   type PopoverPlacement,
 } from '@sessile/presets'
-import { ControlPanel } from '../components/ControlPanel.tsx'
+import {
+  ControlPanel,
+  ControlSection,
+  SegmentedControl,
+  SwitchControl,
+  TelemetryGrid,
+  TelemetryItem,
+} from '../components/ControlPanel.tsx'
 import { TestChart } from '../components/TestChart.tsx'
 import { getMessages, type Locale } from '../i18n.ts'
 import {
   POPOVER_ANCHOR_PLACEMENTS,
   POPOVER_MENU_ITEMS,
-  SHOWCASE_MATERIALS,
+  type GlobalGlassMaterial,
 } from '../labDefaults.ts'
 
 export interface PopoverMenuLabProps {
   theme: ThemeMode
   locale: Locale
   reducedMotion: boolean
-  renderMode: SurfaceRenderMode
+  glass: GlobalGlassMaterial
+  inspectorOpen: boolean
+  showScenePanel: boolean
+  panelHeaderSlot?: ReactNode
 }
 
 type PopoverMenuItemId = 'refract-preset' | 'smin-fuse' | 'interrupt' | 'edge-flip'
@@ -52,23 +62,27 @@ type PopoverMenuItemId = 'refract-preset' | 'smin-fuse' | 'interrupt' | 'edge-fl
 const DEFAULT_STAGE_SIZE: Size = { width: 760, height: 520 }
 const PANEL_SIZE: Size = { width: 244, height: 166 }
 
-function computeAnchoredTriggerRect(stageSize: Size, placement: PopoverPlacement): Rect {
+function computeAnchoredTriggerRect(
+  stageSize: Size,
+  placement: PopoverPlacement,
+  inspectorOpen: boolean,
+): Rect {
   const w = Math.max(280, stageSize.width)
   const h = Math.max(320, stageSize.height)
   const width = 136
   const height = 42
-  // Clear the chart's wordmark and caption, which own the top-left of every stage.
-  const topY = Math.max(68, Math.round(h * 0.34))
+  const topY = Math.max(84, Math.round(h * 0.24))
+  const rightSafeOffset = inspectorOpen && w >= 1024 ? 360 : 36
 
   switch (placement) {
     case 'overAnchorEnd':
-      return { x: Math.max(20, w - width - 36), y: topY, width, height }
+      return { x: Math.max(24, w - width - rightSafeOffset), y: topY, width, height }
     case 'overAnchorStart':
       return { x: 28, y: topY, width, height }
     case 'belowPoint':
       return { x: (w - width) * 0.5, y: topY, width, height }
     case 'abovePoint':
-      return { x: (w - width) * 0.5, y: h - height - 72, width, height }
+      return { x: (w - width) * 0.5, y: Math.max(120, h - height - 120), width, height }
   }
 }
 
@@ -76,7 +90,10 @@ export function PopoverMenuLab({
   theme,
   locale,
   reducedMotion,
-  renderMode,
+  glass,
+  inspectorOpen,
+  showScenePanel,
+  panelHeaderSlot,
 }: PopoverMenuLabProps): ReactElement {
   const t = getMessages(locale)
   const pm = t.popoverMenu
@@ -103,8 +120,8 @@ export function PopoverMenuLab({
   const reducedMotionRef = useRef(reducedMotion)
 
   const triggerRect = useMemo(
-    () => computeAnchoredTriggerRect(stageSize, placement),
-    [stageSize, placement],
+    () => computeAnchoredTriggerRect(stageSize, placement, inspectorOpen),
+    [stageSize, placement, inspectorOpen],
   )
 
   const buildConfigs = useCallback(
@@ -115,6 +132,7 @@ export function PopoverMenuLab({
       currentExternal: boolean,
       currentBare: boolean,
       currentPoint: Rect,
+      currentInspectorOpen: boolean,
     ): { anchor: PopoverAnchorConfig; panel: PopoverPanelConfig } => {
       if (sourceKind === 'point') {
         return {
@@ -134,7 +152,11 @@ export function PopoverMenuLab({
         }
       }
 
-      const rect = computeAnchoredTriggerRect(currentStageSize, currentPlacement)
+      const rect = computeAnchoredTriggerRect(
+        currentStageSize,
+        currentPlacement,
+        currentInspectorOpen,
+      )
       return {
         anchor: {
           anchorRect: rect,
@@ -156,13 +178,14 @@ export function PopoverMenuLab({
 
   const latestRef = useRef({
     theme,
-    renderMode,
+    glass,
     activeSourceKind,
     stageSize,
     placement,
     externalTrigger,
     bareSource,
     pointRect,
+    inspectorOpen,
   })
 
   const syncDom = useCallback(() => {
@@ -176,6 +199,7 @@ export function PopoverMenuLab({
       l.externalTrigger,
       l.bareSource,
       l.pointRect,
+      l.inspectorOpen,
     )
     const motion = ctrl.getState()
     const geom = ctrl.evaluateGeometry(anchor, panel)
@@ -197,8 +221,12 @@ export function PopoverMenuLab({
         surface.clear()
       } else {
         surface.render({
-          field: geom.field,
-          material: SHOWCASE_MATERIALS[l.renderMode][l.theme],
+          field: {
+            ...geom.field,
+            styleMix: l.glass.styleMix,
+          },
+          material: l.glass.material,
+          refraction: l.glass.refraction,
           theme: l.theme,
           opacity,
           blurBumpPx: motion.blurBumpPx,
@@ -206,7 +234,7 @@ export function PopoverMenuLab({
       }
     }
 
-    const trigRect = computeAnchoredTriggerRect(l.stageSize, l.placement)
+    const trigRect = computeAnchoredTriggerRect(l.stageSize, l.placement, l.inspectorOpen)
     const btnEl = triggerBtnRef.current
     if (btnEl) {
       if (motion.phase === 'closed') {
@@ -264,13 +292,14 @@ export function PopoverMenuLab({
     reducedMotionRef.current = reducedMotion
     latestRef.current = {
       theme,
-      renderMode,
+      glass,
       activeSourceKind,
       stageSize,
       placement,
       externalTrigger,
       bareSource,
       pointRect,
+      inspectorOpen,
     }
     if (surfaceCtrl) {
       syncDom()
@@ -354,6 +383,7 @@ export function PopoverMenuLab({
       l.externalTrigger,
       l.bareSource,
       l.pointRect,
+      l.inspectorOpen,
     )
     const snap = createPopoverMorphSnapshot(ctrl.evaluateGeometry(anchor, panel), state)
     ctrl.close(snap)
@@ -470,21 +500,19 @@ export function PopoverMenuLab({
         onContextMenu={handleStageContextMenu}
         onClick={handleStageClick}
       >
-        <TestChart
-          title={pm.backdropTitle}
-          caption={pm.backdropCaption}
-          messages={t.chart}
-        />
+        <TestChart messages={t.chart} />
 
         <GlassField
           className="pg-glass-stage"
           controllerRef={setSurfaceCtrl}
-          mode={renderMode}
+          mode={glass.renderMode}
           theme={theme}
           blendK={POPOVER_MORPH_DEFAULTS.dropletBlendK}
+          styleMix={glass.styleMix}
           primitives={restingPrimitives}
           opacity={activeSourceKind === 'point' || bareSource ? 0 : 1}
-          material={SHOWCASE_MATERIALS[renderMode][theme]}
+          material={glass.material}
+          refraction={glass.refraction}
         >
           <button
             ref={triggerBtnRef}
@@ -552,82 +580,76 @@ export function PopoverMenuLab({
 
       </div>
 
-      <ControlPanel title={pm.panelTitle} description={pm.panelDescription}>
-        <div className="pg-btn-group">
-          {POPOVER_ANCHOR_PLACEMENTS.map((p) => (
+      {showScenePanel ? (
+        <ControlPanel
+          title={pm.panelTitle}
+          description={pm.panelDescription}
+          headerSlot={panelHeaderSlot}
+        >
+        <ControlSection title={pm.sectionPlacement}>
+          <SegmentedControl
+            ariaLabel={pm.sectionPlacement}
+            value={placement}
+            columns={2}
+            size="sm"
+            onChange={(p) => {
+              setPlacement(p)
+              setExternalTrigger(p === 'belowPoint' || p === 'abovePoint')
+            }}
+            options={POPOVER_ANCHOR_PLACEMENTS.map((p) => ({
+              value: p,
+              label: pm.placements[p],
+            }))}
+          />
+        </ControlSection>
+
+        <ControlSection title={pm.sectionSource}>
+          <SwitchControl
+            id="popover-external-trigger"
+            label={pm.externalTrigger}
+            checked={externalTrigger}
+            onChange={setExternalTrigger}
+          />
+          <SwitchControl
+            id="popover-bare-source"
+            label={pm.bareSource}
+            checked={bareSource}
+            onChange={setBareSource}
+          />
+        </ControlSection>
+
+        <ControlSection title={pm.sectionActions}>
+          <div className="pg-btn-group">
+            <button type="button" className="pg-btn" onClick={handleRunInterruptSequence}>
+              {pm.interruptDemo}
+            </button>
             <button
-              key={p}
               type="button"
               className="pg-btn"
-              aria-pressed={placement === p}
-              onClick={() => {
-                setPlacement(p)
-                setExternalTrigger(p === 'belowPoint' || p === 'abovePoint')
-              }}
+              onClick={() => openContextMenuAt(stageSize.width * 0.32, stageSize.height * 0.45)}
             >
-              {pm.placements[p]}
+              {pm.contextHereButton}
             </button>
-          ))}
-        </div>
+            <button type="button" className="pg-btn" onClick={closeCurrentMenu}>
+              {pm.closeMenu}
+            </button>
+          </div>
+        </ControlSection>
 
-        <div className="pg-btn-group">
-          <button
-            type="button"
-            className="pg-btn"
-            aria-pressed={externalTrigger}
-            onClick={() => setExternalTrigger((v) => !v)}
-          >
-            {pm.externalTrigger}
-          </button>
-          <button
-            type="button"
-            className="pg-btn"
-            aria-pressed={bareSource}
-            onClick={() => setBareSource((v) => !v)}
-          >
-            {pm.bareSource}
-          </button>
-        </div>
-
-        <div className="pg-btn-group">
-          <button type="button" className="pg-btn" onClick={handleRunInterruptSequence}>
-            {pm.interruptDemo}
-          </button>
-          <button
-            type="button"
-            className="pg-btn"
-            onClick={() => openContextMenuAt(stageSize.width * 0.32, stageSize.height * 0.45)}
-          >
-            {pm.contextHereButton}
-          </button>
-          <button type="button" className="pg-btn" onClick={closeCurrentMenu}>
-            {pm.closeMenu}
-          </button>
-        </div>
-
-        <div className="pg-telemetry">
-          <div>
-            <div className="pg-stat-label">{pm.statPhase}</div>
-            <div className="pg-stat-value">{pm.phases[phase]}</div>
-          </div>
-          <div>
-            <div className="pg-stat-label">{pm.statSourceMode}</div>
-            <div className="pg-stat-value">{pm.sourceModes[activeSourceKind]}</div>
-          </div>
-          <div>
-            <div className="pg-stat-label">{pm.statLastAction}</div>
-            <div className="pg-stat-value">
-              {lastActionId ? pm.menuItems[lastActionId] : pm.noneAction}
-            </div>
-          </div>
-          <div>
-            <div className="pg-stat-label">{pm.statReducedMotion}</div>
-            <div className="pg-stat-value">
-              {reducedMotion ? pm.reducedMotionMode : pm.springMode}
-            </div>
-          </div>
-        </div>
-      </ControlPanel>
+        <TelemetryGrid>
+          <TelemetryItem label={pm.statPhase} value={pm.phases[phase]} />
+          <TelemetryItem label={pm.statSourceMode} value={pm.sourceModes[activeSourceKind]} />
+          <TelemetryItem
+            label={pm.statLastAction}
+            value={lastActionId ? pm.menuItems[lastActionId] : pm.noneAction}
+          />
+          <TelemetryItem
+            label={pm.statReducedMotion}
+            value={reducedMotion ? pm.reducedMotionMode : pm.springMode}
+          />
+        </TelemetryGrid>
+        </ControlPanel>
+      ) : null}
     </>
   )
 }

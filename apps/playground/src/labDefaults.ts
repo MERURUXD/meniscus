@@ -1,5 +1,7 @@
 import {
   DEFAULT_OPTICAL_MATERIALS,
+  extractFieldContourPath,
+  type GlassFieldState,
   type GlassPrimitive,
   type OpticalMaterial,
   type RefractionProfileName,
@@ -7,12 +9,21 @@ import {
   type Size,
   type ThemeMode,
 } from '@sessile/core'
-import type { SurfaceRenderMode } from '@sessile/dom'
+import type { RefractFilterConfig, SurfaceRenderMode } from '@sessile/dom'
 import type { DragMergeNodeInput, PopoverPlacement } from '@sessile/presets'
 
-export type LabId = 'drag-merge' | 'segmented-dock' | 'optics' | 'popover-menu'
+export type LabId = 'drag-merge' | 'segmented-dock' | 'popover-menu'
 
-export const LAB_IDS: readonly LabId[] = ['drag-merge', 'segmented-dock', 'optics', 'popover-menu']
+export const LAB_IDS: readonly LabId[] = ['drag-merge', 'segmented-dock', 'popover-menu']
+
+export interface GlobalGlassMaterial {
+  config: OpticsLabConfig
+  renderMode: SurfaceRenderMode
+  material: OpticalMaterial
+  fallbackMaterial: OpticalMaterial
+  refraction: Partial<RefractFilterConfig>
+  styleMix: number
+}
 
 export interface DockSegmentMeta {
   id: string
@@ -22,7 +33,7 @@ export interface DockSegmentMeta {
 
 export const DOCK_SEGMENTS: readonly DockSegmentMeta[] = [
   { id: 'overview', label: 'Overview' },
-  { id: 'optics', label: 'Optics', badge: 'B3' },
+  { id: 'optics', label: 'Optics' },
   { id: 'field', label: 'SDF Field' },
   { id: 'motion', label: 'Springs' },
   { id: 'export', label: 'Spec' },
@@ -46,33 +57,32 @@ export function createInitialDragMergeNodes(stageSize: Size): DragMergeNodeInput
   const h = Math.max(320, stageSize.height)
   const compact = w < 460
   const cx = w * 0.5
-  const cy = compact ? h * 0.58 : h * 0.5
+  const cy = h * 0.5
 
   if (compact) {
-    const mobileCy = Math.max(296, h * 0.62)
     return [
       {
         id: 'anchor',
-        center: { x: cx, y: mobileCy - 60 },
+        center: { x: cx, y: Math.max(40, cy - 84) },
         size: { width: 136, height: 48 },
         radius: 24,
         pinned: true,
       },
       {
         id: 'orb-a',
-        center: { x: Math.max(52, cx - 72), y: mobileCy + 18 },
+        center: { x: Math.max(52, cx - 76), y: cy },
         size: { width: 72, height: 72 },
         radius: 36,
       },
       {
         id: 'orb-b',
-        center: { x: Math.min(w - 52, cx + 72), y: mobileCy + 18 },
+        center: { x: Math.min(w - 52, cx + 76), y: cy },
         size: { width: 78, height: 64 },
         radius: 22,
       },
       {
         id: 'pill-c',
-        center: { x: cx, y: Math.min(h - 38, mobileCy + 96) },
+        center: { x: cx, y: Math.min(h - 36, cy + 84) },
         size: { width: 112, height: 48 },
         radius: 24,
       },
@@ -82,28 +92,28 @@ export function createInitialDragMergeNodes(stageSize: Size): DragMergeNodeInput
   return [
     {
       id: 'anchor',
-      center: { x: cx, y: cy - 34 },
-      size: { width: 152, height: 56 },
-      radius: 28,
+      center: { x: cx, y: cy - 72 },
+      size: { width: 164, height: 58 },
+      radius: 29,
       pinned: true,
     },
     {
       id: 'orb-a',
-      center: { x: Math.max(62, cx - 104), y: cy + 52 },
-      size: { width: 82, height: 82 },
-      radius: 41,
+      center: { x: Math.max(66, cx - 120), y: cy + 16 },
+      size: { width: 90, height: 90 },
+      radius: 45,
     },
     {
       id: 'orb-b',
-      center: { x: Math.min(w - 62, cx + 106), y: cy + 44 },
-      size: { width: 92, height: 74 },
-      radius: 24,
+      center: { x: Math.min(w - 66, cx + 120), y: cy + 12 },
+      size: { width: 102, height: 82 },
+      radius: 26,
     },
     {
       id: 'pill-c',
-      center: { x: cx, y: Math.min(h - 56, cy + 122) },
-      size: { width: 124, height: 52 },
-      radius: 26,
+      center: { x: cx, y: Math.min(h - 52, cy + 102) },
+      size: { width: 136, height: 54 },
+      radius: 27,
     },
   ]
 }
@@ -135,8 +145,8 @@ export function createExtraDropletInput(index: number, stageSize: Size): DragMer
  * tier the tint and blur drop and a little dispersion is added. Only the playground uses this.
  */
 const SHOWCASE_TINT: Record<ThemeMode, OpticalMaterial['tintRgba']> = {
-  light: [0.97, 0.98, 1, 0.22],
-  dark: [0.05, 0.15, 0.28, 0.3],
+  light: [0.98, 0.99, 1, 0.2],
+  dark: [0.1, 0.13, 0.18, 0.28],
 }
 
 /**
@@ -175,6 +185,7 @@ export const SHOWCASE_MATERIALS: Readonly<
 }
 
 export type OpticsViewMode = 'refract' | 'frosted' | 'solid' | 'split'
+export type OpticsPresetId = 'crown' | 'prism' | 'meniscus' | 'frost'
 
 export interface OpticsLabConfig {
   blendK: number
@@ -214,6 +225,64 @@ export const DEFAULT_OPTICS_LAB_CONFIG: OpticsLabConfig = {
   renderView: 'refract',
   showWireframe: false,
   oscillateGap: false,
+}
+
+export const OPTICS_PRESETS: Readonly<Record<OpticsPresetId, Partial<OpticsLabConfig>>> = {
+  crown: {
+    blendK: DEFAULT_OPTICS_LAB_CONFIG.blendK,
+    blurPx: DEFAULT_OPTICS_LAB_CONFIG.blurPx,
+    bevelPx: DEFAULT_OPTICS_LAB_CONFIG.bevelPx,
+    refractionProfile: DEFAULT_OPTICS_LAB_CONFIG.refractionProfile,
+    ior: DEFAULT_OPTICS_LAB_CONFIG.ior,
+    caustics: DEFAULT_OPTICS_LAB_CONFIG.caustics,
+    refractionStrength: DEFAULT_OPTICS_LAB_CONFIG.refractionStrength,
+    dispersionPx: DEFAULT_OPTICS_LAB_CONFIG.dispersionPx,
+    saturation: DEFAULT_OPTICS_LAB_CONFIG.saturation,
+    tintAlpha: DEFAULT_OPTICS_LAB_CONFIG.tintAlpha,
+    rimMode: DEFAULT_OPTICS_LAB_CONFIG.rimMode,
+    rimOpacity: DEFAULT_OPTICS_LAB_CONFIG.rimOpacity,
+  },
+  prism: {
+    bevelPx: 28,
+    refractionProfile: 'circle',
+    ior: 2.05,
+    caustics: true,
+    refractionStrength: 1.85,
+    dispersionPx: 3.4,
+    blurPx: 0.5,
+    saturation: 2.1,
+    tintAlpha: 0.14,
+    rimMode: 'directional',
+    rimOpacity: 0.48,
+  },
+  meniscus: {
+    blendK: 42,
+    bevelPx: 26,
+    refractionProfile: 'lip',
+    ior: 1.65,
+    caustics: false,
+    refractionStrength: 1.55,
+    dispersionPx: 1.6,
+    blurPx: 1.0,
+    saturation: 1.65,
+    tintAlpha: 0.22,
+    rimMode: 'physical',
+    rimOpacity: 0.58,
+    lightAngle: -45,
+  },
+  frost: {
+    bevelPx: 18,
+    refractionProfile: 'squircle',
+    ior: 1.35,
+    caustics: false,
+    refractionStrength: 0.85,
+    dispersionPx: 0.4,
+    blurPx: 11.5,
+    saturation: 1.4,
+    tintAlpha: 0.36,
+    rimMode: 'soft',
+    rimOpacity: 0.44,
+  },
 }
 
 export function buildOpticsLabMaterial(
@@ -260,7 +329,7 @@ export function buildOpticsLabPrimitives(
 
   const halfSpan = (mainW + orbW) * 0.5 + gapPx
   const centerX = w * 0.5
-  const centerY = compact ? h * 0.62 : h * 0.52
+  const centerY = h * 0.5
 
   return [
     {
@@ -297,3 +366,23 @@ export const POPOVER_ANCHOR_PLACEMENTS: readonly PopoverPlacement[] = [
   'belowPoint',
   'abovePoint',
 ] as const
+
+export function updateWireframeDom(
+  field: GlassFieldState,
+  pathEl: SVGPathElement | null,
+  rectEls: Array<SVGRectElement | null>,
+): void {
+  if (pathEl) {
+    pathEl.setAttribute('d', extractFieldContourPath(field, { x: 0, y: 0 }) ?? '')
+  }
+  for (let i = 0; i < field.primitives.length; i++) {
+    const p = field.primitives[i]!
+    const rectEl = rectEls[i]
+    if (!rectEl) continue
+    rectEl.setAttribute('x', String(p.center.x - p.size.width * 0.5))
+    rectEl.setAttribute('y', String(p.center.y - p.size.height * 0.5))
+    rectEl.setAttribute('width', String(p.size.width))
+    rectEl.setAttribute('height', String(p.size.height))
+    rectEl.setAttribute('rx', String(p.radius))
+  }
+}

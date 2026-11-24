@@ -1,7 +1,7 @@
 import type { RefractionProfileName, RimMode } from '@sessile/core'
 import type { PopoverPlacement } from '@sessile/presets'
 import type { BackdropKind } from './components/backdropSettings.ts'
-import type { LabId, OpticsViewMode } from './labDefaults.ts'
+import type { LabId, OpticsPresetId, OpticsViewMode } from './labDefaults.ts'
 
 export type Locale = 'en' | 'zh'
 
@@ -66,6 +66,10 @@ export interface PlaygroundMessages {
     statusFrosted: string
     statusRimWebgl2: string
     statusRimCanvas2d: string
+    statusCompactRefract: string
+    statusCompactFrosted: string
+    statusCompactWebgl2: string
+    statusCompactCanvas2d: string
     themeLight: string
     themeDark: string
     themeGroupAria: string
@@ -73,6 +77,16 @@ export interface PlaygroundMessages {
     backdropLabel: string
     backdrops: Record<BackdropKind, string>
     reduceMotion: string
+    motionAria: string
+    motionFull: string
+    motionReduced: string
+    inspectorToggle: string
+    inspectorShow: string
+    inspectorHide: string
+    tuneButton: string
+    sheetTabsAria: string
+    sheetMaterial: string
+    sheetScene: string
   }
   tabs: Record<LabId, { title: string; description: string }>
   chart: {
@@ -83,11 +97,15 @@ export interface PlaygroundMessages {
   dragMerge: {
     backdropTitle: string
     backdropCaption: string
+    stageHint: string
     nodes: Record<'anchor' | 'orb-a' | 'orb-b' | 'pill-c', { label: string; sublabel: string }>
     extraNodeLabelPrefix: string
     extraNodeSublabel: string
     panelTitle: string
     panelDescription: string
+    sectionField: string
+    sectionBehavior: string
+    sectionDroplets: string
     blendKLabel: string
     magneticRadiusLabel: string
     returnOnRelease: string
@@ -104,10 +122,14 @@ export interface PlaygroundMessages {
   segmentedDock: {
     backdropTitle: string
     backdropCaption: string
+    stageHint: string
     dockAriaLabel: string
     segments: Record<'overview' | 'optics' | 'field' | 'motion' | 'export', string>
     panelTitle: string
     panelDescription: string
+    sectionOrientation: string
+    sectionMotion: string
+    sectionActions: string
     horizontal: string
     vertical: string
     blendKLabel: string
@@ -124,13 +146,23 @@ export interface PlaygroundMessages {
   optics: {
     backdropTitle: string
     backdropCaption: string
+    stageHint: string
     splitLeftTitle: string
     splitLeftCaption: string
     splitRightTitle: string
     splitRightCaption: string
     panelTitle: string
     panelDescription: string
+    sectionView: string
+    sectionPreset: string
+    sectionGeometry: string
+    sectionOptics: string
+    sectionSurface: string
+    sectionStage: string
     views: Record<OpticsViewMode, string>
+    presets: Record<OpticsPresetId, string>
+    banks: Record<'geometry' | 'optics' | 'surface', string>
+    dragLensHint: string
     gapLabel: string
     blendKLabel: string
     bevelLabel: string
@@ -144,6 +176,7 @@ export interface PlaygroundMessages {
     saturationLabel: string
     tintLabel: string
     rimOpacityLabel: string
+    rimModeLabel: string
     lightAngleLabel: string
     rimModes: Record<RimMode, string>
     wireframeButton: string
@@ -164,12 +197,16 @@ export interface PlaygroundMessages {
   popoverMenu: {
     backdropTitle: string
     backdropCaption: string
+    stageHint: string
     triggerLabel: string
     menuAriaLabel: string
     menuItems: Record<'refract-preset' | 'smin-fuse' | 'interrupt' | 'edge-flip', string>
     contextHereButton: string
     panelTitle: string
     panelDescription: string
+    sectionPlacement: string
+    sectionSource: string
+    sectionActions: string
     placements: Record<PopoverPlacement, string>
     externalTrigger: string
     bareSource: string
@@ -189,30 +226,45 @@ export interface PlaygroundMessages {
 
 export const MESSAGES: Record<Locale, PlaygroundMessages> = {
   en: {
-    documentTitle: 'Sessile playground',
+    documentTitle: 'Sessile Optical Lab',
     shell: {
       tagline: 'Liquid glass over live, clickable DOM',
       labsNavAria: 'Labs',
       statusRefract: 'Refracting the live page with an SVG backdrop filter.',
       statusFrosted:
-        'This browser can’t refract live DOM, so the glass falls back to frosted blur with the same outline.',
+        'This browser cannot refract live DOM, so the glass falls back to frosted blur with the same outline.',
       statusRimWebgl2: 'Rim light drawn with WebGL2.',
       statusRimCanvas2d: 'Rim light drawn with Canvas 2D.',
+      statusCompactRefract: 'SVG refraction',
+      statusCompactFrosted: 'Frosted fallback',
+      statusCompactWebgl2: 'WebGL2 rim',
+      statusCompactCanvas2d: 'Canvas 2D rim',
       themeLight: 'Light',
       themeDark: 'Dark',
       themeGroupAria: 'Theme',
       localeGroupAria: 'Language',
-      backdropLabel: 'Background',
+      backdropLabel: 'Substrate',
       backdrops: {
+        prism: 'Prism',
         folds: 'Folds',
         lava: 'Lava',
         contours: 'Contours',
         aurora: 'Aurora',
         bokeh: 'Bokeh',
         mesh: 'Gradient',
-        chart: 'Test chart',
+        chart: 'Optical plate',
       },
       reduceMotion: 'Reduce motion',
+      motionAria: 'Motion',
+      motionFull: 'Spring',
+      motionReduced: 'Reduced',
+      inspectorToggle: 'Inspector',
+      inspectorShow: 'Show tuning sheet',
+      inspectorHide: 'Hide tuning sheet',
+      tuneButton: 'Tune',
+      sheetTabsAria: 'Inspector mode',
+      sheetMaterial: 'Material',
+      sheetScene: 'Scene',
     },
     tabs: {
       'drag-merge': {
@@ -220,54 +272,56 @@ export const MESSAGES: Record<Locale, PlaygroundMessages> = {
         description: 'Pull droplets together until they fuse.',
       },
       'segmented-dock': {
-        title: 'Segmented control',
+        title: 'Segmented',
         description: 'The highlight stretches and slides between options.',
       },
-      optics: {
-        title: 'Glass material',
-        description: 'Tune refraction, blur and rim; compare with the fallback.',
-      },
       'popover-menu': {
-        title: 'Popover menu',
+        title: 'Popover',
         description: 'A button that melts into a menu and back.',
       },
     },
     chart: {
-      specimen: 'A sessile drop is a bead of liquid resting on a surface, curved by its own surface tension.',
+      specimen:
+        'A sessile drop is a bead of liquid resting on a surface, curved by its own surface tension.',
       spectrumCaption: 'Visible spectrum, nm',
-      clockLabel: 'This chart has been live for',
+      clockLabel: 'Live elapsed',
     },
     dragMerge: {
       backdropTitle: 'Merging drops',
       backdropCaption:
         'Drag a droplet toward another. Inside the capture radius they fuse into one surface; pull them apart and the bridge thins until it snaps.',
+      stageHint: 'Drag droplets together to fuse; pull apart to snap.',
       nodes: {
         anchor: { label: 'Anchor', sublabel: 'Pinned' },
-        'orb-a': { label: 'Orb', sublabel: 'Drag me' },
-        'orb-b': { label: 'Lens', sublabel: 'Drag me' },
-        'pill-c': { label: 'Capsule', sublabel: 'Drag me' },
+        'orb-a': { label: 'Orb', sublabel: 'Drag' },
+        'orb-b': { label: 'Lens', sublabel: 'Drag' },
+        'pill-c': { label: 'Capsule', sublabel: 'Drag' },
       },
       extraNodeLabelPrefix: 'Droplet',
-      extraNodeSublabel: 'Drag me',
-      panelTitle: 'Field',
-      panelDescription: 'How eagerly nearby shapes melt into each other.',
+      extraNodeSublabel: 'Drag',
+      panelTitle: 'Field & droplets',
+      panelDescription: 'Control surface tension and how eagerly nearby shapes fuse into one contour.',
+      sectionField: 'SDF field',
+      sectionBehavior: 'Release behavior',
+      sectionDroplets: 'Primitives',
       blendKLabel: 'Blend radius',
       magneticRadiusLabel: 'Capture radius',
       returnOnRelease: 'Return on release',
       snapNearest: 'Snap to nearest',
       addDroplet: 'Add droplet',
-      remove: 'Remove droplet',
+      remove: 'Remove',
       reset: 'Reset',
       statPrimitives: 'Shapes',
       statBridges: 'Bridges',
       statClosestPair: 'Closest pair',
-      statSurfaceGap: 'Gap between them',
+      statSurfaceGap: 'Surface gap',
       nonePair: 'None',
     },
     segmentedDock: {
       backdropTitle: 'Segmented control',
       backdropCaption:
         'Pick a tab. The pill stretches toward it, squeezes and settles. Pick another before it lands and it turns around without a jump.',
+      stageHint: 'Select a segment; switch mid-flight to reverse.',
       dockAriaLabel: 'Sections',
       segments: {
         overview: 'Overview',
@@ -276,8 +330,11 @@ export const MESSAGES: Record<Locale, PlaygroundMessages> = {
         motion: 'Springs',
         export: 'Spec',
       },
-      panelTitle: 'Pill',
-      panelDescription: 'The shape of the pill while it travels.',
+      panelTitle: 'Morphing pill',
+      panelDescription: 'Tune elastic stretch, squeeze, and blend radius while the lens travels.',
+      sectionOrientation: 'Axis',
+      sectionMotion: 'Elasticity',
+      sectionActions: 'Stress test',
       horizontal: 'Horizontal',
       vertical: 'Vertical',
       blendKLabel: 'Blend radius',
@@ -295,19 +352,37 @@ export const MESSAGES: Record<Locale, PlaygroundMessages> = {
       backdropTitle: 'Glass material',
       backdropCaption:
         'Two lenses over the moving background. Edges bend inside the rim; widen the bezel or raise refraction to see more of it.',
-      splitLeftTitle: 'Refraction',
-      splitLeftCaption: 'What Chromium renders: the live page displaced through the rim.',
+      stageHint: 'Tune bezel, IOR, and dispersion in real time.',
+      splitLeftTitle: 'SVG refraction',
+      splitLeftCaption: 'Chromium live backdrop displacement',
       splitRightTitle: 'Frosted fallback',
-      splitRightCaption:
-        'What Safari and Firefox get: the same outline and rim, without the bending.',
-      panelTitle: 'Lens',
-      panelDescription: 'Each change reaches the glass on the next frame.',
+      splitRightCaption: 'Safari & Firefox outline parity',
+      panelTitle: 'Glass material',
+      panelDescription: 'Changes apply live across every scene and Compare view.',
+      sectionView: 'Render tier',
+      sectionPreset: 'Material preset',
+      sectionGeometry: 'Bevel & profile',
+      sectionOptics: 'Refraction & dispersion',
+      sectionSurface: 'Surface & rim',
+      sectionStage: 'Diagnostics',
       views: {
         refract: 'Refract',
         frosted: 'Frosted',
         solid: 'Opaque',
         split: 'Compare',
       },
+      presets: {
+        crown: 'Crown',
+        prism: 'Prism',
+        meniscus: 'Meniscus',
+        frost: 'Frost',
+      },
+      banks: {
+        geometry: 'Geometry',
+        optics: 'Optics',
+        surface: 'Surface',
+      },
+      dragLensHint: 'Drag lens',
       gapLabel: 'Gap',
       blendKLabel: 'Blend radius',
       bevelLabel: 'Bezel width',
@@ -326,15 +401,16 @@ export const MESSAGES: Record<Locale, PlaygroundMessages> = {
       saturationLabel: 'Saturation',
       tintLabel: 'Tint',
       rimOpacityLabel: 'Rim light',
+      rimModeLabel: 'Rim shading',
       lightAngleLabel: 'Light angle',
       rimModes: {
-        directional: 'Directional rim',
-        soft: 'Soft rim',
+        directional: 'Directional',
+        soft: 'Soft',
         physical: 'Physical 3D',
       },
-      wireframeButton: 'Show outline',
-      oscillateButton: 'Breathe the gap',
-      resetButton: 'Reset',
+      wireframeButton: 'Show SDF outline',
+      oscillateButton: 'Breathe gap',
+      resetButton: 'Reset optics',
       statEffectiveTier: 'Rendering',
       statGapOffset: 'Gap',
       liveSuffix: 'moving',
@@ -342,7 +418,7 @@ export const MESSAGES: Record<Locale, PlaygroundMessages> = {
         refract: 'Refraction',
         frosted: 'Frosted',
         solid: 'Opaque',
-        split: 'Refraction and frosted',
+        split: 'Refraction & frosted',
         splitDowngraded: 'Frosted on both sides',
         refractDowngraded: 'Frosted, refraction unavailable',
       },
@@ -351,6 +427,7 @@ export const MESSAGES: Record<Locale, PlaygroundMessages> = {
       backdropTitle: 'Popover menu',
       backdropCaption:
         'Open the menu and the button melts into it. Close it halfway and it reverses from where it is. Right-click the chart for a menu at the pointer.',
+      stageHint: 'Click trigger to morph, or right-click stage.',
       triggerLabel: 'Options',
       menuAriaLabel: 'Options',
       menuItems: {
@@ -359,12 +436,15 @@ export const MESSAGES: Record<Locale, PlaygroundMessages> = {
         interrupt: 'Move to',
         'edge-flip': 'Delete',
       },
-      contextHereButton: 'Open at a point',
-      panelTitle: 'Menu',
-      panelDescription: 'Where the menu opens from and how it gets there.',
+      contextHereButton: 'Open at point',
+      panelTitle: 'Popover morph',
+      panelDescription: 'Configure anchor direction, source visibility, and mid-flight interruption.',
+      sectionPlacement: 'Placement',
+      sectionSource: 'Trigger mode',
+      sectionActions: 'Sequence',
       placements: {
-        overAnchorEnd: 'From the right',
-        overAnchorStart: 'From the left',
+        overAnchorEnd: 'From right',
+        overAnchorStart: 'From left',
         belowPoint: 'Below',
         abovePoint: 'Above',
       },
@@ -392,29 +472,44 @@ export const MESSAGES: Record<Locale, PlaygroundMessages> = {
     },
   },
   zh: {
-    documentTitle: 'Sessile 演示场',
+    documentTitle: 'Sessile 光学材质实验室',
     shell: {
       tagline: '覆在可点击实时 DOM 上的液态玻璃',
-      labsNavAria: '实验',
+      labsNavAria: '实验场景',
       statusRefract: '正在用 SVG backdrop-filter 折射实时页面。',
       statusFrosted: '当前浏览器无法折射实时 DOM，玻璃退回磨砂模糊，轮廓不变。',
       statusRimWebgl2: '边缘光由 WebGL2 绘制。',
       statusRimCanvas2d: '边缘光由 Canvas 2D 绘制。',
+      statusCompactRefract: 'SVG 折射',
+      statusCompactFrosted: '磨砂降级',
+      statusCompactWebgl2: 'WebGL2 边缘光',
+      statusCompactCanvas2d: 'Canvas 2D 边缘光',
       themeLight: '浅色',
       themeDark: '深色',
       themeGroupAria: '主题',
       localeGroupAria: '语言',
-      backdropLabel: '背景',
+      backdropLabel: '基底场景',
       backdrops: {
+        prism: '棱光',
         folds: '褶皱',
         lava: '熔岩',
         contours: '等高线',
         aurora: '极光',
         bokeh: '光斑',
         mesh: '渐变',
-        chart: '测试图样',
+        chart: '光学标板',
       },
       reduceMotion: '减弱动态',
+      motionAria: '动效',
+      motionFull: '弹簧',
+      motionReduced: '减弱',
+      inspectorToggle: '调参',
+      inspectorShow: '展开调参面板',
+      inspectorHide: '收起调参面板',
+      tuneButton: '调参',
+      sheetTabsAria: '调参模式',
+      sheetMaterial: '玻璃材质',
+      sheetScene: '场景交互',
     },
     tabs: {
       'drag-merge': {
@@ -425,10 +520,6 @@ export const MESSAGES: Record<Locale, PlaygroundMessages> = {
         title: '分段切换',
         description: '选中块在选项之间拉伸、滑动。',
       },
-      optics: {
-        title: '玻璃材质',
-        description: '调折射、模糊和边缘光，并与降级效果对比。',
-      },
       'popover-menu': {
         title: '弹出菜单',
         description: '按钮融化成菜单，再收回去。',
@@ -437,39 +528,44 @@ export const MESSAGES: Record<Locale, PlaygroundMessages> = {
     chart: {
       specimen: '座滴，是静止在表面上、被自身表面张力托成弧形的那一滴液体。',
       spectrumCaption: '可见光谱，单位 nm',
-      clockLabel: '图样已实时运行',
+      clockLabel: '实时运行',
     },
     dragMerge: {
       backdropTitle: '液滴融合',
       backdropCaption:
         '把一颗液滴拖向另一颗。进入捕获半径后两者融成一片；再拉开，中间的液桥会逐渐变细直到断开。',
+      stageHint: '拖动液滴靠近融合，拉远即可断开。',
       nodes: {
-        anchor: { label: '锚点', sublabel: '已固定' },
-        'orb-a': { label: '圆珠', sublabel: '拖动我' },
-        'orb-b': { label: '镜片', sublabel: '拖动我' },
-        'pill-c': { label: '胶囊', sublabel: '拖动我' },
+        anchor: { label: '锚点', sublabel: '固定' },
+        'orb-a': { label: '圆珠', sublabel: '拖动' },
+        'orb-b': { label: '镜片', sublabel: '拖动' },
+        'pill-c': { label: '胶囊', sublabel: '拖动' },
       },
       extraNodeLabelPrefix: '液滴',
-      extraNodeSublabel: '拖动我',
-      panelTitle: '场',
-      panelDescription: '相邻形状互相融合的倾向有多强。',
+      extraNodeSublabel: '拖动',
+      panelTitle: '场与液滴',
+      panelDescription: '调整表面张力、融合半径与松手后的弹性物理归位。',
+      sectionField: 'SDF 场',
+      sectionBehavior: '松手行为',
+      sectionDroplets: '图元管理',
       blendKLabel: '融合半径',
       magneticRadiusLabel: '捕获半径',
       returnOnRelease: '松手归位',
       snapNearest: '吸附最近',
       addDroplet: '添加液滴',
-      remove: '移除液滴',
+      remove: '移除',
       reset: '重置',
       statPrimitives: '形状',
       statBridges: '液桥',
       statClosestPair: '最近的一对',
-      statSurfaceGap: '两者间距',
+      statSurfaceGap: '表面间距',
       nonePair: '无',
     },
     segmentedDock: {
       backdropTitle: '分段切换',
       backdropCaption:
         '选一个标签。选中块会先朝它拉长、挤压，再落定。落定前改选别的标签，它会直接掉头，不会跳变。',
+      stageHint: '切换标签观察拉伸，途中改选可惯性掉头。',
       dockAriaLabel: '分区',
       segments: {
         overview: '概览',
@@ -478,8 +574,11 @@ export const MESSAGES: Record<Locale, PlaygroundMessages> = {
         motion: '弹簧',
         export: '规格',
       },
-      panelTitle: '选中块',
-      panelDescription: '选中块移动过程中的形态。',
+      panelTitle: '形变滑块',
+      panelDescription: '控制玻璃胶囊在滑行时的拉伸、挤压与融合半径。',
+      sectionOrientation: '方向',
+      sectionMotion: '形变参数',
+      sectionActions: '打断测试',
       horizontal: '横向',
       vertical: '纵向',
       blendKLabel: '融合半径',
@@ -497,18 +596,37 @@ export const MESSAGES: Record<Locale, PlaygroundMessages> = {
       backdropTitle: '玻璃材质',
       backdropCaption:
         '两块镜片压在流动的背景上。边缘内的线条和色块会弯折；加宽镜缘或调高折射能看得更清楚。',
-      splitLeftTitle: '折射',
-      splitLeftCaption: 'Chromium 的效果：实时页面在镜缘处发生位移。',
+      stageHint: '实时调节镜缘、折射率与色散效果。',
+      splitLeftTitle: 'SVG 折射',
+      splitLeftCaption: 'Chromium 实时背景位移',
       splitRightTitle: '磨砂降级',
-      splitRightCaption: 'Safari 与 Firefox 的效果：轮廓和边缘光相同，但不弯折。',
-      panelTitle: '镜片',
-      panelDescription: '每次调整都会在下一帧反映到玻璃上。',
+      splitRightCaption: 'Safari 与 Firefox 同轮廓降级',
+      panelTitle: '全局玻璃材质',
+      panelDescription: '参数改动实时作用于当前实验场景与对比视图。',
+      sectionView: '渲染层级',
+      sectionPreset: '材质预设',
+      sectionGeometry: '镜缘几何',
+      sectionOptics: '折射与色散',
+      sectionSurface: '表面与边缘光',
+      sectionStage: '诊断控制',
       views: {
         refract: '折射',
         frosted: '磨砂',
         solid: '不透明',
         split: '对比',
       },
+      presets: {
+        crown: '冕牌',
+        prism: '棱镜',
+        meniscus: '液弯',
+        frost: '柔雾',
+      },
+      banks: {
+        geometry: '几何',
+        optics: '光学',
+        surface: '表面',
+      },
+      dragLensHint: '拖动画布镜片',
       gapLabel: '间距',
       blendKLabel: '融合半径',
       bevelLabel: '镜缘宽度',
@@ -527,15 +645,16 @@ export const MESSAGES: Record<Locale, PlaygroundMessages> = {
       saturationLabel: '饱和度',
       tintLabel: '着色',
       rimOpacityLabel: '边缘光',
+      rimModeLabel: '边缘光模式',
       lightAngleLabel: '光源角度',
       rimModes: {
-        directional: '定向边缘光',
-        soft: '柔和边缘光',
-        physical: '3D 物理光',
+        directional: '定向',
+        soft: '柔和',
+        physical: '3D 物理',
       },
-      wireframeButton: '显示轮廓',
+      wireframeButton: '显示 SDF 轮廓',
       oscillateButton: '间距呼吸',
-      resetButton: '重置',
+      resetButton: '重置光学',
       statEffectiveTier: '渲染方式',
       statGapOffset: '间距',
       liveSuffix: '变化中',
@@ -552,6 +671,7 @@ export const MESSAGES: Record<Locale, PlaygroundMessages> = {
       backdropTitle: '弹出菜单',
       backdropCaption:
         '打开菜单时，按钮会融化成菜单。展开一半时关闭，它会从当前位置原路收回。在图样上右键，可在指针处打开菜单。',
+      stageHint: '点击按钮展开菜单，或右键画布呼出。',
       triggerLabel: '选项',
       menuAriaLabel: '选项',
       menuItems: {
@@ -561,8 +681,11 @@ export const MESSAGES: Record<Locale, PlaygroundMessages> = {
         'edge-flip': '删除',
       },
       contextHereButton: '在某处打开',
-      panelTitle: '菜单',
-      panelDescription: '菜单从哪里展开，又如何到达。',
+      panelTitle: '弹出形变',
+      panelDescription: '配置展开方向、触发源保留状态与展开过程中的反向打断。',
+      sectionPlacement: '展开方向',
+      sectionSource: '触发源状态',
+      sectionActions: '状态机测试',
       placements: {
         overAnchorEnd: '从右侧',
         overAnchorStart: '从左侧',

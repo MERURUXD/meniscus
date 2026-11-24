@@ -170,15 +170,16 @@ let rowAbsDy = new Float64Array(0)
 let rowQy = new Float64Array(0)
 let rowSy = new Float64Array(0)
 
-// Reusable 3-element scratch vector [ux, uy, distIn] for corner-bend geometry without heap allocation.
-const tmpCornerGeom = new Float64Array(3)
+/** @internal Reusable 3-element scratch vector [ux, uy, distIn] for corner-bend geometry without heap allocation. */
+export const tmpCornerGeom = new Float64Array(3)
 // Reusable 2-element scratch vector for corner-bend outward unit gradient without heap allocation.
 const tmpCornerDir = new Float64Array(2)
 
 // Reusable index buffer for active primitives per build, avoiding per-frame array allocations.
 let activeIndicesBuf = new Int32Array(0)
 
-function ensureScanlineCapacity(needed: number): Uint8Array {
+/** @internal */
+export function ensureScanlineCapacity(needed: number): Uint8Array {
   if (scanlineBuf.length < needed) {
     scanlineBuf = new Uint8Array(Math.max(needed, scanlineBuf.length * 2, 16384))
   }
@@ -222,7 +223,8 @@ function ensureSoaCapacity(needed: number): void {
   rowSy = new Float64Array(nextCap)
 }
 
-function encodeStoredRgbaPngDataUrl(
+/** @internal */
+export function encodeStoredRgbaPngDataUrl(
   scanlines: Uint8Array,
   pngW: number,
   pngH: number,
@@ -303,11 +305,13 @@ function clamp01(v: number): number {
   return v <= 0 ? 0 : v >= 1 ? 1 : v
 }
 
-function clampAmp(v: number): number {
+/** @internal */
+export function clampAmp(v: number): number {
   return v <= -127 ? -127 : v >= 127 ? 127 : v
 }
 
-function clampChannel(v: number): number {
+/** @internal */
+export function clampChannel(v: number): number {
   return v <= 0 ? 0 : v >= 255 ? 255 : v
 }
 
@@ -320,10 +324,11 @@ function quant100(v: number): number {
 }
 
 /**
+ * @internal
  * Solves corner-bend inward distance and first-quadrant outward unit direction
  * into `tmpCornerGeom` (`[ux, uy, distIn]`) without heap allocations.
  */
-function computeCornerGeometry(
+export function computeCornerGeometry(
   x: number,
   y: number,
   radius: number,

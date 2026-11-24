@@ -702,6 +702,7 @@ export class GlassSurfaceController {
         const profile = refCfg?.profile ?? this.baseRefraction?.profile
         const ior = refCfg?.ior ?? this.baseRefraction?.ior
         const caustics = refCfg?.caustics ?? this.baseRefraction?.caustics
+        const nineSlice = refCfg?.nineSlice ?? this.baseRefraction?.nineSlice
 
         filterController.updateFrame({
           bounds: refractBounds,
@@ -719,6 +720,7 @@ export class GlassSurfaceController {
           profile,
           ior,
           caustics,
+          nineSlice,
         })
 
         // Route B3: keep `refractBackdrop` unclipped so Chromium avoids rectangular backdrop leaks

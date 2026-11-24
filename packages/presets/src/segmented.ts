@@ -10,6 +10,7 @@
 
 import {
   clamp,
+  computeAreaPreservingScale,
   createSpringChannel,
   lerp,
   type GlassFieldState,
@@ -36,6 +37,8 @@ export interface SegmentedPillOptions {
   blendK?: number
   squeezeRatio?: number
   maxStretchPx?: number
+  /** Enforce exact 2D area conservation (`W' * H' === W * H`) on stretched lobes (defaults to `true`). */
+  preserveArea?: boolean
   reducedMotion?: boolean
 }
 
@@ -134,6 +137,36 @@ function evalSegmentedBoxesGap(
   return Math.hypot(ox, oy) - rLead - rTrail
 }
 
+function computeLobeScale(
+  stretchRatio: number,
+  squeezeRatio: number,
+  ux: number,
+  uy: number,
+  preserveArea: boolean,
+  isLead: boolean,
+): { scaleX: number; scaleY: number } {
+  if (preserveArea) {
+    const stretchAmount = isLead
+      ? squeezeRatio * 0.5 * stretchRatio
+      : squeezeRatio * stretchRatio
+    return computeAreaPreservingScale(1 + stretchAmount, ux, uy)
+  }
+  if (isLead) {
+    return {
+      scaleX:
+        (1 + squeezeRatio * 0.35 * stretchRatio * Math.abs(ux)) *
+        (1 - squeezeRatio * 0.5 * stretchRatio * Math.abs(uy)),
+      scaleY:
+        (1 + squeezeRatio * 0.35 * stretchRatio * Math.abs(uy)) *
+        (1 - squeezeRatio * 0.5 * stretchRatio * Math.abs(ux)),
+    }
+  }
+  return {
+    scaleX: 1 - squeezeRatio * stretchRatio * Math.abs(uy),
+    scaleY: 1 - squeezeRatio * stretchRatio * Math.abs(ux),
+  }
+}
+
 function computeConnectedStretchCap(
   maxStretchPx: number,
   ux: number,
@@ -145,12 +178,15 @@ function computeConnectedStretchCap(
   lr: number,
   baseBlendK: number,
   squeezeRatio: number,
+  preserveArea: boolean,
 ): number {
   if (maxStretchPx <= 0) return 0
-  const minLeadW = Math.max(0, lw * (1 + squeezeRatio * 0.35 * Math.abs(ux)) * (1 - squeezeRatio * 0.5 * Math.abs(uy)))
-  const minLeadH = Math.max(0, lh * (1 + squeezeRatio * 0.35 * Math.abs(uy)) * (1 - squeezeRatio * 0.5 * Math.abs(ux)))
-  const minTrailW = Math.max(0, tw * (1 - squeezeRatio * Math.abs(uy)))
-  const minTrailH = Math.max(0, th * (1 - squeezeRatio * Math.abs(ux)))
+  const leadScale = computeLobeScale(1, squeezeRatio, ux, uy, preserveArea, true)
+  const trailScale = computeLobeScale(1, squeezeRatio, ux, uy, preserveArea, false)
+  const minLeadW = Math.max(0, lw * leadScale.scaleX)
+  const minLeadH = Math.max(0, lh * leadScale.scaleY)
+  const minTrailW = Math.max(0, tw * trailScale.scaleX)
+  const minTrailH = Math.max(0, th * trailScale.scaleY)
   const maxBridgeGap = baseBlendK * 0.4
 
   if (
@@ -212,6 +248,7 @@ export function createSegmentedPillController(
   const baseBlendK = Math.max(0, options.blendK ?? SEGMENTED_PILL_DEFAULTS.blendK)
   const squeezeRatio = clamp(options.squeezeRatio ?? SEGMENTED_PILL_DEFAULTS.squeezeRatio, 0, 0.45)
   const maxStretchPx = Math.max(0, options.maxStretchPx ?? SEGMENTED_PILL_DEFAULTS.maxStretchPx)
+  const preserveArea = options.preserveArea ?? true
   const defaultRadius = options.defaultRadius
 
   let reducedMotion = options.reducedMotion ?? false
@@ -351,22 +388,18 @@ export function createSegmentedPillController(
       lr,
       baseBlendK,
       squeezeRatio,
+      preserveArea,
     )
     let clampedSep =
       stretchCap > 0 ? (stretchCap * rawLagDist) / (stretchCap + rawLagDist) : 0
     const stretchRatio = stretchCap > 0 ? clamp(clampedSep / stretchCap, 0, 1) : 0
-    const leadSqueezeX = 1 - squeezeRatio * 0.5 * stretchRatio * Math.abs(uy)
-    const leadSqueezeY = 1 - squeezeRatio * 0.5 * stretchRatio * Math.abs(ux)
-    const leadStretchX = 1 + squeezeRatio * 0.35 * stretchRatio * Math.abs(ux)
-    const leadStretchY = 1 + squeezeRatio * 0.35 * stretchRatio * Math.abs(uy)
+    const leadScale = computeLobeScale(stretchRatio, squeezeRatio, ux, uy, preserveArea, true)
+    const trailScale = computeLobeScale(stretchRatio, squeezeRatio, ux, uy, preserveArea, false)
 
-    const trailSqueezeX = 1 - squeezeRatio * stretchRatio * Math.abs(uy)
-    const trailSqueezeY = 1 - squeezeRatio * stretchRatio * Math.abs(ux)
-
-    const outLeadW = Math.max(0, lw * leadStretchX * leadSqueezeX)
-    const outLeadH = Math.max(0, lh * leadStretchY * leadSqueezeY)
-    const outTrailW = Math.max(0, tw * trailSqueezeX)
-    const outTrailH = Math.max(0, th * trailSqueezeY)
+    const outLeadW = Math.max(0, lw * leadScale.scaleX)
+    const outLeadH = Math.max(0, lh * leadScale.scaleY)
+    const outTrailW = Math.max(0, tw * trailScale.scaleX)
+    const outTrailH = Math.max(0, th * trailScale.scaleY)
 
     const activeBlendK = baseBlendK * clamp(lerp(0.25, 1, stretchRatio), 0, 1)
     const activeMaxGap = activeBlendK * 0.45

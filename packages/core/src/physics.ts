@@ -29,6 +29,8 @@ const DEFAULT_ELASTIC_DRAG_TRACK_SEC = 0.12
 const DEFAULT_ELASTIC_MAX_GROWTH_RATIO = 0.25
 const DEFAULT_ELASTIC_MAX_GROWTH_PX = 16
 const DEFAULT_ELASTIC_DRAG_MAX_RATIO = 7 / 32
+const DEFAULT_ELASTIC_DRAG_STRETCH_RATIO = 0.12
+const DEFAULT_MAX_AREA_STRETCH = 1.6
 
 /** Instantaneous spring sample (position and velocity). */
 export interface SpringSample {
@@ -105,6 +107,12 @@ export interface MorphTimeline {
   dispose(): void
 }
 
+/** Axis-aligned 2D squash-and-stretch scale factors preserving area (`scaleX * scaleY === 1`). */
+export interface AreaPreservingScale {
+  scaleX: number
+  scaleY: number
+}
+
 /** Configuration options for the elastic press and rubber-band drag controller. */
 export interface ElasticPressOptions {
   spring?: SpringParams
@@ -112,6 +120,8 @@ export interface ElasticPressOptions {
   maxGrowthRatio?: number
   maxGrowthPx?: number
   dragMaxRatio?: number
+  /** Directional area-preserving squash-and-stretch intensity during rubber-band drag (`0` disables; defaults to `0.12`). */
+  dragStretchRatio?: number
   reducedMotion?: boolean
 }
 
@@ -684,6 +694,52 @@ export function createMorphTimeline(options: MorphTimelineOptions = {}): MorphTi
 }
 
 /**
+ * Computes axis-aligned 2D squash-and-stretch scale factors preserving area (`scaleX * scaleY === 1`)
+ * along direction `(dirX, dirY)`. Using `alpha = (dirX^2 - dirY^2) / (dirX^2 + dirY^2) = cos(2*theta)`
+ * gives `(s, 1/s)` horizontally, `(1/s, s)` vertically, and `(1, 1)` on 45-degree diagonals with smooth
+ * rotational continuity.
+ */
+export function computeAreaPreservingScale(
+  stretch: number,
+  dirX: number,
+  dirY: number,
+  maxStretch = DEFAULT_MAX_AREA_STRETCH,
+): AreaPreservingScale {
+  if (!Number.isFinite(stretch) || stretch <= 0) {
+    return { scaleX: 1, scaleY: 1 }
+  }
+  const safeMax = Number.isFinite(maxStretch) && maxStretch >= 1 ? maxStretch : DEFAULT_MAX_AREA_STRETCH
+  const s = clamp(stretch, 1 / safeMax, safeMax)
+  if (Math.abs(s - 1) <= 1e-9) {
+    return { scaleX: 1, scaleY: 1 }
+  }
+  const lenSq = dirX * dirX + dirY * dirY
+  if (!Number.isFinite(lenSq) || lenSq <= 1e-12) {
+    return { scaleX: 1, scaleY: 1 }
+  }
+  const alpha = (dirX * dirX - dirY * dirY) / lenSq
+  const scaleX = Math.pow(s, alpha)
+  return { scaleX, scaleY: 1 / scaleX }
+}
+
+/**
+ * Applies `computeAreaPreservingScale` to a 2D `Size` so `result.width * result.height === size.width * size.height`.
+ */
+export function deformSizePreservingArea(
+  size: Size,
+  stretch: number,
+  dirX: number,
+  dirY: number,
+  maxStretch = DEFAULT_MAX_AREA_STRETCH,
+): Size {
+  const { scaleX, scaleY } = computeAreaPreservingScale(stretch, dirX, dirY, maxStretch)
+  return {
+    width: Math.max(0, size.width * scaleX),
+    height: Math.max(0, size.height * scaleY),
+  }
+}
+
+/**
  * Creates a generic elastic press and rubber-band drag controller.
  * Uses a critically damped tracking spring while dragging for tight pointer follow,
  * then switches back to the underdamped elastic spring on release.
@@ -696,6 +752,11 @@ export function createElasticPressController(
   const maxGrowthRatio = options.maxGrowthRatio ?? DEFAULT_ELASTIC_MAX_GROWTH_RATIO
   const maxGrowthPx = options.maxGrowthPx ?? DEFAULT_ELASTIC_MAX_GROWTH_PX
   const dragMaxRatio = options.dragMaxRatio ?? DEFAULT_ELASTIC_DRAG_MAX_RATIO
+  const dragStretchRatio = clamp(
+    options.dragStretchRatio ?? DEFAULT_ELASTIC_DRAG_STRETCH_RATIO,
+    0,
+    0.45,
+  )
 
   // Critically damped tracking spring (~95% settled in dragTrackSec):
   // derived from 1 - exp(-w0 * t) * (1 + w0 * t) = 0.95 at w0 * t ≈ 4.744.
@@ -731,9 +792,25 @@ export function createElasticPressController(
     const longestSide = Math.max(1, targetSize.width, targetSize.height)
     const maxGrowth = Math.min(maxGrowthRatio, maxGrowthPx / longestSide)
     const scale = 1 + maxGrowth * lift.value
+    let scaleX = scale
+    let scaleY = scale
+    if (dragStretchRatio > 0) {
+      const shortestSide = Math.max(1, Math.min(targetSize.width, targetSize.height))
+      const dragLimit = Math.max(1, dragMaxRatio * shortestSide)
+      const dragNorm = clamp(Math.hypot(ox.value, oy.value) / dragLimit, 0, 1)
+      if (dragNorm > 0) {
+        const directional = computeAreaPreservingScale(
+          1 + dragStretchRatio * dragNorm,
+          ox.value,
+          oy.value,
+        )
+        scaleX = scale * directional.scaleX
+        scaleY = scale * directional.scaleY
+      }
+    }
     return {
-      scaleX: scale,
-      scaleY: scale,
+      scaleX,
+      scaleY,
       offsetX: ox.value,
       offsetY: oy.value,
       lift: lift.value,

@@ -151,3 +151,50 @@ test('createSegmentedPillController: diagonal jump with large maxStretchPx prese
   }
   diagCtrl.dispose()
 })
+
+test('createSegmentedPillController: enforces exact 2D area conservation across horizontal, vertical, and diagonal travel', () => {
+  const equalSegments: SegmentItem[] = [
+    { id: 'tl', rect: { x: 0, y: 0, width: 90, height: 36 } },
+    { id: 'tr', rect: { x: 180, y: 0, width: 90, height: 36 } },
+    { id: 'bl', rect: { x: 0, y: 90, width: 90, height: 36 } },
+    { id: 'diag', rect: { x: 180, y: 180, width: 90, height: 36 } },
+  ]
+  const expectedArea = 90 * 36
+  const ctrl = createSegmentedPillController({
+    segments: equalSegments,
+    initialActiveId: 'tl',
+    squeezeRatio: 0.16,
+  })
+
+  // Horizontal travel elongates width and narrows height while preserving exact 2D area on both lobes.
+  ctrl.setActive('tr')
+  const hFrame = ctrl.step(0.03)
+  assert.equal(hFrame.field.primitives.length, 2)
+  const [hLead, hTrail] = hFrame.field.primitives
+  assert.ok(hLead!.size.width > 90 && hLead!.size.height < 36)
+  assert.ok(hTrail!.size.width > 90 && hTrail!.size.height < 36)
+  assert.ok(Math.abs(hLead!.size.width * hLead!.size.height - expectedArea) < 1e-6)
+  assert.ok(Math.abs(hTrail!.size.width * hTrail!.size.height - expectedArea) < 1e-6)
+
+  // Vertical travel elongates height and narrows width with exact 2D area conservation.
+  ctrl.snapTo('tl')
+  ctrl.setActive('bl')
+  const vFrame = ctrl.step(0.03)
+  assert.equal(vFrame.field.primitives.length, 2)
+  const [vLead, vTrail] = vFrame.field.primitives
+  assert.ok(vLead!.size.height > 36 && vLead!.size.width < 90)
+  assert.ok(vTrail!.size.height > 36 && vTrail!.size.width < 90)
+  assert.ok(Math.abs(vLead!.size.width * vLead!.size.height - expectedArea) < 1e-6)
+  assert.ok(Math.abs(vTrail!.size.width * vTrail!.size.height - expectedArea) < 1e-6)
+
+  // Diagonal 45-degree jump keeps exact 2D area conservation without artificial axis bias.
+  ctrl.snapTo('tl')
+  ctrl.setActive('diag')
+  const dFrame = ctrl.step(0.03)
+  assert.equal(dFrame.field.primitives.length, 2)
+  const [dLead, dTrail] = dFrame.field.primitives
+  assert.ok(Math.abs(dLead!.size.width * dLead!.size.height - expectedArea) < 1e-6)
+  assert.ok(Math.abs(dTrail!.size.width * dTrail!.size.height - expectedArea) < 1e-6)
+
+  ctrl.dispose()
+})

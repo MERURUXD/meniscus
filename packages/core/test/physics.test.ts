@@ -9,10 +9,12 @@ import test from 'node:test'
 import { DEFAULT_SPRINGS } from '../src/contracts.ts'
 import {
   clamp,
+  computeAreaPreservingScale,
   createElasticPressController,
   createMorphTimeline,
   createSpringChannel,
   cubicBezier,
+  deformSizePreservingArea,
   easeInOutCubic,
   easeInQuad,
   easeOutCubic,
@@ -295,4 +297,67 @@ test('createElasticPressController handles press growth, rubber-band drag, and r
   assert.equal(press.getState().scaleX, 1)
   assert.equal(press.getState().lift, 0)
   press.reset()
+})
+
+test('computeAreaPreservingScale and deformSizePreservingArea conserve 2D area across all angles', () => {
+  const anglesDeg = [0, 30, 45, 60, 90, 135, 210, 315]
+  for (const stretch of [0.8, 1.0, 1.25]) {
+    for (const deg of anglesDeg) {
+      const rad = (deg * Math.PI) / 180
+      const scale = computeAreaPreservingScale(stretch, Math.cos(rad), Math.sin(rad))
+      approx(scale.scaleX * scale.scaleY, 1, 1e-12, `area product at ${deg}deg stretch=${stretch}`)
+    }
+  }
+
+  // Horizontal stretch (s, 1/s), vertical stretch (1/s, s), 45-degree diagonal (1, 1), and zero direction (1, 1).
+  const horiz = computeAreaPreservingScale(1.25, 1, 0)
+  approx(horiz.scaleX, 1.25, 1e-12)
+  approx(horiz.scaleY, 0.8, 1e-12)
+
+  const vert = computeAreaPreservingScale(1.25, 0, 1)
+  approx(vert.scaleX, 0.8, 1e-12)
+  approx(vert.scaleY, 1.25, 1e-12)
+
+  const diag = computeAreaPreservingScale(1.25, 1, 1)
+  approx(diag.scaleX, 1, 1e-12)
+  approx(diag.scaleY, 1, 1e-12)
+
+  const zeroDir = computeAreaPreservingScale(1.25, 0, 0)
+  assert.deepEqual(zeroDir, { scaleX: 1, scaleY: 1 })
+
+  // Clamps stretch above maxStretch.
+  const clamped = computeAreaPreservingScale(5, 1, 0, 1.5)
+  approx(clamped.scaleX, 1.5, 1e-12)
+  approx(clamped.scaleY, 1 / 1.5, 1e-12)
+
+  const deformed = deformSizePreservingArea({ width: 120, height: 60 }, 1.2, 3, 1)
+  approx(deformed.width * deformed.height, 120 * 60, 1e-9, 'deformed rectangle preserves exact area')
+})
+
+test('createElasticPressController applies area-preserving directional squash-and-stretch during drag', () => {
+  const box = { width: 120, height: 80 }
+  const liftScale = 1 + Math.min(0.25, 16 / 120)
+
+  const hCtrl = createElasticPressController({ dragStretchRatio: 0.15 })
+  hCtrl.pressStart(box)
+  hCtrl.pressMove({ x: 80, y: 0 }, box)
+  for (let i = 0; i < 60; i += 1) hCtrl.step(1 / 60)
+  const hState = hCtrl.getState()
+  assert.ok(hState.scaleX > hState.scaleY, `horizontal drag must have scaleX > scaleY (${hState.scaleX} vs ${hState.scaleY})`)
+  approx(hState.scaleX * hState.scaleY, liftScale * liftScale, 1e-3, 'area product matches liftScale^2')
+
+  const vCtrl = createElasticPressController({ dragStretchRatio: 0.15 })
+  vCtrl.pressStart(box)
+  vCtrl.pressMove({ x: 0, y: 80 }, box)
+  for (let i = 0; i < 60; i += 1) vCtrl.step(1 / 60)
+  const vState = vCtrl.getState()
+  assert.ok(vState.scaleY > vState.scaleX, `vertical drag must have scaleY > scaleX (${vState.scaleY} vs ${vState.scaleX})`)
+  approx(vState.scaleX * vState.scaleY, liftScale * liftScale, 1e-3, 'vertical area product matches liftScale^2')
+
+  const rigidCtrl = createElasticPressController({ dragStretchRatio: 0 })
+  rigidCtrl.pressStart(box)
+  rigidCtrl.pressMove({ x: 80, y: 0 }, box)
+  for (let i = 0; i < 60; i += 1) rigidCtrl.step(1 / 60)
+  const rigidState = rigidCtrl.getState()
+  approx(rigidState.scaleX, rigidState.scaleY, 1e-12, 'dragStretchRatio=0 disables directional anisotropy')
 })

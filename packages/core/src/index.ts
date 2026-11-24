@@ -56,6 +56,14 @@ export {
 } from './refractMap.ts'
 
 export {
+  MAX_REFRACT_TILE_PX,
+  clearRefractTilesCache,
+  resolveRefractTiles,
+  type RefractTileParams,
+  type RefractTilesResult,
+} from './refractTiles.ts'
+
+export {
   BEZEL_HEIGHT_PROFILES,
   CAUSTIC_FOLD_LIMIT,
   DEFAULT_REFRACTION_IOR,

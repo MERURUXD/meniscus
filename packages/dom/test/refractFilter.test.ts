@@ -170,6 +170,7 @@ test('createRefractFilterController promotes <= 128px maps to 1:1 and skips dupl
     bezel: 12,
     strength: 1.2,
     mapScale: 0.5,
+    nineSlice: false,
   })
   controller.mount(doc.body as unknown as Element)
 
@@ -308,6 +309,187 @@ test('createRefractFilterController calibrates scale from Snell profile and supp
     .querySelectorAll('feDisplacementMap')
     .map((node) => Number(node.getAttribute('scale')))
   assert.deepEqual(zeroScales, [0, 0, 0])
+
+  controller.dispose()
+})
+
+test('createRefractFilterController uses nine-slice fast path on N=1 cards, skips href rewrites on resize, and falls back cleanly', () => {
+  const doc = new MockDocument()
+  const controller = createRefractFilterController({
+    id: 'sessile-nineslice-test',
+    document: doc as unknown as Document,
+    bezel: 20,
+    strength: 1.32,
+  })
+  controller.mount(doc.body as unknown as Element)
+
+  const svg = controller.svgElement as unknown as MockElement
+  const filterEl = svg.querySelectorAll('filter')[0]!
+
+  const card160: GlassFieldState = {
+    blendK: 16,
+    primitives: [{ center: { x: 100, y: 60 }, size: { width: 160, height: 80 }, radius: 24 }],
+  }
+  controller.updateFrame({
+    bounds: { x: 10, y: 10, width: 180, height: 100 },
+    field: card160,
+    blurSigma: 6,
+    saturate: 1.4,
+    brightness: 1.0,
+    contrast: 1.0,
+  })
+
+  const floods = filterEl.querySelectorAll('feFlood')
+  assert.equal(floods.length, 1)
+  assert.equal(floods[0]!.getAttribute('result'), 'ns-center')
+  const tiles = filterEl.querySelectorAll('feImage')
+  assert.equal(tiles.length, 8)
+  const mapMerge = filterEl.querySelectorAll('feMerge').find((n) => n.getAttribute('result') === 'map')
+  assert.ok(mapMerge)
+  assert.deepEqual(
+    mapMerge.querySelectorAll('feMergeNode').map((n) => n.getAttribute('in')),
+    ['ns-center', 'ns-top', 'ns-bottom', 'ns-left', 'ns-right', 'ns-tl', 'ns-tr', 'ns-bl', 'ns-br'],
+  )
+
+  const hrefCountAfterFirst = tiles.map(
+    (tile) => tile.setAttributeCalls.filter((c) => c.name === 'href').length,
+  )
+
+  // Resizing card width & height with identical corner radius & bezel must not rewrite tile hrefs.
+  const card420: GlassFieldState = {
+    blendK: 16,
+    primitives: [{ center: { x: 230, y: 130 }, size: { width: 420, height: 220 }, radius: 24 }],
+  }
+  controller.updateFrame({
+    bounds: { x: 10, y: 10, width: 440, height: 240 },
+    field: card420,
+    blurSigma: 6,
+    saturate: 1.4,
+    brightness: 1.0,
+    contrast: 1.0,
+  })
+
+  assert.deepEqual(
+    tiles.map((tile) => tile.setAttributeCalls.filter((c) => c.name === 'href').length),
+    hrefCountAfterFirst,
+    'resizing card must not trigger href attribute writes on any 9-slice tile',
+  )
+  assert.equal(floods[0]!.getAttribute('width'), '374')
+  assert.equal(floods[0]!.getAttribute('height'), '174')
+
+  const totalWritesBeforeRepeat = [
+    ...filterEl.querySelectorAll('feFlood'),
+    ...filterEl.querySelectorAll('feImage'),
+    ...filterEl.querySelectorAll('feGaussianBlur'),
+    ...filterEl.querySelectorAll('feColorMatrix'),
+    ...filterEl.querySelectorAll('feDisplacementMap'),
+  ].map((node) => node.setAttributeCalls.length)
+
+  // Identical repeated frame must perform zero DOM setAttribute writes.
+  controller.updateFrame({
+    bounds: { x: 10, y: 10, width: 440, height: 240 },
+    field: card420,
+    blurSigma: 6,
+    saturate: 1.4,
+    brightness: 1.0,
+    contrast: 1.0,
+  })
+
+  const totalWritesAfterRepeat = [
+    ...filterEl.querySelectorAll('feFlood'),
+    ...filterEl.querySelectorAll('feImage'),
+    ...filterEl.querySelectorAll('feGaussianBlur'),
+    ...filterEl.querySelectorAll('feColorMatrix'),
+    ...filterEl.querySelectorAll('feDisplacementMap'),
+  ].map((node) => node.setAttributeCalls.length)
+  assert.deepEqual(totalWritesAfterRepeat, totalWritesBeforeRepeat)
+
+  // Integer-aligned horizontal capsule omits center/left/right and uses 6 pieces.
+  controller.updateFrame({
+    bounds: { x: 0, y: 0, width: 412, height: 56 },
+    field: {
+      blendK: 16,
+      primitives: [{ center: { x: 206, y: 28 }, size: { width: 400, height: 44 }, radius: 22 }],
+    },
+    blurSigma: 6,
+    saturate: 1.4,
+    brightness: 1.0,
+    contrast: 1.0,
+  })
+  assert.equal(filterEl.querySelectorAll('feFlood').length, 0)
+  assert.equal(filterEl.querySelectorAll('feImage').length, 6)
+  assert.deepEqual(
+    filterEl
+      .querySelectorAll('feMerge')
+      .find((n) => n.getAttribute('result') === 'map')!
+      .querySelectorAll('feMergeNode')
+      .map((n) => n.getAttribute('in')),
+    ['ns-top', 'ns-bottom', 'ns-tl', 'ns-tr', 'ns-bl', 'ns-br'],
+  )
+
+  // Subpixel-positioned capsule falls back to full-map Stored-PNG to prevent Skia seam artifacts.
+  controller.updateFrame({
+    bounds: { x: 0, y: 0, width: 412, height: 56 },
+    field: {
+      blendK: 16,
+      primitives: [{ center: { x: 206, y: 28.25 }, size: { width: 400, height: 44 }, radius: 22 }],
+    },
+    blurSigma: 6,
+    saturate: 1.4,
+    brightness: 1.0,
+    contrast: 1.0,
+  })
+  assert.equal(filterEl.querySelectorAll('feFlood').length, 0)
+  assert.equal(filterEl.querySelectorAll('feImage').length, 1)
+  assert.equal(filterEl.querySelectorAll('feImage')[0]!.getAttribute('result'), 'map')
+
+  // Return to N=1 nine-slice, then switch N=1 -> N=2 -> N=1 without leaking nodes or shifting scale.
+  controller.updateFrame({
+    bounds: { x: 10, y: 10, width: 180, height: 100 },
+    field: card160,
+    blurSigma: 6,
+    saturate: 1.4,
+    brightness: 1.0,
+    contrast: 1.0,
+  })
+  assert.equal(filterEl.querySelectorAll('feImage').length, 8)
+  const expectedLut = resolveRefractionProfileLut({
+    profile: 'squircle',
+    ior: 1.5,
+    thicknessRatio: 1.32,
+  })
+  const expectedScale = 2 * 20 * expectedLut.maxDisplacementRatio
+  const nineSliceScale = Number(filterEl.querySelectorAll('feDisplacementMap')[0]!.getAttribute('scale'))
+  assert.ok(Math.abs(nineSliceScale - expectedScale) < 1e-6)
+
+  controller.updateFrame({
+    bounds: { x: 0, y: 0, width: 240, height: 120 },
+    field: {
+      blendK: 16,
+      primitives: [
+        { center: { x: 80, y: 60 }, size: { width: 120, height: 80 }, radius: 24 },
+        { center: { x: 160, y: 60 }, size: { width: 80, height: 80 }, radius: 24 },
+      ],
+    },
+    blurSigma: 6,
+    saturate: 1.4,
+    brightness: 1.0,
+    contrast: 1.0,
+  })
+  assert.equal(filterEl.querySelectorAll('feFlood').length, 0)
+  assert.equal(filterEl.querySelectorAll('feImage').length, 1)
+
+  controller.updateFrame({
+    bounds: { x: 10, y: 10, width: 180, height: 100 },
+    field: card160,
+    blurSigma: 6,
+    saturate: 1.4,
+    brightness: 1.0,
+    contrast: 1.0,
+  })
+  assert.equal(filterEl.querySelectorAll('feFlood').length, 1)
+  assert.equal(filterEl.querySelectorAll('feImage').length, 8)
+  assert.equal(filterEl.querySelectorAll('feMerge').length, 2)
 
   controller.dispose()
 })

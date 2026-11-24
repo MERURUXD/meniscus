@@ -14,7 +14,9 @@ import {
   DEFAULT_REFRACTION_IOR,
   buildColorOpticsMatrix,
   createRefractMapBuilder,
+  resolveRefractTiles,
   type GlassFieldState,
+  type GlassPrimitive,
   type Rect,
   type RefractMapBuilder,
   type RefractionProfileSpec,
@@ -23,6 +25,7 @@ import {
 export const SVG_NS = 'http://www.w3.org/2000/svg'
 const FULL_RES_MAP_THRESHOLD_PX = 128
 const MIN_ACTIVE_SIZE = 0.01
+const MIN_NINE_SLICE_DIM = 4
 
 export interface RefractFilterConfig {
   /** Bezel lens rim width in CSS px; `0` selects `computeAutoBezel` from active primitives. */
@@ -41,6 +44,8 @@ export interface RefractFilterConfig {
   ior?: number
   /** Allow steep-edge caustic folds (defaults to `false`). */
   caustics?: boolean
+  /** Enable 9-slice tile fast path for single-primitive rounded rects (defaults to `true`). */
+  nineSlice?: boolean
 }
 
 export interface RefractFilterFrame extends RefractFilterConfig {
@@ -78,11 +83,34 @@ interface NormalizedConfig {
   profile: RefractionProfileSpec
   ior: number
   caustics: boolean
+  nineSlice: boolean
 }
 
 interface DisplacementNodeBinding {
   element: Element
   offsetSign: number
+}
+
+interface NineSlicePiece {
+  element: Element
+  mergeNode: Element
+}
+
+interface NineSliceNodes {
+  center: NineSlicePiece
+  top: NineSlicePiece
+  bottom: NineSlicePiece
+  left: NineSlicePiece
+  right: NineSlicePiece
+  tl: NineSlicePiece
+  tr: NineSlicePiece
+  bl: NineSlicePiece
+  br: NineSlicePiece
+  merge: Element
+  attached: Element[]
+  activeMask: number
+  prevTileKey: string
+  prevGeomKey: string
 }
 
 function normalizePositiveOrDefault(value: number | undefined, fallback: number): number {
@@ -107,6 +135,7 @@ function normalizeConfig(input?: RefractFilterConfig, base?: NormalizedConfig): 
     profile: 'squircle',
     ior: DEFAULT_REFRACTION_IOR,
     caustics: false,
+    nineSlice: true,
   }
   return {
     bezel: normalizeNonNegativeOrDefault(input?.bezel, b.bezel),
@@ -117,7 +146,38 @@ function normalizeConfig(input?: RefractFilterConfig, base?: NormalizedConfig): 
     profile: input?.profile !== undefined ? input.profile : b.profile,
     ior: normalizeIorOrDefault(input?.ior, b.ior),
     caustics: input?.caustics !== undefined ? Boolean(input.caustics) : b.caustics,
+    nineSlice: input?.nineSlice !== undefined ? Boolean(input.nineSlice) : b.nineSlice,
   }
+}
+
+function isNearInt(v: number): boolean {
+  return Math.abs(v - Math.round(v)) < 1e-3
+}
+
+function formatSvgCoord(v: number): string {
+  return Math.abs(v - Math.round(v)) < 1e-4 ? String(Math.round(v)) : v.toFixed(3)
+}
+
+function findSingleActivePrimitive(field: GlassFieldState): GlassPrimitive | null {
+  let single: GlassPrimitive | null = null
+  const primitives = field.primitives
+  for (let i = 0; i < primitives.length; i++) {
+    const p = primitives[i]!
+    if (p.size.width > MIN_ACTIVE_SIZE && p.size.height > MIN_ACTIVE_SIZE) {
+      if (single !== null) {
+        return null
+      }
+      single = p
+    }
+  }
+  return single
+}
+
+function setElementRect(el: Element, x: number, y: number, w: number, h: number): void {
+  el.setAttribute('x', formatSvgCoord(x))
+  el.setAttribute('y', formatSvgCoord(y))
+  el.setAttribute('width', formatSvgCoord(w))
+  el.setAttribute('height', formatSvgCoord(h))
 }
 
 /** Computes automatic lens bezel width (clamped to `[6, 22]` CSS px) from element dimensions. */
@@ -248,6 +308,8 @@ export function createRefractFilterController(
   let stageNodes: Element[] = []
   let dispNodes: DisplacementNodeBinding[] = []
   let currentDispersive: boolean | null = null
+  let currentMapMode: 'full' | 'nine-slice' = 'full'
+  let nineSliceNodes: NineSliceNodes | null = null
 
   let prevWidth = -1
   let prevHeight = -1
@@ -256,6 +318,119 @@ export function createRefractFilterController(
   let prevScaleKey = ''
   let disposed = false
   let mapBuilder: RefractMapBuilder | null = null
+
+  const createFloodPiece = (resultName: string): NineSlicePiece => {
+    const element = createSvgEl('feFlood')
+    element.setAttribute('flood-color', 'rgb(128, 128, 128)')
+    element.setAttribute('result', resultName)
+    const mergeNode = createSvgEl('feMergeNode')
+    mergeNode.setAttribute('in', resultName)
+    return { element, mergeNode }
+  }
+
+  const createTilePiece = (resultName: string): NineSlicePiece => {
+    const element = createSvgEl('feImage')
+    element.setAttribute('preserveAspectRatio', 'none')
+    element.setAttribute('result', resultName)
+    const mergeNode = createSvgEl('feMergeNode')
+    mergeNode.setAttribute('in', resultName)
+    return { element, mergeNode }
+  }
+
+  const ensureNineSliceNodes = (): NineSliceNodes => {
+    if (nineSliceNodes) return nineSliceNodes
+    const merge = createSvgEl('feMerge')
+    merge.setAttribute('result', 'map')
+    nineSliceNodes = {
+      center: createFloodPiece('ns-center'),
+      top: createTilePiece('ns-top'),
+      bottom: createTilePiece('ns-bottom'),
+      left: createTilePiece('ns-left'),
+      right: createTilePiece('ns-right'),
+      tl: createTilePiece('ns-tl'),
+      tr: createTilePiece('ns-tr'),
+      bl: createTilePiece('ns-bl'),
+      br: createTilePiece('ns-br'),
+      merge,
+      attached: [],
+      activeMask: -1,
+      prevTileKey: '',
+      prevGeomKey: '',
+    }
+    return nineSliceNodes
+  }
+
+  const detachNineSliceNodes = (ns: NineSliceNodes): void => {
+    for (let i = 0; i < ns.attached.length; i++) {
+      const node = ns.attached[i]!
+      if (node.parentNode) {
+        node.parentNode.removeChild(node)
+      }
+    }
+    ns.attached = []
+    while (ns.merge.firstChild) {
+      ns.merge.removeChild(ns.merge.firstChild)
+    }
+  }
+
+  const activateFullMapMode = (): void => {
+    if (currentMapMode === 'full') return
+    if (nineSliceNodes) {
+      detachNineSliceNodes(nineSliceNodes)
+      nineSliceNodes.activeMask = -1
+    }
+    if (feImageEl.parentNode !== filterEl) {
+      filterEl.insertBefore(feImageEl, bgBlurEl)
+    }
+    prevWidth = -1
+    prevHeight = -1
+    mapBuilder?.reset()
+    currentMapMode = 'full'
+  }
+
+  const activateNineSliceMode = (mask: number): NineSliceNodes => {
+    const ns = ensureNineSliceNodes()
+    if (currentMapMode !== 'nine-slice') {
+      if (feImageEl.parentNode) {
+        feImageEl.parentNode.removeChild(feImageEl)
+      }
+      currentMapMode = 'nine-slice'
+      ns.activeMask = -1
+      ns.prevTileKey = ''
+      ns.prevGeomKey = ''
+    }
+    if (ns.activeMask === mask) {
+      return ns
+    }
+
+    detachNineSliceNodes(ns)
+
+    const appendPiece = (piece: NineSlicePiece): void => {
+      filterEl.insertBefore(piece.element, bgBlurEl)
+      ns.attached.push(piece.element)
+      ns.merge.appendChild(piece.mergeNode)
+    }
+
+    // Painter's order: plateau center -> edge strips -> corners so corners cover the strip overlap.
+    if ((mask & 1) !== 0) appendPiece(ns.center)
+    if ((mask & 2) !== 0) {
+      appendPiece(ns.top)
+      appendPiece(ns.bottom)
+    }
+    if ((mask & 4) !== 0) {
+      appendPiece(ns.left)
+      appendPiece(ns.right)
+    }
+    appendPiece(ns.tl)
+    appendPiece(ns.tr)
+    appendPiece(ns.bl)
+    appendPiece(ns.br)
+
+    filterEl.insertBefore(ns.merge, bgBlurEl)
+    ns.attached.push(ns.merge)
+    ns.activeMask = mask
+    return ns
+  }
 
   const rebuildDisplacementStage = (dispersive: boolean): void => {
     if (currentDispersive === dispersive) {
@@ -392,39 +567,148 @@ export function createRefractFilterController(
       frame.ior !== undefined ? normalizeIorOrDefault(frame.ior, config.ior) : config.ior
     const caustics =
       frame.caustics !== undefined ? Boolean(frame.caustics) : config.caustics
+    const nineSlice =
+      frame.nineSlice !== undefined ? Boolean(frame.nineSlice) : config.nineSlice
 
     rebuildDisplacementStage(dispersion > 0)
 
     const frameBezel = resolveFieldBezel(requestedBezel, frame.field)
-    // Promote half-res maps to 1:1 for compact pills/buttons so rim displacement stays crisp.
-    const frameMapScale =
-      rawMapScale === 0.5 && Math.max(frame.bounds.width, frame.bounds.height) <= FULL_RES_MAP_THRESHOLD_PX
-        ? 1
-        : rawMapScale
+    let maxDisplacementPx = 0
+    let usedNineSlice = false
 
-    mapBuilder ??= createRefractMapBuilder()
-    const mapResult = mapBuilder.build({
-      bounds: frame.bounds,
-      field: frame.field,
-      bezel: frameBezel,
-      mapScale: frameMapScale,
-      profile,
-      ior,
-      thicknessRatio: strength,
-      caustics,
-    })
+    if (nineSlice) {
+      const single = findSingleActivePrimitive(frame.field)
+      if (
+        single &&
+        single.size.width >= MIN_NINE_SLICE_DIM &&
+        single.size.height >= MIN_NINE_SLICE_DIM
+      ) {
+        const rectW = single.size.width
+        const rectH = single.size.height
+        const rectX = single.center.x - rectW * 0.5 - frame.bounds.x
+        const rectY = single.center.y - rectH * 0.5 - frame.bounds.y
+        const minHalf = Math.min(rectW, rectH) * 0.5
+        const rad = Math.max(0, Math.min(single.radius, minHalf))
+        const effBezel = Math.max(1e-3, Math.min(frameBezel, minHalf))
+        const slice = Math.min(Math.ceil(Math.max(rad, effBezel)), minHalf)
+        const span = rectW - 2 * slice
+        const rise = rectH - 2 * slice
+        const canNineSlice =
+          slice >= 2 &&
+          (span > 1e-3 || isNearInt(rectX + slice)) &&
+          (rise > 1e-3 || isNearInt(rectY + slice))
 
-    if (mapResult.width !== prevWidth || mapResult.height !== prevHeight) {
-      feImageEl.setAttribute('width', String(mapResult.width))
-      feImageEl.setAttribute('height', String(mapResult.height))
-      prevWidth = mapResult.width
-      prevHeight = mapResult.height
+        if (canNineSlice) {
+          const tiles = resolveRefractTiles({
+            radius: rad,
+            bezel: effBezel,
+            slice,
+            profile,
+            ior,
+            thicknessRatio: strength,
+            caustics,
+          })
+          const hasHStrips = span > 1e-3
+          const hasVStrips = rise > 1e-3
+          const hasCenter = hasHStrips && hasVStrips
+          const mask = (hasCenter ? 1 : 0) | (hasHStrips ? 2 : 0) | (hasVStrips ? 4 : 0)
+          const ns = activateNineSliceMode(mask)
+
+          if (tiles.key !== ns.prevTileKey) {
+            // Sync all 8 tile URLs even if strip pieces are omitted in the current mask
+            // so a subsequent resize enabling them already has valid tile hrefs.
+            ns.tl.element.setAttribute('href', tiles.tl)
+            ns.tr.element.setAttribute('href', tiles.tr)
+            ns.bl.element.setAttribute('href', tiles.bl)
+            ns.br.element.setAttribute('href', tiles.br)
+            ns.top.element.setAttribute('href', tiles.top)
+            ns.bottom.element.setAttribute('href', tiles.bottom)
+            ns.left.element.setAttribute('href', tiles.left)
+            ns.right.element.setAttribute('href', tiles.right)
+            ns.prevTileKey = tiles.key
+          }
+
+          const geomKey =
+            `${formatSvgCoord(rectX)}:${formatSvgCoord(rectY)}:` +
+            `${formatSvgCoord(rectW)}:${formatSvgCoord(rectH)}:` +
+            `${formatSvgCoord(slice)}:${mask}`
+          if (geomKey !== ns.prevGeomKey) {
+            const pad = Math.min(1, slice * 0.25)
+            if (hasCenter) {
+              setElementRect(
+                ns.center.element,
+                rectX + slice - pad,
+                rectY + slice - pad,
+                span + 2 * pad,
+                rise + 2 * pad,
+              )
+            }
+            if (hasHStrips) {
+              setElementRect(ns.top.element, rectX + slice - pad, rectY, span + 2 * pad, slice)
+              setElementRect(
+                ns.bottom.element,
+                rectX + slice - pad,
+                rectY + rectH - slice,
+                span + 2 * pad,
+                slice,
+              )
+            }
+            if (hasVStrips) {
+              setElementRect(ns.left.element, rectX, rectY + slice - pad, slice, rise + 2 * pad)
+              setElementRect(
+                ns.right.element,
+                rectX + rectW - slice,
+                rectY + slice - pad,
+                slice,
+                rise + 2 * pad,
+              )
+            }
+            setElementRect(ns.tl.element, rectX, rectY, slice, slice)
+            setElementRect(ns.tr.element, rectX + rectW - slice, rectY, slice, slice)
+            setElementRect(ns.bl.element, rectX, rectY + rectH - slice, slice, slice)
+            setElementRect(ns.br.element, rectX + rectW - slice, rectY + rectH - slice, slice, slice)
+            ns.prevGeomKey = geomKey
+          }
+
+          maxDisplacementPx = tiles.maxDisplacementPx
+          usedNineSlice = true
+        }
+      }
     }
-    if (mapResult.changed) {
-      feImageEl.setAttribute('href', mapResult.dataUrl)
+
+    if (!usedNineSlice) {
+      activateFullMapMode()
+      // Promote half-res maps to 1:1 for compact pills/buttons so rim displacement stays crisp.
+      const frameMapScale =
+        rawMapScale === 0.5 && Math.max(frame.bounds.width, frame.bounds.height) <= FULL_RES_MAP_THRESHOLD_PX
+          ? 1
+          : rawMapScale
+
+      mapBuilder ??= createRefractMapBuilder()
+      const mapResult = mapBuilder.build({
+        bounds: frame.bounds,
+        field: frame.field,
+        bezel: frameBezel,
+        mapScale: frameMapScale,
+        profile,
+        ior,
+        thicknessRatio: strength,
+        caustics,
+      })
+
+      if (mapResult.width !== prevWidth || mapResult.height !== prevHeight) {
+        feImageEl.setAttribute('width', String(mapResult.width))
+        feImageEl.setAttribute('height', String(mapResult.height))
+        prevWidth = mapResult.width
+        prevHeight = mapResult.height
+      }
+      if (mapResult.changed) {
+        feImageEl.setAttribute('href', mapResult.dataUrl)
+      }
+      maxDisplacementPx = mapResult.maxDisplacementPx
     }
 
-    const baseScale = Math.max(0, 2 * mapResult.maxDisplacementPx * scaleMultiplier)
+    const baseScale = Math.max(0, 2 * maxDisplacementPx * scaleMultiplier)
     // Guard against phantom single-channel blue/red edge shifts when base refraction is zero.
     const effectiveDispersion = baseScale > 0 ? Math.min(dispersion, baseScale * 0.5) : 0
     const scaleKey = `${baseScale.toFixed(2)}:${effectiveDispersion.toFixed(2)}`
@@ -463,6 +747,10 @@ export function createRefractFilterController(
     disposed = true
     if (svgEl.parentNode) {
       svgEl.parentNode.removeChild(svgEl)
+    }
+    if (nineSliceNodes) {
+      detachNineSliceNodes(nineSliceNodes)
+      nineSliceNodes = null
     }
     stageNodes = []
     dispNodes = []

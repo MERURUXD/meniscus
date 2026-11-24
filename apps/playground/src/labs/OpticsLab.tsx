@@ -10,6 +10,7 @@ import {
   extractFieldContourPath,
   type GlassFieldState,
   type GlassPrimitive,
+  type RefractionProfileName,
   type RimMode,
   type Size,
   type ThemeMode,
@@ -125,8 +126,18 @@ export function OpticsLab({ theme, locale, reducedMotion }: OpticsLabProps): Rea
       bezel: config.bevelPx,
       strength: config.refractionStrength,
       dispersion: config.dispersionPx,
+      profile: config.refractionProfile,
+      ior: config.ior,
+      caustics: config.caustics,
     }),
-    [config.bevelPx, config.refractionStrength, config.dispersionPx],
+    [
+      config.bevelPx,
+      config.refractionStrength,
+      config.dispersionPx,
+      config.refractionProfile,
+      config.ior,
+      config.caustics,
+    ],
   )
 
   const activeSinglePrimitives = useMemo(
@@ -470,6 +481,34 @@ export function OpticsLab({ theme, locale, reducedMotion }: OpticsLabProps): Rea
           unit="px"
           onChange={(v) => updateConfig('bevelPx', v)}
         />
+        <div className="bench-backdrop">
+          <div className="bench-backdrop-label">{op.profileLabel}</div>
+          <div className="pg-btn-group">
+            {(
+              ['squircle', 'circle', 'parabolic', 'lip'] as const satisfies readonly RefractionProfileName[]
+            ).map((profileKey) => (
+              <button
+                key={profileKey}
+                type="button"
+                className="pg-btn"
+                aria-pressed={config.refractionProfile === profileKey}
+                onClick={() => updateConfig('refractionProfile', profileKey)}
+              >
+                {op.profiles[profileKey]}
+              </button>
+            ))}
+          </div>
+        </div>
+        <SliderControl
+          id="optics-ior"
+          label={op.iorLabel}
+          value={config.ior}
+          min={1.0}
+          max={2.4}
+          step={0.05}
+          precision={2}
+          onChange={(v) => updateConfig('ior', v)}
+        />
         <SliderControl
           id="optics-strength"
           label={op.strengthLabel}
@@ -534,7 +573,7 @@ export function OpticsLab({ theme, locale, reducedMotion }: OpticsLabProps): Rea
         />
 
         <div className="pg-btn-group">
-          {(['directional', 'soft'] as const).map((rm: RimMode) => (
+          {(['directional', 'soft', 'physical'] as const).map((rm: RimMode) => (
             <button
               key={rm}
               type="button"
@@ -547,7 +586,28 @@ export function OpticsLab({ theme, locale, reducedMotion }: OpticsLabProps): Rea
           ))}
         </div>
 
+        {config.rimMode === 'physical' ? (
+          <SliderControl
+            id="optics-light-angle"
+            label={op.lightAngleLabel}
+            value={config.lightAngle}
+            min={-180}
+            max={180}
+            step={5}
+            unit="°"
+            onChange={(v) => updateConfig('lightAngle', v)}
+          />
+        ) : null}
+
         <div className="pg-btn-group">
+          <button
+            type="button"
+            className="pg-btn"
+            aria-pressed={config.caustics}
+            onClick={() => updateConfig('caustics', !config.caustics)}
+          >
+            {op.causticsButton}
+          </button>
           <button
             type="button"
             className="pg-btn"

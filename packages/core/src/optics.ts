@@ -618,6 +618,23 @@ export function interpolateOpticalMaterial(
     result.rimBottomRatio = lerp(from.rimBottomRatio ?? 0.72, to.rimBottomRatio ?? 0.72, u)
   }
 
+  if (from.bevelProfile !== undefined || to.bevelProfile !== undefined) {
+    result.bevelProfile =
+      u < 0.5 ? (from.bevelProfile ?? to.bevelProfile) : (to.bevelProfile ?? from.bevelProfile)
+  }
+
+  if (from.lightAngle !== undefined || to.lightAngle !== undefined) {
+    result.lightAngle = lerp(from.lightAngle ?? -45, to.lightAngle ?? -45, u)
+  }
+
+  if (from.lightElevation !== undefined || to.lightElevation !== undefined) {
+    result.lightElevation = lerp(from.lightElevation ?? 22, to.lightElevation ?? 22, u)
+  }
+
+  if (from.rimShade !== undefined || to.rimShade !== undefined) {
+    result.rimShade = lerp(from.rimShade ?? 0.32, to.rimShade ?? 0.32, u)
+  }
+
   return result
 }
 

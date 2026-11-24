@@ -11,11 +11,13 @@
  */
 
 import {
+  DEFAULT_REFRACTION_IOR,
   buildColorOpticsMatrix,
   createRefractMapBuilder,
   type GlassFieldState,
   type Rect,
   type RefractMapBuilder,
+  type RefractionProfileSpec,
 } from '@sessile/core'
 
 export const SVG_NS = 'http://www.w3.org/2000/svg'
@@ -25,16 +27,20 @@ const MIN_ACTIVE_SIZE = 0.01
 export interface RefractFilterConfig {
   /** Bezel lens rim width in CSS px; `0` selects `computeAutoBezel` from active primitives. */
   bezel?: number
-  /** Dimensionless refraction multiplier (lens displacement peak = bezel * strength * scaleMultiplier). */
+  /** Dimensionless thickness-to-bezel ratio controlling Snell ray deflection (`0` disables refraction). */
   strength?: number
   /** Chromatic RGB dispersion delta in px (`0` uses a single displacement map pass). */
   dispersion?: number
-  /** Rim lens curvature exponent (higher concentrates refraction closer to the outer perimeter). */
-  falloff?: number
   /** Extra scale factor applied to computed displacement strength (defaults to `1`). */
   scaleMultiplier?: number
   /** Base resolution multiplier for Stored-PNG displacement maps (defaults to `0.5`). */
   mapScale?: number
+  /** Bezel refraction cross-section profile (`'squircle'`, `'circle'`, `'parabolic'`, `'lip'`, or custom height fn). */
+  profile?: RefractionProfileSpec
+  /** Index of refraction (`1` = air, `1.5` = glass; defaults to `1.5`). */
+  ior?: number
+  /** Allow steep-edge caustic folds (defaults to `false`). */
+  caustics?: boolean
 }
 
 export interface RefractFilterFrame extends RefractFilterConfig {
@@ -67,9 +73,11 @@ interface NormalizedConfig {
   bezel: number
   strength: number
   dispersion: number
-  falloff: number
   scaleMultiplier: number
   mapScale: number
+  profile: RefractionProfileSpec
+  ior: number
+  caustics: boolean
 }
 
 interface DisplacementNodeBinding {
@@ -85,22 +93,30 @@ function normalizeNonNegativeOrDefault(value: number | undefined, fallback: numb
   return value !== undefined && Number.isFinite(value) && value >= 0 ? value : fallback
 }
 
+function normalizeIorOrDefault(value: number | undefined, fallback: number): number {
+  return value !== undefined && Number.isFinite(value) ? Math.max(1, value) : fallback
+}
+
 function normalizeConfig(input?: RefractFilterConfig, base?: NormalizedConfig): NormalizedConfig {
   const b = base ?? {
     bezel: 0,
     strength: 1.32,
     dispersion: 0,
-    falloff: 2.6,
     scaleMultiplier: 1,
     mapScale: 0.5,
+    profile: 'squircle',
+    ior: DEFAULT_REFRACTION_IOR,
+    caustics: false,
   }
   return {
     bezel: normalizeNonNegativeOrDefault(input?.bezel, b.bezel),
     strength: normalizeNonNegativeOrDefault(input?.strength, b.strength),
     dispersion: normalizeNonNegativeOrDefault(input?.dispersion, b.dispersion),
-    falloff: normalizeNonNegativeOrDefault(input?.falloff, b.falloff),
     scaleMultiplier: normalizeNonNegativeOrDefault(input?.scaleMultiplier, b.scaleMultiplier),
     mapScale: normalizePositiveOrDefault(input?.mapScale, b.mapScale),
+    profile: input?.profile !== undefined ? input.profile : b.profile,
+    ior: normalizeIorOrDefault(input?.ior, b.ior),
+    caustics: input?.caustics !== undefined ? Boolean(input.caustics) : b.caustics,
   }
 }
 
@@ -363,10 +379,6 @@ export function createRefractFilterController(
       frame.dispersion !== undefined
         ? normalizeNonNegativeOrDefault(frame.dispersion, config.dispersion)
         : config.dispersion
-    const falloff =
-      frame.falloff !== undefined
-        ? normalizeNonNegativeOrDefault(frame.falloff, config.falloff)
-        : config.falloff
     const scaleMultiplier =
       frame.scaleMultiplier !== undefined
         ? normalizeNonNegativeOrDefault(frame.scaleMultiplier, config.scaleMultiplier)
@@ -375,6 +387,11 @@ export function createRefractFilterController(
       frame.mapScale !== undefined
         ? normalizePositiveOrDefault(frame.mapScale, config.mapScale)
         : config.mapScale
+    const profile = frame.profile !== undefined ? frame.profile : config.profile
+    const ior =
+      frame.ior !== undefined ? normalizeIorOrDefault(frame.ior, config.ior) : config.ior
+    const caustics =
+      frame.caustics !== undefined ? Boolean(frame.caustics) : config.caustics
 
     rebuildDisplacementStage(dispersion > 0)
 
@@ -390,8 +407,11 @@ export function createRefractFilterController(
       bounds: frame.bounds,
       field: frame.field,
       bezel: frameBezel,
-      falloff,
       mapScale: frameMapScale,
+      profile,
+      ior,
+      thicknessRatio: strength,
+      caustics,
     })
 
     if (mapResult.width !== prevWidth || mapResult.height !== prevHeight) {
@@ -404,12 +424,14 @@ export function createRefractFilterController(
       feImageEl.setAttribute('href', mapResult.dataUrl)
     }
 
-    const baseScale = Math.max(0, 2 * frameBezel * strength * scaleMultiplier)
-    const scaleKey = `${baseScale.toFixed(2)}:${dispersion}`
+    const baseScale = Math.max(0, 2 * mapResult.maxDisplacementPx * scaleMultiplier)
+    // Guard against phantom single-channel blue/red edge shifts when base refraction is zero.
+    const effectiveDispersion = baseScale > 0 ? Math.min(dispersion, baseScale * 0.5) : 0
+    const scaleKey = `${baseScale.toFixed(2)}:${effectiveDispersion.toFixed(2)}`
     if (scaleKey !== prevScaleKey) {
       for (let i = 0; i < dispNodes.length; i++) {
         const binding = dispNodes[i]!
-        const scale = Math.max(0, baseScale + binding.offsetSign * dispersion)
+        const scale = Math.max(0, baseScale + binding.offsetSign * effectiveDispersion)
         binding.element.setAttribute('scale', String(scale))
       }
       prevScaleKey = scaleKey

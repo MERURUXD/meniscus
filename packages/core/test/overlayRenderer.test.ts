@@ -742,3 +742,57 @@ test('overlayRenderer: fragment shader applies isotropic computeDirectionalRimWe
     'borderless directional branch must use computeDirectionalRimWeight so rimFocus=0 preserves vertical side highlights',
   )
 })
+
+test('overlayRenderer: physical 3D rim mode uploads light/bevel uniforms and shader keeps NORMAL_FLOOR + safePow discipline', () => {
+  assert.ok(OVERLAY_FRAGMENT_SHADER.includes('uniform vec4 uPhysicalLight;'))
+  assert.ok(OVERLAY_FRAGMENT_SHADER.includes('uniform vec4 uPhysicalParams;'))
+  assert.ok(OVERLAY_FRAGMENT_SHADER.includes('float evalBezelHeight(float t, float code)'))
+  assert.ok(OVERLAY_FRAGMENT_SHADER.includes('max(length(g), 0.25)'))
+  const powCalls = OVERLAY_FRAGMENT_SHADER.match(/\bpow\s*\(/g) ?? []
+  assert.equal(powCalls.length, 1, 'physical shader helpers must also route every pow() through safePow()')
+
+  const mock = createMockWebGL2()
+  const mockCanvas = {
+    width: 0,
+    height: 0,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    getContext: (kind: string) => (kind === 'webgl2' ? mock.gl : null),
+  } as unknown as HTMLCanvasElement
+
+  const renderer = createGlassOverlayRenderer()
+  renderer.mount(mockCanvas)
+
+  const prim = createPrimitive(0)
+  // Directional mode keeps uPhysicalLight.w === 0.
+  resetUniformCalls(mock.uniformCalls)
+  renderer.render(makeFrame([prim], { material: DEFAULT_OPTICAL_MATERIALS.light.crisp }))
+  const dirLight = mock.uniformCalls.f4.find((c) => c.loc === 'uPhysicalLight')
+  assert.equal(dirLight?.w, 0)
+
+  // Physical mode activates uPhysicalLight.w === 1 and encodes bevelProfile code.
+  resetUniformCalls(mock.uniformCalls)
+  renderer.render(
+    makeFrame([prim], {
+      material: {
+        ...DEFAULT_OPTICAL_MATERIALS.light.crisp,
+        bevel: 22,
+        rimMode: 'physical',
+        rimOpacity: 0.45,
+        bevelProfile: 'lip',
+        lightAngle: 90,
+        lightElevation: 30,
+        rimShade: 0.4,
+      },
+    }),
+  )
+  const physLight = mock.uniformCalls.f4.find((c) => c.loc === 'uPhysicalLight')
+  const physParams = mock.uniformCalls.f4.find((c) => c.loc === 'uPhysicalParams')
+  assert.ok(physLight && physLight.w === 1)
+  assert.ok(Math.abs(physLight.x - Math.cos((30 * Math.PI) / 180)) < 1e-4)
+  assert.ok(Math.abs(physLight.y) < 1e-4)
+  assert.ok(Math.abs(physLight.z - 0.5) < 1e-4)
+  assert.deepEqual(physParams, { loc: 'uPhysicalParams', x: 22, y: 0.9, z: 0.4, w: 3 })
+
+  renderer.dispose()
+})

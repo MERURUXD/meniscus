@@ -94,4 +94,16 @@ test('showcase materials bend clearly when refracting and stay frosted on the fa
 
   const fallback = buildOpticsLabMaterial('dark', DEFAULT_OPTICS_LAB_CONFIG, 'frosted')
   assert.ok(fallback.blur >= SHOWCASE_FROSTED_BLUR_PX)
+
+  const physical = buildOpticsLabMaterial('light', {
+    ...DEFAULT_OPTICS_LAB_CONFIG,
+    refractionProfile: 'lip',
+    rimMode: 'physical',
+    lightAngle: 60,
+  })
+  assert.equal(DEFAULT_OPTICS_LAB_CONFIG.refractionProfile, 'squircle')
+  assert.equal(physical.rimMode, 'physical')
+  assert.equal(physical.bevelProfile, 'lip')
+  assert.equal(physical.lightAngle, 60)
+  assert.ok((physical.rimShade ?? 0) > 0)
 })

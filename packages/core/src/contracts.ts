@@ -6,6 +6,8 @@
  * SPDX-License-Identifier: MPL-2.0
  */
 
+import type { BezelHeightProfileName } from './refractProfile.ts'
+
 export interface Point {
   x: number
   y: number
@@ -53,8 +55,8 @@ export interface GlassFieldState {
   styleMix?: number
 }
 
-/** Rim highlight mode: 'directional' favors directional speculars; 'soft' favors wide diffuse glow. */
-export type RimMode = 'directional' | 'soft'
+/** Rim highlight mode: 'directional' favors directional speculars; 'soft' favors wide diffuse glow; 'physical' uses 3D bevel-slope optics. */
+export type RimMode = 'directional' | 'soft' | 'physical'
 
 export type ThemeMode = 'light' | 'dark'
 
@@ -89,6 +91,14 @@ export interface OpticalMaterial {
   borderRgba?: readonly [number, number, number, number]
   /** Optional bottom directional highlight ratio relative to the top edge (defaults to 0.72). */
   rimBottomRatio?: number
+  /** Optional bezel cross-section height curve used when `rimMode === 'physical'` (defaults to `'squircle'`). */
+  bevelProfile?: BezelHeightProfileName
+  /** Optional directional light azimuth in degrees clockwise from top for `rimMode === 'physical'` (defaults to `-45`). */
+  lightAngle?: number
+  /** Optional directional light elevation above the surface in degrees for `rimMode === 'physical'` (defaults to `22`). */
+  lightElevation?: number
+  /** Optional grazing blue-black rim shade strength in `[0, 1]` for `rimMode === 'physical'` (defaults to `0.32`). */
+  rimShade?: number
 }
 
 export const DEFAULT_OPTICAL_MATERIALS = {

@@ -56,6 +56,27 @@ export {
 } from './refractMap.ts'
 
 export {
+  BEZEL_HEIGHT_PROFILES,
+  CAUSTIC_FOLD_LIMIT,
+  DEFAULT_REFRACTION_IOR,
+  DEFAULT_REFRACTION_SAMPLES,
+  NORMAL_FLOOR,
+  computeRefractionProfileLut,
+  getRefractionProfileKey,
+  resolveRefractionProfileLut,
+  sampleRefractionLut,
+  traceBezelRay,
+  type BezelHeightFn,
+  type BezelHeightProfileName,
+  type BezelRayTrace,
+  type BezelRayTraceInput,
+  type RefractionProfileLut,
+  type RefractionProfileName,
+  type RefractionProfileOptions,
+  type RefractionProfileSpec,
+} from './refractProfile.ts'
+
+export {
   OVERLAY_FRAGMENT_SHADER,
   OVERLAY_VERTEX_SHADER,
   createGlassOverlayRenderer,

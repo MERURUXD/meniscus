@@ -10,12 +10,21 @@
  */
 
 import type { GlassFieldState, GlassPrimitive, Rect } from './contracts.ts'
+import {
+  DEFAULT_REFRACTION_IOR,
+  NORMAL_FLOOR,
+  getRefractionProfileKey,
+  resolveRefractionProfileLut,
+  sampleRefractionLut,
+  type RefractionProfileLut,
+  type RefractionProfileSpec,
+} from './refractProfile.ts'
 
 const PNG_SIGNATURE = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])
 const PNG_IEND = new Uint8Array([0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130])
 const MAX_DEFLATE_BLOCK = 65535
 const DEFAULT_MAP_SCALE = 0.5
-const DEFAULT_FALLOFF = 2.6
+const DEFAULT_THICKNESS_RATIO = 1
 const MIN_PRIMITIVE_SIZE = 0.01
 const SQRT1_2 = Math.SQRT1_2
 
@@ -25,8 +34,15 @@ export interface RefractMapParams {
   bounds: Rect
   field: GlassFieldState
   bezel: number
-  falloff?: number
   mapScale?: number
+  /** Refraction cross-section profile (`'squircle'`, `'circle'`, `'parabolic'`, `'lip'`, or custom height fn). */
+  profile?: RefractionProfileSpec
+  /** Index of refraction (`1` = air, `1.5` = glass; defaults to `1.5`). */
+  ior?: number
+  /** Glass plateau thickness divided by bezel width (defaults to `1`). */
+  thicknessRatio?: number
+  /** Allow steep-edge caustic folds (defaults to `false`). */
+  caustics?: boolean
 }
 
 export interface RefractMapResult {
@@ -34,6 +50,8 @@ export interface RefractMapResult {
   width: number
   height: number
   changed: boolean
+  /** Peak absolute horizontal displacement in CSS px for `feDisplacementMap` scale calibration. */
+  maxDisplacementPx: number
 }
 
 export interface RefractMapBuilder {
@@ -152,6 +170,8 @@ let rowAbsDy = new Float64Array(0)
 let rowQy = new Float64Array(0)
 let rowSy = new Float64Array(0)
 
+// Reusable 3-element scratch vector [ux, uy, distIn] for corner-bend geometry without heap allocation.
+const tmpCornerGeom = new Float64Array(3)
 // Reusable 2-element scratch vector for corner-bend outward unit gradient without heap allocation.
 const tmpCornerDir = new Float64Array(2)
 
@@ -283,6 +303,14 @@ function clamp01(v: number): number {
   return v <= 0 ? 0 : v >= 1 ? 1 : v
 }
 
+function clampAmp(v: number): number {
+  return v <= -127 ? -127 : v >= 127 ? 127 : v
+}
+
+function clampChannel(v: number): number {
+  return v <= 0 ? 0 : v >= 255 ? 255 : v
+}
+
 function quant4(v: number): number {
   return Math.round(v * 4)
 }
@@ -291,13 +319,16 @@ function quant100(v: number): number {
   return Math.round(v * 100)
 }
 
-function cornerBend(
+/**
+ * Solves corner-bend inward distance and first-quadrant outward unit direction
+ * into `tmpCornerGeom` (`[ux, uy, distIn]`) without heap allocations.
+ */
+function computeCornerGeometry(
   x: number,
   y: number,
   radius: number,
   bezel: number,
-  falloff: number,
-): [number, number] {
+): void {
   let lo = 0
   let hi = Math.min(x, y, bezel)
   for (let i = 0; i < 10; i++) {
@@ -319,13 +350,19 @@ function cornerBend(
   const nx = centerCoord - x > 0 ? centerCoord - x : 0
   const ny = centerCoord - y > 0 ? centerCoord - y : 0
   const normal = Math.hypot(nx, ny)
-  const weight = Math.pow(Math.max(0, 1 - lo / bezel), falloff)
-  if (normal <= 1e-6) return x < y ? [weight, 0] : [0, weight]
-  return [(nx / normal) * weight, (ny / normal) * weight]
+  if (normal <= 1e-6) {
+    tmpCornerGeom[0] = x < y ? 1 : 0
+    tmpCornerGeom[1] = x < y ? 0 : 1
+  } else {
+    const invN = 1 / normal
+    tmpCornerGeom[0] = nx * invN
+    tmpCornerGeom[1] = ny * invN
+  }
+  tmpCornerGeom[2] = lo
 }
 
 /**
- * Computes the unit outward gradient matching `cornerBend` inward deflection,
+ * Computes the unit outward gradient matching `computeCornerGeometry` inward deflection,
  * stored into `tmpCornerDir` to avoid per-pixel allocations in blend zones.
  */
 function computeCornerBendOutwardDir(
@@ -333,28 +370,17 @@ function computeCornerBendOutwardDir(
   edgeY: number,
   rad: number,
   bezel: number,
-  falloff: number,
   sx: number,
   sy: number,
-  fallbackGx: number,
-  fallbackGy: number,
 ): void {
-  const [ox, oy] = cornerBend(
+  computeCornerGeometry(
     edgeX > 0 ? edgeX : 0,
     edgeY > 0 ? edgeY : 0,
     rad,
     bezel,
-    falloff,
   )
-  const oLen = Math.hypot(ox, oy)
-  if (oLen > 1e-6) {
-    const invO = 1 / oLen
-    tmpCornerDir[0] = sx * ox * invO
-    tmpCornerDir[1] = sy * oy * invO
-  } else {
-    tmpCornerDir[0] = fallbackGx
-    tmpCornerDir[1] = fallbackGy
-  }
+  tmpCornerDir[0] = sx * tmpCornerGeom[0]
+  tmpCornerDir[1] = sy * tmpCornerGeom[1]
 }
 
 function collectActivePrimitiveIndices(primitives: readonly GlassPrimitive[]): number {
@@ -380,11 +406,15 @@ function buildQuantizedKey(
   activeCount: number,
   blendK: number,
   bezel: number,
-  falloff: number,
+  profileKey: string,
+  ior: number,
+  thicknessRatio: number,
+  caustics: boolean,
 ): string {
   const base =
     `${cssW}:${cssH}:${pngW}:${pngH}:${quant4(bounds.x)}:${quant4(bounds.y)}:` +
-    `${quant4(bezel)}:${quant100(falloff)}:${quant4(blendK)}`
+    `${quant4(bezel)}:${quant4(blendK)}:` +
+    `${profileKey}:${quant100(ior)}:${quant100(thicknessRatio)}:${caustics ? 1 : 0}`
   if (activeCount === 0) {
     return `${base}:EMPTY`
   }
@@ -425,7 +455,7 @@ function rasterizeSingleRectScanlines(
   stepY: number,
   shape: GlassPrimitive,
   safeBezel: number,
-  safeFalloff: number,
+  lut: RefractionProfileLut,
 ): void {
   const cx = shape.center.x
   const cy = shape.center.y
@@ -438,6 +468,9 @@ function rasterizeSingleRectScanlines(
   const invBezel = 1 / effBezel
   const interiorGate = -Math.max(effBezel, 0.5)
   const bendCorners = rad > 0 && rad < effBezel
+  const normLut = lut.normalizedDisplacement
+  const hasDisplacement = lut.maxDisplacementRatio > 1e-6
+  const localScale = effBezel / safeBezel
 
   let offset = 0
   for (let py = 0; py < pngH; py++) {
@@ -493,17 +526,25 @@ function rasterizeSingleRectScanlines(
       } else {
         const distIn = sd < 0 ? -sd : 0
         const alpha = sd <= -0.5 ? 255 : Math.round((0.5 - sd) * 255)
+        if (!hasDisplacement) {
+          scanlines[offset++] = 128
+          scanlines[offset++] = 128
+          scanlines[offset++] = 128
+          scanlines[offset++] = alpha
+          continue
+        }
         const edgeX = halfW - absDx
         if (bendCorners && edgeX < effBezel && edgeY < effBezel) {
-          const [ox, oy] = cornerBend(
+          computeCornerGeometry(
             edgeX > 0 ? edgeX : 0,
             edgeY > 0 ? edgeY : 0,
             rad,
             effBezel,
-            safeFalloff,
           )
-          scanlines[offset++] = Math.round(128 - sx * ox * 127)
-          scanlines[offset++] = Math.round(128 - sy * oy * 127)
+          const m = sampleRefractionLut(normLut, tmpCornerGeom[2] * invBezel) * localScale
+          const amp = clampAmp(m * 127)
+          scanlines[offset++] = clampChannel(Math.round(128 - sx * tmpCornerGeom[0] * amp))
+          scanlines[offset++] = clampChannel(Math.round(128 - sy * tmpCornerGeom[1] * amp))
           scanlines[offset++] = 128
           scanlines[offset++] = alpha
         } else if (distIn >= effBezel) {
@@ -512,10 +553,10 @@ function rasterizeSingleRectScanlines(
           scanlines[offset++] = 128
           scanlines[offset++] = alpha
         } else {
-          const m = Math.pow(Math.max(0, 1 - distIn * invBezel), safeFalloff)
-          const amp = m * 127
-          scanlines[offset++] = Math.round(128 - gx * amp)
-          scanlines[offset++] = Math.round(128 - gy * amp)
+          const m = sampleRefractionLut(normLut, distIn * invBezel) * localScale
+          const amp = clampAmp(m * 127)
+          scanlines[offset++] = clampChannel(Math.round(128 - gx * amp))
+          scanlines[offset++] = clampChannel(Math.round(128 - gy * amp))
           scanlines[offset++] = 128
           scanlines[offset++] = alpha
         }
@@ -536,7 +577,7 @@ function rasterizeDualShapeScanlines(
   shapeB: GlassPrimitive,
   blendK: number,
   safeBezel: number,
-  safeFalloff: number,
+  lut: RefractionProfileLut,
 ): void {
   const pCx = shapeA.center.x
   const pCy = shapeA.center.y
@@ -564,6 +605,9 @@ function rasterizeDualShapeScanlines(
   const smoothUnion = blendK > 0.001
   const inv2K = smoothUnion ? 0.5 / blendK : 0
   const interiorGate = -Math.max(maxBezel, 0.5)
+  const normLut = lut.normalizedDisplacement
+  const hasDisplacement = lut.maxDisplacementRatio > 1e-6
+  const invSafeBezel = 1 / safeBezel
 
   let offset = 0
   for (let py = 0; py < pngH; py++) {
@@ -662,7 +706,7 @@ function rasterizeDualShapeScanlines(
           if (pBendCorners && sdA < 0 && -sdA < pBezel) {
             const pEdgeX = pHalfW - pAbsDx
             if (pEdgeX < pBezel && pEdgeY < pBezel) {
-              computeCornerBendOutwardDir(pEdgeX, pEdgeY, pRad, pBezel, safeFalloff, pSx, pSy, gAx, gAy)
+              computeCornerBendOutwardDir(pEdgeX, pEdgeY, pRad, pBezel, pSx, pSy)
               mixAx = tmpCornerDir[0]
               mixAy = tmpCornerDir[1]
             }
@@ -673,7 +717,7 @@ function rasterizeDualShapeScanlines(
           if (dBendCorners && sdB < 0 && -sdB < dBezel) {
             const dEdgeX = dHalfW - dAbsDx
             if (dEdgeX < dBezel && dEdgeY < dBezel) {
-              computeCornerBendOutwardDir(dEdgeX, dEdgeY, dRad, dBezel, safeFalloff, dSx, dSy, gBx, gBy)
+              computeCornerBendOutwardDir(dEdgeX, dEdgeY, dRad, dBezel, dSx, dSy)
               mixBx = tmpCornerDir[0]
               mixBy = tmpCornerDir[1]
             }
@@ -717,24 +761,33 @@ function rasterizeDualShapeScanlines(
       } else {
         const distIn = sd < 0 ? -sd : 0
         const alpha = sd <= -0.5 ? 255 : Math.round((0.5 - sd) * 255)
+        if (!hasDisplacement) {
+          scanlines[offset++] = 128
+          scanlines[offset++] = 128
+          scanlines[offset++] = 128
+          scanlines[offset++] = alpha
+          continue
+        }
         if (!blended) {
           const winBezel = winIsA ? pBezel : dBezel
           const winInvBezel = winIsA ? pInvBezel : dInvBezel
+          const winScale = winBezel * invSafeBezel
           const winRad = winIsA ? pRad : dRad
           const winEdgeX = winIsA ? pHalfW - pAbsDx : dHalfW - dAbsDx
           const winEdgeY = winIsA ? pEdgeY : dEdgeY
           const winSx = winIsA ? pSx : dSx
           const winSy = winIsA ? pSy : dSy
           if (winRad > 0 && winRad < winBezel && winEdgeX < winBezel && winEdgeY < winBezel) {
-            const [ox, oy] = cornerBend(
+            computeCornerGeometry(
               winEdgeX > 0 ? winEdgeX : 0,
               winEdgeY > 0 ? winEdgeY : 0,
               winRad,
               winBezel,
-              safeFalloff,
             )
-            scanlines[offset++] = Math.round(128 - winSx * ox * 127)
-            scanlines[offset++] = Math.round(128 - winSy * oy * 127)
+            const m = sampleRefractionLut(normLut, tmpCornerGeom[2] * winInvBezel) * winScale
+            const amp = clampAmp(m * 127)
+            scanlines[offset++] = clampChannel(Math.round(128 - winSx * tmpCornerGeom[0] * amp))
+            scanlines[offset++] = clampChannel(Math.round(128 - winSy * tmpCornerGeom[1] * amp))
             scanlines[offset++] = 128
             scanlines[offset++] = alpha
           } else if (distIn >= winBezel) {
@@ -743,10 +796,10 @@ function rasterizeDualShapeScanlines(
             scanlines[offset++] = 128
             scanlines[offset++] = alpha
           } else {
-            const m = Math.pow(Math.max(0, 1 - distIn * winInvBezel), safeFalloff)
-            const amp = m * 127
-            scanlines[offset++] = Math.round(128 - gx * amp)
-            scanlines[offset++] = Math.round(128 - gy * amp)
+            const m = sampleRefractionLut(normLut, distIn * winInvBezel) * winScale
+            const amp = clampAmp(m * 127)
+            scanlines[offset++] = clampChannel(Math.round(128 - gx * amp))
+            scanlines[offset++] = clampChannel(Math.round(128 - gy * amp))
             scanlines[offset++] = 128
             scanlines[offset++] = alpha
           }
@@ -759,17 +812,15 @@ function rasterizeDualShapeScanlines(
             scanlines[offset++] = alpha
           } else {
             const gLen = Math.hypot(gx, gy)
-            let nx = 0
-            let ny = 0
-            if (gLen > 1e-6) {
-              const invG = -1 / gLen
-              nx = gx * invG
-              ny = gy * invG
-            }
-            const m = Math.pow(Math.max(0, 1 - distIn / blendBezel), safeFalloff)
-            const amp = m * 127
-            scanlines[offset++] = Math.round(128 + nx * amp)
-            scanlines[offset++] = Math.round(128 + ny * amp)
+            const denom = gLen > NORMAL_FLOOR ? gLen : NORMAL_FLOOR
+            const invG = -1 / denom
+            const nx = gx * invG
+            const ny = gy * invG
+            const blendScale = blendBezel * invSafeBezel
+            const m = sampleRefractionLut(normLut, distIn / blendBezel) * blendScale
+            const amp = clampAmp(m * 127)
+            scanlines[offset++] = clampChannel(Math.round(128 + nx * amp))
+            scanlines[offset++] = clampChannel(Math.round(128 + ny * amp))
             scanlines[offset++] = 128
             scanlines[offset++] = alpha
           }
@@ -791,7 +842,7 @@ function rasterizeMultiShapeScanlines(
   activeCount: number,
   blendK: number,
   safeBezel: number,
-  safeFalloff: number,
+  lut: RefractionProfileLut,
 ): void {
   ensureSoaCapacity(activeCount)
 
@@ -826,6 +877,9 @@ function rasterizeMultiShapeScanlines(
   const interiorGate = -Math.max(maxBezel, 0.5)
   const outerThreshold = 0.5 + effectiveBlendK
   const outerThresholdSq = outerThreshold * outerThreshold
+  const normLut = lut.normalizedDisplacement
+  const hasDisplacement = lut.maxDisplacementRatio > 1e-6
+  const invSafeBezel = 1 / safeBezel
 
   let offset = 0
   for (let py = 0; py < pngH; py++) {
@@ -981,11 +1035,8 @@ function rasterizeMultiShapeScanlines(
                     wEdgeY,
                     wRad,
                     wBezel,
-                    safeFalloff,
                     winSx,
                     rowSy[winIdx],
-                    accGx,
-                    accGy,
                   )
                   accGx = tmpCornerDir[0]
                   accGy = tmpCornerDir[1]
@@ -999,7 +1050,7 @@ function rasterizeMultiShapeScanlines(
               const bEdgeX = soaHalfW[i] - absDx
               const bEdgeY = soaHalfH[i] - rowAbsDy[i]
               if (bEdgeX < bBezel && bEdgeY < bBezel) {
-                computeCornerBendOutwardDir(bEdgeX, bEdgeY, rad, bBezel, safeFalloff, sx, sy, gBx, gBy)
+                computeCornerBendOutwardDir(bEdgeX, bEdgeY, rad, bBezel, sx, sy)
                 gBx = tmpCornerDir[0]
                 gBy = tmpCornerDir[1]
               }
@@ -1007,17 +1058,9 @@ function rasterizeMultiShapeScanlines(
 
             accDist = sdB + (accDist - sdB) * h - blendK * h * (1 - h)
             accBezel = bBezel + (accBezel - bBezel) * h
-            const mx = gBx + (accGx - gBx) * h
-            const my = gBy + (accGy - gBy) * h
-            const mLen = Math.hypot(mx, my)
-            if (mLen > 1e-6) {
-              const invM = 1 / mLen
-              accGx = mx * invM
-              accGy = my * invM
-            } else {
-              accGx = 0
-              accGy = 0
-            }
+            // Preserve unnormalized gradient length so opposing saddle normals soften smoothly via NORMAL_FLOOR.
+            accGx = gBx + (accGx - gBx) * h
+            accGy = gBy + (accGy - gBy) * h
           } else if (h <= 0) {
             accDist = sdB
             accGx = gBx
@@ -1052,21 +1095,30 @@ function rasterizeMultiShapeScanlines(
       } else {
         const distIn = accDist < 0 ? -accDist : 0
         const alpha = accDist <= -0.5 ? 255 : Math.round((0.5 - accDist) * 255)
+        if (!hasDisplacement) {
+          scanlines[offset++] = 128
+          scanlines[offset++] = 128
+          scanlines[offset++] = 128
+          scanlines[offset++] = alpha
+          continue
+        }
         if (!blended) {
           const winBezel = soaBezel[winIdx]
+          const winScale = winBezel * invSafeBezel
           const winRad = soaRad[winIdx]
           const winEdgeX = soaHalfW[winIdx] - winAbsDx
           const winEdgeY = soaHalfH[winIdx] - rowAbsDy[winIdx]
           if (winRad > 0 && winRad < winBezel && winEdgeX < winBezel && winEdgeY < winBezel) {
-            const [ox, oy] = cornerBend(
+            computeCornerGeometry(
               winEdgeX > 0 ? winEdgeX : 0,
               winEdgeY > 0 ? winEdgeY : 0,
               winRad,
               winBezel,
-              safeFalloff,
             )
-            scanlines[offset++] = Math.round(128 - winSx * ox * 127)
-            scanlines[offset++] = Math.round(128 - rowSy[winIdx] * oy * 127)
+            const m = sampleRefractionLut(normLut, tmpCornerGeom[2] * soaInvBezel[winIdx]) * winScale
+            const amp = clampAmp(m * 127)
+            scanlines[offset++] = clampChannel(Math.round(128 - winSx * tmpCornerGeom[0] * amp))
+            scanlines[offset++] = clampChannel(Math.round(128 - rowSy[winIdx] * tmpCornerGeom[1] * amp))
             scanlines[offset++] = 128
             scanlines[offset++] = alpha
           } else if (distIn >= winBezel) {
@@ -1075,10 +1127,10 @@ function rasterizeMultiShapeScanlines(
             scanlines[offset++] = 128
             scanlines[offset++] = alpha
           } else {
-            const m = Math.pow(Math.max(0, 1 - distIn * soaInvBezel[winIdx]), safeFalloff)
-            const amp = m * 127
-            scanlines[offset++] = Math.round(128 - accGx * amp)
-            scanlines[offset++] = Math.round(128 - accGy * amp)
+            const m = sampleRefractionLut(normLut, distIn * soaInvBezel[winIdx]) * winScale
+            const amp = clampAmp(m * 127)
+            scanlines[offset++] = clampChannel(Math.round(128 - accGx * amp))
+            scanlines[offset++] = clampChannel(Math.round(128 - accGy * amp))
             scanlines[offset++] = 128
             scanlines[offset++] = alpha
           }
@@ -1089,17 +1141,15 @@ function rasterizeMultiShapeScanlines(
           scanlines[offset++] = alpha
         } else {
           const gLen = Math.hypot(accGx, accGy)
-          let nx = 0
-          let ny = 0
-          if (gLen > 1e-6) {
-            const invG = -1 / gLen
-            nx = accGx * invG
-            ny = accGy * invG
-          }
-          const m = Math.pow(Math.max(0, 1 - distIn / accBezel), safeFalloff)
-          const amp = m * 127
-          scanlines[offset++] = Math.round(128 + nx * amp)
-          scanlines[offset++] = Math.round(128 + ny * amp)
+          const denom = gLen > NORMAL_FLOOR ? gLen : NORMAL_FLOOR
+          const invG = -1 / denom
+          const nx = accGx * invG
+          const ny = accGy * invG
+          const blendScale = accBezel * invSafeBezel
+          const m = sampleRefractionLut(normLut, distIn / accBezel) * blendScale
+          const amp = clampAmp(m * 127)
+          scanlines[offset++] = clampChannel(Math.round(128 + nx * amp))
+          scanlines[offset++] = clampChannel(Math.round(128 + ny * amp))
           scanlines[offset++] = 128
           scanlines[offset++] = alpha
         }
@@ -1114,14 +1164,23 @@ export function createRefractMapBuilder(): RefractMapBuilder {
   let prevDataUrl = ''
   let prevWidth = 0
   let prevHeight = 0
+  let prevMaxDisplacementPx = 0
 
   return {
     build(params: RefractMapParams): RefractMapResult {
       const safeBezel = Math.max(1, params.bezel)
-      const safeFalloff =
-        params.falloff !== undefined && Number.isFinite(params.falloff) && params.falloff >= 0
-          ? params.falloff
-          : DEFAULT_FALLOFF
+      const safeIor =
+        params.ior !== undefined && Number.isFinite(params.ior)
+          ? Math.max(1, params.ior)
+          : DEFAULT_REFRACTION_IOR
+      const safeRatio =
+        params.thicknessRatio !== undefined && Number.isFinite(params.thicknessRatio)
+          ? Math.max(0, params.thicknessRatio)
+          : DEFAULT_THICKNESS_RATIO
+      const safeCaustics = Boolean(params.caustics)
+      const profileSpec = params.profile ?? 'squircle'
+      const profileKey = getRefractionProfileKey(profileSpec)
+
       const mapScale = params.mapScale && params.mapScale > 0 ? params.mapScale : DEFAULT_MAP_SCALE
       const cssW = Math.max(1, Math.round(params.bounds.width))
       const cssH = Math.max(1, Math.round(params.bounds.height))
@@ -1141,7 +1200,10 @@ export function createRefractMapBuilder(): RefractMapBuilder {
         activeCount,
         blendK,
         safeBezel,
-        safeFalloff,
+        profileKey,
+        safeIor,
+        safeRatio,
+        safeCaustics,
       )
 
       if (key === prevKey && prevDataUrl) {
@@ -1150,8 +1212,17 @@ export function createRefractMapBuilder(): RefractMapBuilder {
           width: prevWidth,
           height: prevHeight,
           changed: false,
+          maxDisplacementPx: prevMaxDisplacementPx,
         }
       }
+
+      const lut = resolveRefractionProfileLut({
+        profile: profileSpec,
+        ior: safeIor,
+        thicknessRatio: safeRatio,
+        caustics: safeCaustics,
+      })
+      const maxDisplacementPx = safeBezel * lut.maxDisplacementRatio
 
       const rowBytes = 1 + pngW * 4
       const scanlines = ensureScanlineCapacity(pngH * rowBytes)
@@ -1173,7 +1244,7 @@ export function createRefractMapBuilder(): RefractMapBuilder {
           stepY,
           primitives[activeIndicesBuf[0]],
           safeBezel,
-          safeFalloff,
+          lut,
         )
       } else if (activeCount === 2) {
         rasterizeDualShapeScanlines(
@@ -1188,7 +1259,7 @@ export function createRefractMapBuilder(): RefractMapBuilder {
           primitives[activeIndicesBuf[1]],
           blendK,
           safeBezel,
-          safeFalloff,
+          lut,
         )
       } else {
         rasterizeMultiShapeScanlines(
@@ -1203,7 +1274,7 @@ export function createRefractMapBuilder(): RefractMapBuilder {
           activeCount,
           blendK,
           safeBezel,
-          safeFalloff,
+          lut,
         )
       }
 
@@ -1212,12 +1283,14 @@ export function createRefractMapBuilder(): RefractMapBuilder {
       prevDataUrl = dataUrl
       prevWidth = cssW
       prevHeight = cssH
+      prevMaxDisplacementPx = maxDisplacementPx
 
       return {
         dataUrl,
         width: cssW,
         height: cssH,
         changed: true,
+        maxDisplacementPx,
       }
     },
 
@@ -1226,6 +1299,7 @@ export function createRefractMapBuilder(): RefractMapBuilder {
       prevDataUrl = ''
       prevWidth = 0
       prevHeight = 0
+      prevMaxDisplacementPx = 0
     },
   }
 }

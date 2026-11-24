@@ -188,7 +188,6 @@ test('refractMap: N=1 multi-block stored PNG (>65535B), inward normal polarity, 
       blendK: 0,
     },
     bezel: 8,
-    falloff: 2.6,
     mapScale: 1,
   })
   const aaPng = decodeStoredRgbaPng(aaRes.dataUrl)
@@ -202,7 +201,6 @@ test('refractMap: N=1 multi-block stored PNG (>65535B), inward normal polarity, 
       blendK: 0,
     },
     bezel: 8,
-    falloff: 2.6,
     mapScale: 1,
   })
   const midAaPng = decodeStoredRgbaPng(midAaRes.dataUrl)
@@ -486,5 +484,134 @@ test('refractMap: blend-zone cornerBend smoothing avoids abrupt normal jumps acr
       `excessive jump at (${px},24): ${JSON.stringify(prev)} -> ${JSON.stringify(cur)}`,
     )
     prev = cur
+  }
+})
+
+test('refractMap: geometric Snell profiles (squircle, lip, ior=1), cornerBend, cache keys, and NORMAL_FLOOR saddle softening', () => {
+  const builder = createRefractMapBuilder()
+  const bounds = { x: 0, y: 0, width: 160, height: 120 }
+  const rect: GlassPrimitive = { center: { x: 80, y: 60 }, size: { width: 120, height: 80 }, radius: 18 }
+
+  const sqRes = builder.build({
+    bounds,
+    field: { primitives: [rect], blendK: 0 },
+    bezel: 24,
+    profile: 'squircle',
+    ior: 1.5,
+    thicknessRatio: 1.35,
+    mapScale: 1,
+  })
+  assert.ok(sqRes.maxDisplacementPx > 0)
+  assert.equal(sqRes.changed, true)
+
+  // Changing ior or caustics must invalidate quantized cache.
+  const sqIorRes = builder.build({
+    bounds,
+    field: { primitives: [rect], blendK: 0 },
+    bezel: 24,
+    profile: 'squircle',
+    ior: 1.9,
+    thicknessRatio: 1.35,
+    mapScale: 1,
+  })
+  assert.equal(sqIorRes.changed, true)
+  assert.ok(sqIorRes.maxDisplacementPx > sqRes.maxDisplacementPx)
+
+  const sqCausticsRes = builder.build({
+    bounds,
+    field: { primitives: [rect], blendK: 0 },
+    bezel: 24,
+    profile: 'squircle',
+    ior: 1.9,
+    thicknessRatio: 1.35,
+    caustics: true,
+    mapScale: 1,
+  })
+  assert.equal(sqCausticsRes.changed, true)
+
+  // ior = 1.0 produces strictly neutral interior RGBA (128, 128, 128, 255).
+  const airRes = builder.build({
+    bounds,
+    field: { primitives: [rect], blendK: 0 },
+    bezel: 24,
+    profile: 'squircle',
+    ior: 1.0,
+    thicknessRatio: 1.35,
+    mapScale: 1,
+  })
+  assert.equal(airRes.maxDisplacementPx, 0)
+  const airPng = decodeStoredRgbaPng(airRes.dataUrl)
+  assert.deepEqual(airPng.pixelAt(24, 60), { r: 128, g: 128, b: 128, a: 255 })
+
+  // Lip profile exhibits inward shift near outer left rim (R > 128) and outward magnification shift further inward (R < 128).
+  const lipRes = builder.build({
+    bounds,
+    field: { primitives: [rect], blendK: 0 },
+    bezel: 24,
+    profile: 'lip',
+    ior: 1.5,
+    thicknessRatio: 1.35,
+    mapScale: 1,
+  })
+  const lipPng = decodeStoredRgbaPng(lipRes.dataUrl)
+  const outerRim = lipPng.pixelAt(22, 60)
+  let minR = 255
+  for (let px = 22; px <= 44; px++) {
+    minR = Math.min(minR, lipPng.pixelAt(px, 60).r)
+  }
+  assert.ok(outerRim.r > 135, `expected inward outer rim displacement on lip, got ${JSON.stringify(outerRim)}`)
+  assert.ok(minR < 126, `expected negative inner lip magnification (R < 126), got minR=${minR}`)
+
+  // Geometric cornerBend preserves (+X, +Y) inward polarity when radius < bezel.
+  const cornerRes = builder.build({
+    bounds: { x: 0, y: 0, width: 64, height: 64 },
+    field: { primitives: [{ center: { x: 32, y: 32 }, size: { width: 48, height: 48 }, radius: 6 }], blendK: 0 },
+    bezel: 16,
+    profile: 'squircle',
+    ior: 1.5,
+    thicknessRatio: 1.2,
+    mapScale: 1,
+  })
+  const cornerPx = decodeStoredRgbaPng(cornerRes.dataUrl).pixelAt(11, 11)
+  assert.ok(cornerPx.r > 128 && cornerPx.g > 128)
+
+  // Kissing-neck saddle softening (NORMAL_FLOOR = 0.25) keeps N=2 and N=3 bridge midpoints continuous without 180-deg spikes.
+  const leftOrb: GlassPrimitive = { center: { x: 54, y: 60 }, size: { width: 44, height: 44 }, radius: 22 }
+  const rightOrb: GlassPrimitive = { center: { x: 106, y: 60 }, size: { width: 44, height: 44 }, radius: 22 }
+  const farOrb: GlassPrimitive = { center: { x: 400, y: 400 }, size: { width: 32, height: 32 }, radius: 16 }
+
+  const saddleN2 = decodeStoredRgbaPng(
+    builder.build({
+      bounds: { x: 0, y: 0, width: 160, height: 120 },
+      field: { primitives: [leftOrb, rightOrb], blendK: 28 },
+      bezel: 18,
+      profile: 'squircle',
+      ior: 1.5,
+      thicknessRatio: 1.35,
+      mapScale: 1,
+    }).dataUrl,
+  )
+  const saddleN3 = decodeStoredRgbaPng(
+    builder.build({
+      bounds: { x: 0, y: 0, width: 160, height: 120 },
+      field: { primitives: [leftOrb, rightOrb, farOrb], blendK: 28 },
+      bezel: 18,
+      profile: 'squircle',
+      ior: 1.5,
+      thicknessRatio: 1.35,
+      mapScale: 1,
+    }).dataUrl,
+  )
+
+  // Across the vertical neck center x=75..85 near top bridge edge (y=46), R transitions smoothly across 128 without hard snapping.
+  let prevNeck = saddleN2.pixelAt(75, 46)
+  for (let px = 76; px <= 85; px++) {
+    const curNeck = saddleN2.pixelAt(px, 46)
+    assert.ok(
+      Math.abs(curNeck.r - prevNeck.r) <= 18 && Math.abs(curNeck.g - prevNeck.g) <= 18,
+      `saddle jump at (${px},46): ${JSON.stringify(prevNeck)} -> ${JSON.stringify(curNeck)}`,
+    )
+    assert.deepEqual(curNeck, saddleN3.pixelAt(px, 46), `N=3 SoA path must match N=2 saddle pixel at (${px},46)`)
+    prevNeck = curNeck
   }
 })

@@ -11,6 +11,8 @@ export type SurfaceRenderMode = 'refract' | 'frosted' | 'solid'
 
 export interface CapabilityEnv {
   userAgent?: string
+  maxTouchPoints?: number
+  userAgentDataBrands?: readonly { brand: string }[]
   cssSupports?: (property: string, value: string) => boolean
   matchMedia?: (query: string) => MediaQueryList | null
 }
@@ -78,6 +80,32 @@ function resolveMatchMedia(
   return undefined
 }
 
+function resolveMaxTouchPoints(env?: CapabilityEnv): number {
+  if (env && 'maxTouchPoints' in env) {
+    return env.maxTouchPoints ?? 0
+  }
+  if (env && 'userAgent' in env) {
+    return 0
+  }
+  return typeof navigator !== 'undefined' ? (navigator.maxTouchPoints ?? 0) : 0
+}
+
+function resolveUserAgentDataBrands(
+  env?: CapabilityEnv,
+): readonly { brand: string }[] | undefined {
+  if (env && 'userAgentDataBrands' in env) {
+    return env.userAgentDataBrands
+  }
+  if (env && 'userAgent' in env) {
+    return undefined
+  }
+  if (typeof navigator === 'undefined') {
+    return undefined
+  }
+  return (navigator as Navigator & { userAgentData?: { brands?: readonly { brand: string }[] } })
+    .userAgentData?.brands
+}
+
 function evaluateSvgBackdropRefraction(env?: CapabilityEnv): boolean {
   const ua = resolveUserAgent(env)
   const cssSupports = resolveCssSupports(env)
@@ -86,12 +114,21 @@ function evaluateSvgBackdropRefraction(env?: CapabilityEnv): boolean {
   }
 
   // Only Blink/Chromium evaluates SVG <filter> graphs inside `backdrop-filter: url(#id)`
-  // across live scrolling content; WebKit/Safari, all iOS browsers, and Gecko/Firefox either
-  // ignore url() backdrop filters or paint static/broken regions.
+  // across live scrolling content; WebKit/Safari, all iOS/iPadOS browsers (including desktop-mode
+  // Safari reporting Macintosh + maxTouchPoints > 1), and Gecko/Firefox either ignore url()
+  // backdrop filters or paint static/broken regions.
+  const maxTouchPoints = resolveMaxTouchPoints(env)
   const isSafari = /Safari/i.test(ua) && !/(Chrome|Chromium|Edg|OPR)/i.test(ua)
-  const isIosBrowser = /(iPhone|iPad|iPod|CriOS|FxiOS|EdgiOS)/i.test(ua)
+  const isIosBrowser =
+    /(iPhone|iPad|iPod|CriOS|FxiOS|EdgiOS)/i.test(ua) ||
+    (/Macintosh/i.test(ua) && maxTouchPoints > 1)
   const isFirefox = /Firefox/i.test(ua)
   if (isSafari || isIosBrowser || isFirefox) {
+    return false
+  }
+
+  const brands = resolveUserAgentDataBrands(env)
+  if (brands && brands.length > 0 && !brands.some((b) => /Chromium/i.test(b.brand))) {
     return false
   }
 

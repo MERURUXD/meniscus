@@ -2,6 +2,7 @@ import {
   DEFAULT_OPTICAL_MATERIALS,
   type GlassPrimitive,
   type OpticalMaterial,
+  type RefractionProfileName,
   type RimMode,
   type Size,
   type ThemeMode,
@@ -179,12 +180,16 @@ export interface OpticsLabConfig {
   blendK: number
   blurPx: number
   bevelPx: number
+  refractionProfile: RefractionProfileName
+  ior: number
+  caustics: boolean
   refractionStrength: number
   dispersionPx: number
   saturation: number
   tintAlpha: number
   rimMode: RimMode
   rimOpacity: number
+  lightAngle: number
   gapPx: number
   renderView: OpticsViewMode
   showWireframe: boolean
@@ -195,12 +200,16 @@ export const DEFAULT_OPTICS_LAB_CONFIG: OpticsLabConfig = {
   blendK: 30,
   blurPx: 0.8,
   bevelPx: 22,
+  refractionProfile: 'squircle',
+  ior: 1.5,
+  caustics: false,
   refractionStrength: 1.35,
   dispersionPx: 1.4,
   saturation: 1.5,
   tintAlpha: 0.22,
   rimMode: 'directional',
   rimOpacity: 0.42,
+  lightAngle: -45,
   gapPx: 10,
   renderView: 'refract',
   showWireframe: false,
@@ -229,6 +238,10 @@ export function buildOpticsLabMaterial(
     saturation: config.saturation,
     rimMode: config.rimMode,
     rimOpacity: config.rimOpacity,
+    bevelProfile: config.refractionProfile,
+    lightAngle: config.lightAngle,
+    lightElevation: 22,
+    rimShade: theme === 'light' ? 0.34 : 0.24,
   }
 }
 

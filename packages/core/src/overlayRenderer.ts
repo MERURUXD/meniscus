@@ -62,6 +62,8 @@ uniform vec4 uHairline;         // (width, sideAlpha, cornerAlpha, flatAlpha)
 uniform vec3 uShadow;           // (blur, offsetY, alpha)
 uniform vec4 uBorderColor;      // normalized RGBA of optional uniform inner border
 uniform vec2 uBorderParams;     // (borderWidthPx, rimBottomRatio)
+uniform vec4 uPhysicalLight;    // (lx, ly, lz, enabled)
+uniform vec4 uPhysicalParams;   // (bevelPx, specularStrength, shadeStrength, profileCode)
 
 struct SdfSample {
   float dist;
@@ -126,30 +128,48 @@ SdfSample sdRoundedBoxRefined(vec2 p, vec2 center, vec2 halfSize, float r) {
   return SdfSample(baseDist, normal);
 }
 
+float evalBezelHeight(float t, float code) {
+  float u = clamp(1.0 - t, 0.0, 1.0);
+  if (code > 2.5) {
+    float sq = safePow(max(0.0, 1.0 - safePow(u, 4.0)), 0.25);
+    float s = sin(3.14159265 * clamp(t, 0.0, 1.0));
+    return sq + 0.14 * s * s;
+  }
+  if (code > 1.5) {
+    return 1.0 - u * u;
+  }
+  if (code > 0.5) {
+    return sqrt(max(0.0, 1.0 - u * u));
+  }
+  return safePow(max(0.0, 1.0 - safePow(u, 4.0)), 0.25);
+}
+
 SdfSample evaluateGlassSdf(vec2 p) {
   if (uPrimitiveCount <= 0) {
     return SdfSample(1e6, vec2(0.0, -1.0));
   }
 
   SdfSample acc = sdRoundedBoxRefined(p, uPrimitives[0].xy, uPrimitives[0].zw, uRadii[0]);
+  float d = acc.dist;
+  vec2 g = acc.normal;
   for (int i = 1; i < MAX_PRIMITIVES; i++) {
     if (i >= uPrimitiveCount) break;
     SdfSample b = sdRoundedBoxRefined(p, uPrimitives[i].xy, uPrimitives[i].zw, uRadii[i]);
     if (uBlendK <= 0.001) {
-      if (b.dist < acc.dist) {
-        acc = b;
+      if (b.dist < d) {
+        d = b.dist;
+        g = b.normal;
       }
     } else {
-      float h = clamp(0.5 + 0.5 * (b.dist - acc.dist) / uBlendK, 0.0, 1.0);
-      float d = mix(b.dist, acc.dist, h) - uBlendK * h * (1.0 - h);
-      vec2 n = mix(b.normal, acc.normal, h);
-      float nl = length(n);
-      n = (nl > 1e-5) ? (n / nl) : acc.normal;
-      acc = SdfSample(d, n);
+      float h = clamp(0.5 + 0.5 * (b.dist - d) / uBlendK, 0.0, 1.0);
+      d = mix(b.dist, d, h) - uBlendK * h * (1.0 - h);
+      g = mix(b.normal, g, h);
     }
   }
 
-  return acc;
+  // Soften cancelling normals in smin saddle necks (NORMAL_FLOOR = 0.25) so speculars never flip 180 degrees.
+  float gl = max(length(g), 0.25);
+  return SdfSample(d, g / gl);
 }
 
 void main() {
@@ -208,7 +228,11 @@ void main() {
   }
 
   float rimA = 0.0;
-  if (glassMask > 0.001 && inset < 5.0 && uRimParams.x > 0.001) {
+  float physLitA = 0.0;
+  float physShadeA = 0.0;
+  float isPhysicalRim = step(0.5, uPhysicalLight.w) * (1.0 - hasUniformBorder);
+
+  if (glassMask > 0.001 && inset < 5.0 && uRimParams.x > 0.001 && isPhysicalRim < 0.5) {
     float ny = abs(normal.y);
     float wDirectional = 1.0 - clamp(uStyleMix, 0.0, 1.0);
     float wSoft = clamp(uStyleMix, 0.0, 1.0) * clamp(uRimOpacity, 0.0, 1.0);
@@ -241,18 +265,48 @@ void main() {
       // Boost specular luminance to match source-over alpha blending expectations
       rimA = clamp(rimA * 1.35 * glassMask * uOpacity, 0.0, 1.0);
     }
+  } else if (glassMask > 0.001 && isPhysicalRim > 0.5 && inset < uPhysicalParams.x) {
+    float bezelPx = max(uPhysicalParams.x, 1.0);
+    float t = clamp(inset / bezelPx, 0.0, 1.0);
+    float eps = 0.015;
+    float t0 = max(0.0, t - eps);
+    float t1 = min(1.0, t + eps);
+    float slope = (evalBezelHeight(t1, uPhysicalParams.w) - evalBezelHeight(t0, uPhysicalParams.w)) / max(t1 - t0, 1e-4);
+    vec3 N = normalize(vec3(normal * slope, 1.0));
+    vec3 L = uPhysicalLight.xyz;
+    vec3 H = vec3(L.xy, L.z + 1.0);
+    float hLen = max(length(H), 1e-4);
+    const float shininess = 36.0;
+    float flatBase = safePow(clamp((L.z + 1.0) / hLen, 0.0, 1.0), shininess);
+    float denomBase = max(1.0 - flatBase, 1e-4);
+    float hDot = clamp(dot(N, H) / hLen, 0.0, 1.0);
+    float highlight = max(safePow(hDot, shininess) - flatBase, 0.0) / denomBase;
+    vec3 H_bounce = vec3(-L.xy, L.z + 1.0);
+    float bDot = clamp(dot(N, H_bounce) / hLen, 0.0, 1.0);
+    float bounce = max(safePow(bDot, shininess) - flatBase, 0.0) / denomBase;
+    vec2 planar = L.xy / max(length(L.xy), 1e-4);
+    float facing = dot(normal, planar);
+    float fresnel = safePow(clamp(1.0 - N.z, 0.0, 1.0), 4.0);
+    float rimTerm = fresnel * (0.25 + 0.75 * max(facing, 0.0) + 0.45 * max(-facing, 0.0));
+    float shadeTerm = safePow(clamp(1.0 - N.z, 0.0, 1.0), 2.5) * (0.45 + 0.55 * max(-facing, 0.0));
+    float lit = clamp((uPhysicalParams.y * (highlight + 0.45 * bounce) + uRimParams.x * rimTerm) * glassMask * uOpacity, 0.0, 1.0);
+    float dark = clamp(uPhysicalParams.z * shadeTerm * glassMask * uOpacity, 0.0, 1.0) * (1.0 - lit);
+    physLitA = lit;
+    physShadeA = dark;
   }
 
   // Keep interior strictly transparent when shadow, hairline, border, and rim are all zero
-  if (shadowA <= 0.0001 && hairA <= 0.0001 && borderA <= 0.0001 && rimA <= 0.0001) {
+  if (shadowA <= 0.0001 && hairA <= 0.0001 && borderA <= 0.0001 && rimA <= 0.0001 && physLitA <= 0.0001 && physShadeA <= 0.0001) {
     fragColor = vec4(0.0);
     return;
   }
 
-  // Premultiplied alpha composite: uniform border over inner rim over hairline and shadow
+  // Premultiplied alpha composite: uniform border over inner/physical rim over hairline and shadow
   float darkA = clamp(shadowA + hairA * (1.0 - shadowA), 0.0, 1.0);
-  vec3 afterRimRgb = vec3(rimA);
-  float afterRimA = rimA + darkA * (1.0 - rimA);
+  vec3 shadeColor = vec3(0.03921569, 0.07058824, 0.10980392);
+  vec3 afterRimRgb = vec3(rimA + physLitA) + shadeColor * physShadeA;
+  float totalRimA = clamp(rimA + physLitA + physShadeA * (1.0 - rimA), 0.0, 1.0);
+  float afterRimA = totalRimA + darkA * (1.0 - totalRimA);
   vec3 outRgb = borderRgb + afterRimRgb * (1.0 - borderA);
   float outA = clamp(borderA + afterRimA * (1.0 - borderA), 0.0, 1.0);
   fragColor = vec4(outRgb, outA);
@@ -344,6 +398,8 @@ interface OverlayUniforms {
   uShadow: WebGLUniformLocation | null
   uBorderColor: WebGLUniformLocation | null
   uBorderParams: WebGLUniformLocation | null
+  uPhysicalLight: WebGLUniformLocation | null
+  uPhysicalParams: WebGLUniformLocation | null
 }
 
 function compileShader(gl: WebGL2RenderingContext, type: number, source: string): WebGLShader {
@@ -649,7 +705,7 @@ function renderFallback2d(ctx: CanvasRenderingContext2D, frame: OverlayRenderFra
   const styleMix = field.styleMix ?? 0
   const fieldRimOpacity = field.rimOpacity ?? 1
   const effectiveRim =
-    borderWidth > 0.001
+    borderWidth > 0.001 || material.rimMode === 'physical'
       ? material.rimOpacity * opacity
       : material.rimOpacity * (1 - styleMix + styleMix * fieldRimOpacity) * opacity
   if (effectiveRim > 0.001) {
@@ -726,6 +782,8 @@ export function createGlassOverlayRenderer(): IGlassOverlayRenderer {
         uShadow: gl.getUniformLocation(program, 'uShadow'),
         uBorderColor: gl.getUniformLocation(program, 'uBorderColor'),
         uBorderParams: gl.getUniformLocation(program, 'uBorderParams'),
+        uPhysicalLight: gl.getUniformLocation(program, 'uPhysicalLight'),
+        uPhysicalParams: gl.getUniformLocation(program, 'uPhysicalParams'),
       }
       return true
     } catch (err) {
@@ -894,6 +952,33 @@ export function createGlassOverlayRenderer(): IGlassOverlayRenderer {
         const borderRgba = material.borderRgba ?? [1, 1, 1, 0]
         gl.uniform4f(uniforms.uBorderColor, borderRgba[0], borderRgba[1], borderRgba[2], borderRgba[3])
         gl.uniform2f(uniforms.uBorderParams, material.borderWidth ?? 0, material.rimBottomRatio ?? 0.72)
+
+        const isPhysicalRim = material.rimMode === 'physical'
+        const angleRad = ((material.lightAngle ?? -45) * Math.PI) / 180
+        const elevRad = (Math.max(1, Math.min(89, material.lightElevation ?? 22)) * Math.PI) / 180
+        const cosElev = Math.cos(elevRad)
+        gl.uniform4f(
+          uniforms.uPhysicalLight,
+          Math.sin(angleRad) * cosElev,
+          -Math.cos(angleRad) * cosElev,
+          Math.sin(elevRad),
+          isPhysicalRim ? 1 : 0,
+        )
+        const profileCode =
+          material.bevelProfile === 'circle'
+            ? 1
+            : material.bevelProfile === 'parabolic'
+              ? 2
+              : material.bevelProfile === 'lip'
+                ? 3
+                : 0
+        gl.uniform4f(
+          uniforms.uPhysicalParams,
+          Math.max(1, material.bevel),
+          Math.min(1, Math.max(0, material.rimOpacity * 2)),
+          Math.min(1, Math.max(0, material.rimShade ?? 0.32)),
+          profileCode,
+        )
 
         gl.drawArrays(gl.TRIANGLES, 0, 3)
         gl.bindVertexArray(null)

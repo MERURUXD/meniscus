@@ -1,4 +1,4 @@
-import type { RimMode } from '@sessile/core'
+import type { RefractionProfileName, RimMode } from '@sessile/core'
 import type { PopoverPlacement } from '@sessile/presets'
 import type { BackdropKind } from './components/backdropSettings.ts'
 import type { LabId, OpticsViewMode } from './labDefaults.ts'
@@ -134,12 +134,17 @@ export interface PlaygroundMessages {
     gapLabel: string
     blendKLabel: string
     bevelLabel: string
+    profileLabel: string
+    profiles: Record<RefractionProfileName, string>
+    iorLabel: string
+    causticsButton: string
     strengthLabel: string
     dispersionLabel: string
     blurLabel: string
     saturationLabel: string
     tintLabel: string
     rimOpacityLabel: string
+    lightAngleLabel: string
     rimModes: Record<RimMode, string>
     wireframeButton: string
     oscillateButton: string
@@ -306,15 +311,26 @@ export const MESSAGES: Record<Locale, PlaygroundMessages> = {
       gapLabel: 'Gap',
       blendKLabel: 'Blend radius',
       bevelLabel: 'Bezel width',
+      profileLabel: 'Lens profile',
+      profiles: {
+        squircle: 'Squircle',
+        circle: 'Circle',
+        parabolic: 'Parabolic',
+        lip: 'Lip',
+      },
+      iorLabel: 'Refractive index (IOR)',
+      causticsButton: 'Caustic folds',
       strengthLabel: 'Refraction',
       dispersionLabel: 'Dispersion',
       blurLabel: 'Blur',
       saturationLabel: 'Saturation',
       tintLabel: 'Tint',
       rimOpacityLabel: 'Rim light',
+      lightAngleLabel: 'Light angle',
       rimModes: {
         directional: 'Directional rim',
         soft: 'Soft rim',
+        physical: 'Physical 3D',
       },
       wireframeButton: 'Show outline',
       oscillateButton: 'Breathe the gap',
@@ -496,15 +512,26 @@ export const MESSAGES: Record<Locale, PlaygroundMessages> = {
       gapLabel: '间距',
       blendKLabel: '融合半径',
       bevelLabel: '镜缘宽度',
+      profileLabel: '镜缘截面',
+      profiles: {
+        squircle: '超椭圆',
+        circle: '圆弧',
+        parabolic: '抛物面',
+        lip: '唇边',
+      },
+      iorLabel: '折射率 (IOR)',
+      causticsButton: '焦散折叠',
       strengthLabel: '折射强度',
       dispersionLabel: '色散',
       blurLabel: '模糊',
       saturationLabel: '饱和度',
       tintLabel: '着色',
       rimOpacityLabel: '边缘光',
+      lightAngleLabel: '光源角度',
       rimModes: {
         directional: '定向边缘光',
         soft: '柔和边缘光',
+        physical: '3D 物理光',
       },
       wireframeButton: '显示轮廓',
       oscillateButton: '间距呼吸',

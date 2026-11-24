@@ -697,9 +697,11 @@ export class GlassSurfaceController {
           refCfg?.strength ?? this.baseRefraction?.strength ?? clamp(material.refraction / 50, 0, 2.5)
         const dispersion =
           refCfg?.dispersion ?? this.baseRefraction?.dispersion ?? material.dispersion
-        const falloff = refCfg?.falloff ?? this.baseRefraction?.falloff
         const scaleMultiplier = refCfg?.scaleMultiplier ?? this.baseRefraction?.scaleMultiplier
         const mapScale = refCfg?.mapScale ?? this.baseRefraction?.mapScale
+        const profile = refCfg?.profile ?? this.baseRefraction?.profile
+        const ior = refCfg?.ior ?? this.baseRefraction?.ior
+        const caustics = refCfg?.caustics ?? this.baseRefraction?.caustics
 
         filterController.updateFrame({
           bounds: refractBounds,
@@ -712,9 +714,11 @@ export class GlassSurfaceController {
           bezel,
           strength,
           dispersion,
-          falloff,
           scaleMultiplier,
           mapScale,
+          profile,
+          ior,
+          caustics,
         })
 
         // Route B3: keep `refractBackdrop` unclipped so Chromium avoids rectangular backdrop leaks

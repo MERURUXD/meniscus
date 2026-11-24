@@ -6,7 +6,7 @@
 
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import type { GlassFieldState } from '@sessile/core'
+import { resolveRefractionProfileLut, type GlassFieldState } from '@sessile/core'
 import {
   SVG_NS,
   computeAutoBezel,
@@ -116,11 +116,17 @@ test('createRefractFilterController constructs Route B3 graph and switches dispe
   assert.equal(filterEl.querySelectorAll('feComponentTransfer').length, 3)
   const dispMaps = filterEl.querySelectorAll('feDisplacementMap')
   assert.equal(dispMaps.length, 3)
-  // baseScale = 2 * 20 * 1.5 = 60 -> scales [54, 60, 66]
-  assert.deepEqual(
-    dispMaps.map((d) => Number(d.getAttribute('scale'))),
-    [54, 60, 66],
-  )
+  const expectedLut = resolveRefractionProfileLut({
+    profile: 'squircle',
+    ior: 1.5,
+    thicknessRatio: 1.5,
+  })
+  const expectedBaseScale = 2 * 20 * expectedLut.maxDisplacementRatio
+  const expectedDispersion = Math.min(6, expectedBaseScale * 0.5)
+  const scales = dispMaps.map((d) => Number(d.getAttribute('scale')))
+  assert.ok(Math.abs(scales[0]! - Math.max(0, expectedBaseScale - expectedDispersion)) < 1e-6)
+  assert.ok(Math.abs(scales[1]! - expectedBaseScale) < 1e-6)
+  assert.ok(Math.abs(scales[2]! - (expectedBaseScale + expectedDispersion)) < 1e-6)
 
   // Switch back to non-dispersive mode; old nodes must be removed without leaking duplicates.
   controller.updateFrame({
@@ -134,7 +140,12 @@ test('createRefractFilterController constructs Route B3 graph and switches dispe
   })
   assert.equal(filterEl.querySelectorAll('feComponentTransfer').length, 0)
   assert.equal(filterEl.querySelectorAll('feDisplacementMap').length, 1)
-  assert.equal(Number(filterEl.querySelectorAll('feDisplacementMap')[0]!.getAttribute('scale')), 60)
+  assert.ok(
+    Math.abs(
+      Number(filterEl.querySelectorAll('feDisplacementMap')[0]!.getAttribute('scale')) -
+        expectedBaseScale,
+    ) < 1e-6,
+  )
 
   controller.dispose()
   assert.equal(controller.mounted, false)
@@ -228,6 +239,75 @@ test('createRefractFilterController promotes <= 128px maps to 1:1 and skips dupl
   assert.deepEqual(largePng, { width: 100, height: 80 })
   assert.equal(feImage.getAttribute('width'), '200')
   assert.equal(feImage.getAttribute('height'), '160')
+
+  controller.dispose()
+})
+
+test('createRefractFilterController calibrates scale from Snell profile and suppresses phantom dispersion at zero strength', () => {
+  const doc = new MockDocument()
+  const controller = createRefractFilterController({
+    id: 'sessile-snell-test',
+    document: doc as unknown as Document,
+    bezel: 20,
+    strength: 1.35,
+    dispersion: 2.0,
+    profile: 'squircle',
+    ior: 1.5,
+  })
+  controller.mount(doc.body as unknown as Element)
+
+  const svg = controller.svgElement as unknown as MockElement
+  const filterEl = svg.querySelectorAll('filter')[0]!
+  const field: GlassFieldState = {
+    blendK: 16,
+    primitives: [{ center: { x: 100, y: 60 }, size: { width: 160, height: 80 }, radius: 24 }],
+  }
+
+  controller.updateFrame({
+    bounds: { x: 0, y: 0, width: 200, height: 120 },
+    field,
+    blurSigma: 2,
+    saturate: 1.5,
+    brightness: 1,
+    contrast: 1,
+  })
+
+  const scales = filterEl
+    .querySelectorAll('feDisplacementMap')
+    .map((node) => Number(node.getAttribute('scale')))
+  assert.equal(scales.length, 3)
+  assert.ok(scales[1]! > 0 && scales[1]! < 2 * 20 * 1.35, `expected Snell calibrated scale in (0, 54), got ${scales[1]}`)
+  assert.ok(Math.abs(scales[1]! - scales[0]! - 2) < 1e-4)
+  assert.ok(Math.abs(scales[2]! - scales[1]! - 2) < 1e-4)
+
+  // Raising IOR increases Snell displacement scale.
+  controller.updateFrame({
+    bounds: { x: 0, y: 0, width: 200, height: 120 },
+    field,
+    blurSigma: 2,
+    saturate: 1.5,
+    brightness: 1,
+    contrast: 1,
+    ior: 2.0,
+  })
+  const higherIorScale = Number(filterEl.querySelectorAll('feDisplacementMap')[1]!.getAttribute('scale'))
+  assert.ok(higherIorScale > scales[1]!, `expected higher IOR scale > ${scales[1]}, got ${higherIorScale}`)
+
+  // When strength=0 (baseScale=0), dispersion must clamp to 0 so RGB channels do not drift asymmetrically.
+  controller.updateFrame({
+    bounds: { x: 0, y: 0, width: 200, height: 120 },
+    field,
+    blurSigma: 2,
+    saturate: 1.5,
+    brightness: 1,
+    contrast: 1,
+    strength: 0,
+    dispersion: 3.0,
+  })
+  const zeroScales = filterEl
+    .querySelectorAll('feDisplacementMap')
+    .map((node) => Number(node.getAttribute('scale')))
+  assert.deepEqual(zeroScales, [0, 0, 0])
 
   controller.dispose()
 })

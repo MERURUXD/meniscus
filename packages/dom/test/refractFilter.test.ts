@@ -6,6 +6,7 @@
 
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { inflateSync } from 'node:zlib'
 import { resolveRefractionProfileLut, type GlassFieldState } from '@sessile/core'
 import {
   DEFAULT_MAX_REFRACT_MAP_PIXELS,
@@ -26,6 +27,45 @@ function decodePngDimensions(dataUrl: string): { width: number; height: number }
   return {
     width: buf.readUInt32BE(16),
     height: buf.readUInt32BE(20),
+  }
+}
+
+function decodeStoredRgbaPng(dataUrl: string): {
+  width: number
+  height: number
+  pixelAt: (px: number, py: number) => { r: number; g: number; b: number; a: number }
+} {
+  const prefix = 'data:image/png;base64,'
+  assert.ok(dataUrl.startsWith(prefix), 'Expected PNG data URL')
+  const bytes = Buffer.from(dataUrl.slice(prefix.length), 'base64')
+  let offset = 8
+  let width = 0
+  let height = 0
+  const idatParts: Buffer[] = []
+  while (offset < bytes.length) {
+    const len = bytes.readUInt32BE(offset)
+    const type = bytes.subarray(offset + 4, offset + 8).toString('ascii')
+    const dataStart = offset + 8
+    const dataEnd = dataStart + len
+    if (type === 'IHDR') {
+      width = bytes.readUInt32BE(dataStart)
+      height = bytes.readUInt32BE(dataStart + 4)
+    } else if (type === 'IDAT') {
+      idatParts.push(bytes.subarray(dataStart, dataEnd))
+    } else if (type === 'IEND') {
+      break
+    }
+    offset = dataEnd + 4
+  }
+  const raw = inflateSync(Buffer.concat(idatParts))
+  const stride = 1 + width * 4
+  return {
+    width,
+    height,
+    pixelAt: (px, py) => {
+      const idx = py * stride + 1 + px * 4
+      return { r: raw[idx]!, g: raw[idx + 1]!, b: raw[idx + 2]!, a: raw[idx + 3]! }
+    },
   }
 }
 
@@ -584,6 +624,87 @@ test('resolveEffectiveMapScale promotes compact controls and caps large full-map
   })
   const uncappedDims = decodePngDimensions(feImage.getAttribute('href') ?? '')
   assert.deepEqual(uncappedDims, { width: 600, height: 400 })
+
+  controller.dispose()
+})
+
+test('resolveEffectiveMapScale and full-map feImage stay world-locked over stationary shapes when another droplet moves', () => {
+  // Discrete reciprocal-integer plateaus remain identical as drag bounds expand slightly.
+  assert.equal(resolveEffectiveMapScale(700, 600, 0.5), 1 / 3)
+  assert.equal(resolveEffectiveMapScale(741, 619, 0.5), 1 / 3)
+  assert.equal(resolveEffectiveMapScale(1100, 800, 0.5), 0.25)
+
+  const doc = new MockDocument()
+  const controller = createRefractFilterController({
+    id: 'sessile-world-lock-test',
+    document: doc as unknown as Document,
+    bezel: 18,
+    strength: 1.32,
+  })
+  controller.mount(doc.body as unknown as Element)
+  const svg = controller.svgElement as unknown as MockElement
+  const feImage = svg.querySelectorAll('feImage')[0]!
+
+  const stationaryAnchor = { center: { x: 400, y: 200 }, size: { width: 164, height: 58 }, radius: 29 }
+
+  const snapshotStationaryRegion = (
+    bounds: { x: number; y: number; width: number; height: number },
+    moverX: number,
+  ) => {
+    controller.updateFrame({
+      bounds,
+      field: {
+        blendK: 32,
+        primitives: [
+          stationaryAnchor,
+          { center: { x: moverX, y: 420 }, size: { width: 90, height: 90 }, radius: 45 },
+        ],
+      },
+      blurSigma: 2,
+      saturate: 1.4,
+      brightness: 1.0,
+      contrast: 1.0,
+    })
+    const png = decodeStoredRgbaPng(feImage.getAttribute('href') ?? '')
+    const feX = Number(feImage.getAttribute('x') ?? '0')
+    const feY = Number(feImage.getAttribute('y') ?? '0')
+    const feW = Number(feImage.getAttribute('width') ?? String(bounds.width))
+    const feH = Number(feImage.getAttribute('height') ?? String(bounds.height))
+    const stepX = feW / png.width
+    const stepY = feH / png.height
+    const originX = bounds.x + feX + 0.5 * stepX
+    const originY = bounds.y + feY + 0.5 * stepY
+
+    // Collect pixels whose world centers fall inside a 10px border around the stationary anchor.
+    const samples: Array<{ wx: number; wy: number; rgba: { r: number; g: number; b: number; a: number } }> = []
+    for (let py = 0; py < png.height; py++) {
+      const wy = originY + py * stepY
+      if (wy < 160 || wy > 240) continue
+      for (let px = 0; px < png.width; px++) {
+        const wx = originX + px * stepX
+        if (wx < 308 || wx > 492) continue
+        samples.push({ wx, wy, rgba: png.pixelAt(px, py) })
+      }
+    }
+    return { stepX, stepY, samples }
+  }
+
+  // 0.5x regime: shifting left/width by 1px and 7px must not flip texel phase or alter pixels on anchor.
+  const baseHalf = snapshotStationaryRegion({ x: 100, y: 120, width: 420, height: 380 }, 160)
+  const odd1Half = snapshotStationaryRegion({ x: 99, y: 119, width: 421, height: 381 }, 159)
+  const odd7Half = snapshotStationaryRegion({ x: 93, y: 120, width: 427, height: 380 }, 153)
+  assert.equal(baseHalf.stepX, 2)
+  assert.equal(odd1Half.stepX, 2)
+  assert.equal(odd7Half.stepX, 2)
+  assert.deepEqual(odd1Half.samples, baseHalf.samples)
+  assert.deepEqual(odd7Half.samples, baseHalf.samples)
+
+  // Budget-capped regime (> 96k px at 0.5x): expanding drag bounds stays on integer pitch 3 (`1/3`x).
+  const baseCap = snapshotStationaryRegion({ x: 60, y: 120, width: 700, height: 600 }, 120)
+  const grownCap = snapshotStationaryRegion({ x: 55, y: 120, width: 741, height: 617 }, 115)
+  assert.equal(baseCap.stepX, 3)
+  assert.equal(grownCap.stepX, 3)
+  assert.deepEqual(grownCap.samples, baseCap.samples)
 
   controller.dispose()
 })

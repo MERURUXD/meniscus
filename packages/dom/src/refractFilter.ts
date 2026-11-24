@@ -181,7 +181,27 @@ export function resolveEffectiveMapScale(
       Math.max(1, Math.round(cssW * s)) * Math.max(1, Math.round(cssH * s))
 
     if (encodedPixels(scale) > budget) {
-      scale = Math.min(scale, Math.sqrt(budget / (cssW * cssH)), budget / cssW, budget / cssH)
+      const continuousMax = Math.min(
+        scale,
+        Math.sqrt(budget / (cssW * cssH)),
+        budget / cssW,
+        budget / cssH,
+      )
+      // Snap capped scales to reciprocal integer texel pitches (`1 / pitch` CSS px/texel)
+      // so widening drag bounds never shift the Stored-PNG grid step continuously.
+      const maxPitch = Math.max(cssW, cssH) * 2 + 2
+      let pitch = Math.max(2, Math.ceil(1 / Math.max(continuousMax, 1e-9) - 1e-9))
+      if (1 / pitch > scale) {
+        pitch = Math.max(2, Math.ceil(1 / scale - 1e-9))
+      }
+      while (pitch <= maxPitch && encodedPixels(1 / pitch) > budget) {
+        pitch += 1
+      }
+      if (pitch <= maxPitch && 1 / pitch <= scale && encodedPixels(1 / pitch) <= budget) {
+        return 1 / pitch
+      }
+
+      scale = continuousMax
       if (encodedPixels(scale) > budget) {
         let lo = 0
         let hi = scale
@@ -203,6 +223,70 @@ export function resolveEffectiveMapScale(
 
 function isNearInt(v: number): boolean {
   return Math.abs(v - Math.round(v)) < 1e-3
+}
+
+interface AlignedFullMap {
+  mapBounds: Rect
+  feX: number
+  feY: number
+  mapScale: number
+}
+
+/**
+ * Aligns full-map Stored-PNG bounds to world multiples of the integer texel pitch
+ * (`pitch = 1 / mapScale`) so moving one unmerged droplet by `1px` does not flip
+ * texel phase or rescale stationary droplets across the rest of the field.
+ */
+function resolveAlignedFullMap(
+  bounds: Rect,
+  mapScale: number,
+  maxMapPixels: number,
+): AlignedFullMap {
+  if (!(mapScale > 0) || !Number.isFinite(mapScale)) {
+    return { mapBounds: bounds, feX: 0, feY: 0, mapScale }
+  }
+  const invScale = 1 / mapScale
+  const nearestPitch = Math.round(invScale)
+  if (nearestPitch < 2 || Math.abs(invScale - nearestPitch) >= 1e-4) {
+    return { mapBounds: bounds, feX: 0, feY: 0, mapScale }
+  }
+
+  let pitch = nearestPitch
+  let worldMinX = Math.floor(bounds.x / pitch) * pitch
+  let worldMinY = Math.floor(bounds.y / pitch) * pitch
+  let worldMaxX = Math.ceil((bounds.x + bounds.width) / pitch) * pitch
+  let worldMaxY = Math.ceil((bounds.y + bounds.height) / pitch) * pitch
+
+  if (maxMapPixels > 0 && Number.isFinite(maxMapPixels)) {
+    const budget = Math.max(1, maxMapPixels)
+    const maxPitch = Math.max(Math.ceil(bounds.width), Math.ceil(bounds.height), 1) * 2 + 2
+    while (
+      pitch < maxPitch &&
+      Math.max(1, Math.round((worldMaxX - worldMinX) / pitch)) *
+        Math.max(1, Math.round((worldMaxY - worldMinY) / pitch)) >
+        budget
+    ) {
+      pitch += 1
+      worldMinX = Math.floor(bounds.x / pitch) * pitch
+      worldMinY = Math.floor(bounds.y / pitch) * pitch
+      worldMaxX = Math.ceil((bounds.x + bounds.width) / pitch) * pitch
+      worldMaxY = Math.ceil((bounds.y + bounds.height) / pitch) * pitch
+    }
+  }
+
+  const alignedW = Math.max(pitch, worldMaxX - worldMinX)
+  const alignedH = Math.max(pitch, worldMaxY - worldMinY)
+  return {
+    mapBounds: {
+      x: worldMinX,
+      y: worldMinY,
+      width: alignedW,
+      height: alignedH,
+    },
+    feX: worldMinX === bounds.x ? 0 : worldMinX - bounds.x,
+    feY: worldMinY === bounds.y ? 0 : worldMinY - bounds.y,
+    mapScale: 1 / pitch,
+  }
 }
 
 function formatSvgCoord(v: number): string {
@@ -362,6 +446,8 @@ export function createRefractFilterController(
   let currentMapMode: 'full' | 'nine-slice' = 'full'
   let nineSliceNodes: NineSliceNodes | null = null
 
+  let prevX = '0'
+  let prevY = '0'
   let prevWidth = -1
   let prevHeight = -1
   let prevSigma = ''
@@ -739,19 +825,28 @@ export function createRefractFilterController(
         rawMapScale,
         maxMapPixels,
       )
+      const aligned = resolveAlignedFullMap(frame.bounds, frameMapScale, maxMapPixels)
 
       mapBuilder ??= createRefractMapBuilder()
       const mapResult = mapBuilder.build({
-        bounds: frame.bounds,
+        bounds: aligned.mapBounds,
         field: frame.field,
         bezel: frameBezel,
-        mapScale: frameMapScale,
+        mapScale: aligned.mapScale,
         profile,
         ior,
         thicknessRatio: strength,
         caustics,
       })
 
+      const feX = aligned.feX === 0 ? '0' : formatSvgCoord(aligned.feX)
+      const feY = aligned.feY === 0 ? '0' : formatSvgCoord(aligned.feY)
+      if (feX !== prevX || feY !== prevY) {
+        feImageEl.setAttribute('x', feX)
+        feImageEl.setAttribute('y', feY)
+        prevX = feX
+        prevY = feY
+      }
       if (mapResult.width !== prevWidth || mapResult.height !== prevHeight) {
         feImageEl.setAttribute('width', String(mapResult.width))
         feImageEl.setAttribute('height', String(mapResult.height))

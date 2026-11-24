@@ -443,3 +443,53 @@ test('cumulative smin dilation groups 8 coincident boxes with gap=120 box withou
     'Point (130, 0) must lie strictly inside an extracted contour loop rather than being isolated or clipped',
   )
 })
+
+test('moving an unmerged primitive inside a multi-primitive cluster keeps stationary contour loops bit-for-bit identical', () => {
+  // Four unmerged droplets with pairwise gaps > blendK (32) and <= connectThreshold (~67px)
+  // so all 4 share one Marching Squares cluster without entering smin pull range, staying on baseStep=4.
+  const anchor: GlassPrimitive = { center: { x: 380, y: 188 }, size: { width: 164, height: 58 }, radius: 29 }
+  const orbB: GlassPrimitive = { center: { x: 500, y: 272 }, size: { width: 102, height: 82 }, radius: 26 }
+  const pillC: GlassPrimitive = { center: { x: 380, y: 362 }, size: { width: 136, height: 54 }, radius: 27 }
+  const makeMovingOrb = (dx: number, dy: number): GlassPrimitive => ({
+    center: { x: 248 + dx, y: 276 + dy },
+    size: { width: 90, height: 90 },
+    radius: 45,
+  })
+
+  const stationaryTargets: Array<{ name: string; pt: Point }> = [
+    { name: 'anchor', pt: anchor.center },
+    { name: 'orbB', pt: orbB.center },
+    { name: 'pillC', pt: pillC.center },
+  ]
+
+  const extractStationarySubpaths = (dx: number, dy: number): string[] => {
+    const path = extractFieldContourPath({
+      primitives: [anchor, makeMovingOrb(dx, dy), orbB, pillC],
+      blendK: 32,
+    })
+    assertClosedValidPath(path, 4)
+    const loops = parsePolygonLoops(path)
+    return stationaryTargets.map(({ name, pt }) => {
+      const idx = loops.findIndex((loop) => isPointInPolygon(pt, loop))
+      assert.ok(idx >= 0, `Expected closed contour containing stationary ${name}`)
+      return JSON.stringify(loops[idx]!)
+    })
+  }
+
+  const baseline = extractStationarySubpaths(0, 0)
+  for (const [dx, dy] of [
+    [0.5, 0],
+    [-1, 0.5],
+    [-7, 4],
+    [4, -3],
+  ]) {
+    const shifted = extractStationarySubpaths(dx, dy)
+    for (let i = 0; i < stationaryTargets.length; i++) {
+      assert.equal(
+        shifted[i],
+        baseline[i],
+        `Stationary contour for ${stationaryTargets[i]!.name} drifted at delta (${dx}, ${dy})`,
+      )
+    }
+  }
+})

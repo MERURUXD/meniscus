@@ -391,3 +391,87 @@ test('GlassSurfaceController startLoop drives frames and stops cleanly on false 
 
   controller.dispose()
 })
+
+test('GlassSurfaceController aligns surface and refract bounds to fractional DPR and texel pitch during drag', () => {
+  const noShadowMaterial = {
+    ...DEFAULT_OPTICAL_MATERIALS.light.frosted,
+    shadowBlur: 0,
+    shadowOffsetY: 0,
+    shadowAlpha: 0,
+  }
+  const probeField: GlassFieldState = {
+    blendK: 20,
+    primitives: [{ center: { x: 101, y: 83 }, size: { width: 60, height: 40 }, radius: 12 }],
+  }
+  const aligned4 = computeAutoSurfaceBounds(probeField, noShadowMaterial, 4)
+  assert.equal(aligned4.x % 4, 0)
+  assert.equal(aligned4.y % 4, 0)
+  assert.equal(aligned4.width % 4, 0)
+  assert.equal(aligned4.height % 4, 0)
+
+  const refractAligned4 = computeClampedRefractBounds(probeField, aligned4, 4)
+  assert.equal(refractAligned4.x % 4, 0)
+  assert.equal(refractAligned4.width % 4, 0)
+
+  const doc = new MockDocument()
+  const container = doc.createElement('div') as unknown as MockElement
+  doc.body.appendChild(container)
+  const spy = createSpyOverlayRenderer()
+
+  const controller = new GlassSurfaceController({
+    container: container as unknown as HTMLElement,
+    document: doc as unknown as Document,
+    env: CHROME_ENV,
+    theme: 'light',
+    mode: 'refract',
+    overlayRenderer: spy.renderer,
+  })
+
+  const { refractBackdrop, overlayCanvas } = controller.getElements()
+  const refractEl = refractBackdrop as unknown as MockElement
+  const canvasEl = overlayCanvas as unknown as MockElement
+
+  const extractTranslate = (transform: string): { x: number; y: number } => {
+    const match = /translate3d\(([-\d.]+)px,\s*([-\d.]+)px/.exec(transform)
+    assert.ok(match, `Expected translate3d in ${transform}`)
+    return { x: Number(match[1]!), y: Number(match[2]!) }
+  }
+
+  // Test fractional Windows scaling (1.25 -> 4px quantum, 1.5 -> 2px quantum) while dragging one droplet.
+  for (const dpr of [1.25, 1.5]) {
+    const dprQuantum = dpr === 1.25 ? 4 : 2
+    for (const dx of [0, -1, -3, -7]) {
+      controller.render({
+        dpr,
+        material: DEFAULT_OPTICAL_MATERIALS.light.frosted,
+        field: {
+          blendK: 32,
+          primitives: [
+            { center: { x: 380, y: 188 }, size: { width: 164, height: 58 }, radius: 29 },
+            { center: { x: 260 + dx, y: 276 }, size: { width: 90, height: 90 }, radius: 45 },
+            { center: { x: 500, y: 272 }, size: { width: 102, height: 82 }, radius: 26 },
+          ],
+        },
+      })
+
+      const canvasOrigin = extractTranslate(canvasEl.style.transform)
+      const latestRender = spy.renders[spy.renders.length - 1]!
+      assert.equal(canvasOrigin.x % dprQuantum, 0)
+      assert.equal(canvasOrigin.y % dprQuantum, 0)
+      assert.equal(latestRender.viewportWidth % dprQuantum, 0)
+      assert.equal(latestRender.viewportHeight % dprQuantum, 0)
+      assert.ok(Math.abs(canvasOrigin.x * dpr - Math.round(canvasOrigin.x * dpr)) < 1e-6)
+      assert.ok(Math.abs(latestRender.viewportWidth * dpr - Math.round(latestRender.viewportWidth * dpr)) < 1e-6)
+
+      const refractOrigin = extractTranslate(refractEl.style.transform)
+      const refractW = Number.parseFloat(refractEl.style.width)
+      const refractH = Number.parseFloat(refractEl.style.height)
+      assert.equal(refractOrigin.x % dprQuantum, 0)
+      assert.equal(refractOrigin.y % dprQuantum, 0)
+      assert.equal(refractW % dprQuantum, 0)
+      assert.equal(refractH % dprQuantum, 0)
+    }
+  }
+
+  controller.dispose()
+})

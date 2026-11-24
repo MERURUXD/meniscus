@@ -115,8 +115,35 @@ function fmt(value: number): number {
   return rounded === 0 ? 0 : rounded
 }
 
-function clampInt(value: number, min: number, max: number): number {
-  return value < min ? min : value > max ? max : value
+/**
+ * Selects the smallest grid step from the half-octave lattice `{1, 1.5} * 2^k`
+ * that is at least `minStep` so multi-primitive Marching Squares sample nodes stay
+ * locked to fixed world-space coordinates when only one primitive moves.
+ */
+function pickDiscreteGridStep(minStep: number): number {
+  if (!(minStep > 0) || !Number.isFinite(minStep)) {
+    return 1
+  }
+  const exp = Math.floor(Math.log2(minStep))
+  const pow2 = Math.pow(2, exp)
+  if (pow2 >= minStep) {
+    return pow2
+  }
+  const mid = pow2 * 1.5
+  if (mid >= minStep) {
+    return mid
+  }
+  return pow2 * 2
+}
+
+/** Advances to the next rung on the `{1, 1.5} * 2^k` world-lattice step ladder. */
+function nextDiscreteGridStep(step: number): number {
+  if (!(step > 0) || !Number.isFinite(step)) {
+    return 1
+  }
+  const exp = Math.floor(Math.log2(step))
+  const pow2 = Math.pow(2, exp)
+  return step < pow2 * 1.25 ? pow2 * 1.5 : pow2 * 2
 }
 
 function isActivePrimitive(shape: GlassPrimitive): boolean {
@@ -342,21 +369,45 @@ function appendClusterMarchingSquaresLoops(
 ): void {
   // Margin compensating for multi-primitive cumulative smin dilation so outer boundary nodes stay strictly positive and form closed loops.
   const msPadding = computeMaxSminDilationFactor(clusterSize) * blendK + 4
-  const boundsX = minX - msPadding
-  const boundsY = minY - msPadding
-  const boundsW = maxX - minX + msPadding * 2
-  const boundsH = maxY - minY + msPadding * 2
+  const rawMinX = minX - msPadding
+  const rawMaxX = maxX + msPadding
+  const rawMinY = minY - msPadding
+  const rawMaxY = maxY + msPadding
+  const rawW = rawMaxX - rawMinX
+  const rawH = rawMaxY - rawMinY
 
-  const longest = boundsW > boundsH ? boundsW : boundsH
+  const longest = rawW > rawH ? rawW : rawH
   if (longest <= MIN_ACTIVE_SIZE) {
     return
   }
 
-  const targetStep = longest / MAX_GRID_STEPS
-  const cols = clampInt(Math.ceil(boundsW / targetStep), MIN_GRID_STEPS, MAX_GRID_STEPS)
-  const rows = clampInt(Math.ceil(boundsH / targetStep), MIN_GRID_STEPS, MAX_GRID_STEPS)
-  const dx = boundsW / cols
-  const dy = boundsH / rows
+  // Reserve 2 cells for outward world-lattice snapping (`floor` min / `ceil` max) within `MAX_GRID_STEPS`.
+  const baseStep = pickDiscreteGridStep(longest / (MAX_GRID_STEPS - 2))
+  let dx =
+    rawW / baseStep < MIN_GRID_STEPS
+      ? Math.min(baseStep, pickDiscreteGridStep(rawW / (MIN_GRID_STEPS + 12)))
+      : baseStep
+  let dy =
+    rawH / baseStep < MIN_GRID_STEPS
+      ? Math.min(baseStep, pickDiscreteGridStep(rawH / (MIN_GRID_STEPS + 12)))
+      : baseStep
+
+  let boundsX = Math.floor(rawMinX / dx) * dx
+  let cols = Math.max(1, Math.round((Math.ceil(rawMaxX / dx) * dx - boundsX) / dx))
+  while (cols > MAX_GRID_STEPS) {
+    dx = nextDiscreteGridStep(dx)
+    boundsX = Math.floor(rawMinX / dx) * dx
+    cols = Math.max(1, Math.round((Math.ceil(rawMaxX / dx) * dx - boundsX) / dx))
+  }
+
+  let boundsY = Math.floor(rawMinY / dy) * dy
+  let rows = Math.max(1, Math.round((Math.ceil(rawMaxY / dy) * dy - boundsY) / dy))
+  while (rows > MAX_GRID_STEPS) {
+    dy = nextDiscreteGridStep(dy)
+    boundsY = Math.floor(rawMinY / dy) * dy
+    rows = Math.max(1, Math.round((Math.ceil(rawMaxY / dy) * dy - boundsY) / dy))
+  }
+
   const stride = cols + 1
   const ox = offset.x
   const oy = offset.y

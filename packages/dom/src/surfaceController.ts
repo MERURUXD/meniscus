@@ -49,6 +49,7 @@ import {
 } from './cssSurface.ts'
 import {
   createRefractFilterController,
+  resolveEffectiveMapScale,
   type RefractFilterConfig,
   type RefractFilterController,
 } from './refractFilter.ts'
@@ -56,6 +57,34 @@ import {
 const MIN_ACTIVE_SIZE = 0.01
 const MIN_VISIBLE_OPACITY = 0.005
 const REFRACT_MARGIN_PX = 6
+const DPR_ALIGNMENT_CANDIDATES = [1, 2, 3, 4, 5, 6, 8, 10, 12] as const
+
+function computeDprAlignmentQuantum(dpr: number): number {
+  for (let i = 0; i < DPR_ALIGNMENT_CANDIDATES.length; i++) {
+    const q = DPR_ALIGNMENT_CANDIDATES[i]!
+    if (Math.abs(q * dpr - Math.round(q * dpr)) < 1e-3) {
+      return q
+    }
+  }
+  return 4
+}
+
+function gcdPositiveInt(a: number, b: number): number {
+  let x = Math.max(1, Math.round(a))
+  let y = Math.max(1, Math.round(b))
+  while (y !== 0) {
+    const t = x % y
+    x = y
+    y = t
+  }
+  return x
+}
+
+function lcmPositiveInt(a: number, b: number): number {
+  const x = Math.max(1, Math.round(a))
+  const y = Math.max(1, Math.round(b))
+  return (x / gcdPositiveInt(x, y)) * y
+}
 
 const DEFAULT_VEIL_OPTICS: BackdropVeilOptics = {
   brightness: 1,
@@ -276,10 +305,13 @@ function applyManagedBaseLayerStyles(
 /**
  * Computes integer-snapped surface overlay bounds expanding the active primitives by
  * outer shadow blur/offset and `smin` blend radius so contours and shadows never clip.
+ * When `alignStep > 1`, bounds snap outward to multiples of `alignStep` CSS px so fractional
+ * DPR layers remain aligned to physical device pixels.
  */
 export function computeAutoSurfaceBounds(
   field: GlassFieldState,
   material: OpticalMaterial,
+  alignStep = 1,
 ): Rect {
   const shadowPad =
     material.shadowAlpha > 0.001
@@ -291,10 +323,11 @@ export function computeAutoSurfaceBounds(
     return { x: 0, y: 0, width: 0, height: 0 }
   }
 
-  const minX = Math.floor(raw.x)
-  const minY = Math.floor(raw.y)
-  const maxX = Math.ceil(raw.x + raw.width)
-  const maxY = Math.ceil(raw.y + raw.height)
+  const step = Number.isFinite(alignStep) && alignStep >= 2 ? Math.round(alignStep) : 1
+  const minX = step > 1 ? Math.floor(raw.x / step) * step : Math.floor(raw.x)
+  const minY = step > 1 ? Math.floor(raw.y / step) * step : Math.floor(raw.y)
+  const maxX = step > 1 ? Math.ceil((raw.x + raw.width) / step) * step : Math.ceil(raw.x + raw.width)
+  const maxY = step > 1 ? Math.ceil((raw.y + raw.height) / step) * step : Math.ceil(raw.y + raw.height)
   return {
     x: minX,
     y: minY,
@@ -306,10 +339,12 @@ export function computeAutoSurfaceBounds(
 /**
  * Computes tight Route B3 refraction backdrop bounds clamped inside `surfaceBounds`
  * while preserving enough padding for multi-primitive `smin` liquid bridges.
+ * When `alignStep > 1`, bounds snap outward to multiples of `alignStep` before clamping.
  */
 export function computeClampedRefractBounds(
   field: GlassFieldState,
   surfaceBounds: Rect,
+  alignStep = 1,
 ): Rect {
   const sMinX = Math.floor(surfaceBounds.x)
   const sMinY = Math.floor(surfaceBounds.y)
@@ -328,10 +363,23 @@ export function computeClampedRefractBounds(
     return fallbackSurface
   }
 
-  const minX = Math.max(sMinX, Math.floor(raw.x))
-  const minY = Math.max(sMinY, Math.floor(raw.y))
-  const maxX = Math.min(sMaxX, Math.ceil(raw.x + raw.width))
-  const maxY = Math.min(sMaxY, Math.ceil(raw.y + raw.height))
+  const step = Number.isFinite(alignStep) && alignStep >= 2 ? Math.round(alignStep) : 1
+  const minX = Math.max(
+    sMinX,
+    step > 1 ? Math.floor(raw.x / step) * step : Math.floor(raw.x),
+  )
+  const minY = Math.max(
+    sMinY,
+    step > 1 ? Math.floor(raw.y / step) * step : Math.floor(raw.y),
+  )
+  const maxX = Math.min(
+    sMaxX,
+    step > 1 ? Math.ceil((raw.x + raw.width) / step) * step : Math.ceil(raw.x + raw.width),
+  )
+  const maxY = Math.min(
+    sMaxY,
+    step > 1 ? Math.ceil((raw.y + raw.height) / step) * step : Math.ceil(raw.y + raw.height),
+  )
 
   if (maxX <= minX || maxY <= minY) {
     return fallbackSurface
@@ -658,7 +706,9 @@ export class GlassSurfaceController {
     const blurBumpPx = frame.blurBumpPx ?? 0
     const activeBlur = Math.max(0, material.blur + blurBumpPx)
 
-    const bounds = frame.bounds ?? computeAutoSurfaceBounds(frame.field, material)
+    const dpr = resolveCurrentDpr(frame.dpr)
+    const dprQuantum = computeDprAlignmentQuantum(dpr)
+    const bounds = frame.bounds ?? computeAutoSurfaceBounds(frame.field, material, dprQuantum)
     if (bounds.width <= 0 || bounds.height <= 0) {
       this.clear()
       return
@@ -689,8 +739,6 @@ export class GlassSurfaceController {
     } else if (this.effectiveMode === 'refract' && contourPath && this.refractBackdropEl) {
       const filterController = this.ensureRefractFilterController()
       if (filterController && filterController.mounted) {
-        const refractBounds =
-          frame.refractBounds ?? computeClampedRefractBounds(frame.field, bounds)
         const refCfg = frame.refraction
         const bezel = refCfg?.bezel ?? this.baseRefraction?.bezel ?? material.bevel
         const strength =
@@ -704,6 +752,27 @@ export class GlassSurfaceController {
         const ior = refCfg?.ior ?? this.baseRefraction?.ior
         const caustics = refCfg?.caustics ?? this.baseRefraction?.caustics
         const nineSlice = refCfg?.nineSlice ?? this.baseRefraction?.nineSlice
+
+        let refractBounds = frame.refractBounds
+        if (!refractBounds) {
+          const rawRefract = computeClampedRefractBounds(frame.field, bounds)
+          const effScale = resolveEffectiveMapScale(
+            rawRefract.width,
+            rawRefract.height,
+            mapScale ?? 0.5,
+            maxMapPixels,
+          )
+          const invScale = effScale > 0 ? 1 / effScale : 1
+          const nearestPitch = Math.round(invScale)
+          const pitch =
+            nearestPitch >= 2 && Math.abs(invScale - nearestPitch) < 1e-4 ? nearestPitch : 1
+          const combinedAlign = lcmPositiveInt(dprQuantum, pitch)
+          const refractAlign = combinedAlign <= 16 ? combinedAlign : pitch
+          refractBounds =
+            refractAlign > 1
+              ? computeClampedRefractBounds(frame.field, bounds, refractAlign)
+              : rawRefract
+        }
 
         filterController.updateFrame({
           bounds: refractBounds,
@@ -757,7 +826,7 @@ export class GlassSurfaceController {
       const shifted = this.prepareShiftedField(frame.field, bounds.x, bounds.y)
       this.overlayRenderer.render({
         viewport: { width: bounds.width, height: bounds.height },
-        dpr: resolveCurrentDpr(frame.dpr),
+        dpr,
         theme,
         field: shifted,
         material,

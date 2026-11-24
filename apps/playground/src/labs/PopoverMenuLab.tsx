@@ -50,7 +50,7 @@ export interface PopoverMenuLabProps {
 type PopoverMenuItemId = 'refract-preset' | 'smin-fuse' | 'interrupt' | 'edge-flip'
 
 const DEFAULT_STAGE_SIZE: Size = { width: 760, height: 520 }
-const PANEL_SIZE: Size = { width: 244, height: 184 }
+const PANEL_SIZE: Size = { width: 244, height: 166 }
 
 function computeAnchoredTriggerRect(stageSize: Size, placement: PopoverPlacement): Rect {
   const w = Math.max(280, stageSize.width)

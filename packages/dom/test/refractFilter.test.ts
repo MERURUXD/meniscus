@@ -8,9 +8,11 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { resolveRefractionProfileLut, type GlassFieldState } from '@sessile/core'
 import {
+  DEFAULT_MAX_REFRACT_MAP_PIXELS,
   SVG_NS,
   computeAutoBezel,
   createRefractFilterController,
+  resolveEffectiveMapScale,
   resolveFieldBezel,
 } from '../src/refractFilter.ts'
 import { MockDocument, type MockElement } from './mockDom.ts'
@@ -490,6 +492,98 @@ test('createRefractFilterController uses nine-slice fast path on N=1 cards, skip
   assert.equal(filterEl.querySelectorAll('feFlood').length, 1)
   assert.equal(filterEl.querySelectorAll('feImage').length, 8)
   assert.equal(filterEl.querySelectorAll('feMerge').length, 2)
+
+  controller.dispose()
+})
+
+test('resolveEffectiveMapScale promotes compact controls and caps large full-map PNG pixel budgets', () => {
+  assert.equal(resolveEffectiveMapScale(100, 40, 0.5), 1)
+  assert.equal(resolveEffectiveMapScale(400, 240, 0.5), 0.5)
+
+  const cappedScale = resolveEffectiveMapScale(1200, 800, 0.5)
+  assert.ok(cappedScale > 0.05 && cappedScale < 0.5)
+  const pngW = Math.round(1200 * cappedScale)
+  const pngH = Math.round(800 * cappedScale)
+  assert.ok(pngW * pngH <= DEFAULT_MAX_REFRACT_MAP_PIXELS, `expected <= 96k px, got ${pngW * pngH}`)
+
+  assert.equal(resolveEffectiveMapScale(1200, 800, 0.5, 0), 0.5)
+
+  // Budget cap must reduce scale below 0.05 without ever inflating small requested scales.
+  const tinyRequestedScale = resolveEffectiveMapScale(4000, 4000, 0.01, 1000)
+  assert.ok(tinyRequestedScale > 0 && tinyRequestedScale <= 0.01)
+  assert.ok(
+    Math.max(1, Math.round(4000 * tinyRequestedScale)) *
+      Math.max(1, Math.round(4000 * tinyRequestedScale)) <=
+      1000,
+  )
+
+  const hugeDefaultScale = resolveEffectiveMapScale(8000, 8000, 0.5)
+  assert.ok(hugeDefaultScale > 0 && hugeDefaultScale < 0.05)
+  assert.ok(
+    Math.max(1, Math.round(8000 * hugeDefaultScale)) *
+      Math.max(1, Math.round(8000 * hugeDefaultScale)) <=
+      DEFAULT_MAX_REFRACT_MAP_PIXELS,
+  )
+
+  // Thin bounds with small budget clamp to final 1px-floored encoded PNG area without exceeding budget.
+  const thinScale = resolveEffectiveMapScale(1200, 2, 0.5, 100)
+  assert.ok(thinScale > 0 && thinScale <= 0.5)
+  assert.ok(
+    Math.max(1, Math.round(1200 * thinScale)) * Math.max(1, Math.round(2 * thinScale)) <= 100,
+  )
+
+  const unitBudgetScale = resolveEffectiveMapScale(1200, 2, 0.5, 1)
+  assert.ok(unitBudgetScale > 0)
+  assert.equal(Math.max(1, Math.round(1200 * unitBudgetScale)), 1)
+  assert.equal(Math.max(1, Math.round(2 * unitBudgetScale)), 1)
+
+  const doc = new MockDocument()
+  const controller = createRefractFilterController({
+    id: 'sessile-budget-test',
+    document: doc as unknown as Document,
+    bezel: 20,
+    strength: 1.32,
+  })
+  controller.mount(doc.body as unknown as Element)
+
+  const svg = controller.svgElement as unknown as MockElement
+  const largeDualField: GlassFieldState = {
+    blendK: 20,
+    primitives: [
+      { center: { x: 400, y: 400 }, size: { width: 500, height: 600 }, radius: 28 },
+      { center: { x: 800, y: 400 }, size: { width: 500, height: 600 }, radius: 28 },
+    ],
+  }
+
+  controller.updateFrame({
+    bounds: { x: 0, y: 0, width: 1200, height: 800 },
+    field: largeDualField,
+    blurSigma: 6,
+    saturate: 1.4,
+    brightness: 1.0,
+    contrast: 1.0,
+  })
+  const feImage = svg.querySelectorAll('feImage')[0]!
+  assert.equal(feImage.getAttribute('width'), '1200')
+  assert.equal(feImage.getAttribute('height'), '800')
+  const cappedDims = decodePngDimensions(feImage.getAttribute('href') ?? '')
+  assert.ok(
+    cappedDims.width * cappedDims.height <= DEFAULT_MAX_REFRACT_MAP_PIXELS,
+    `expected capped PNG <= ${DEFAULT_MAX_REFRACT_MAP_PIXELS}, got ${cappedDims.width}x${cappedDims.height}`,
+  )
+
+  // maxMapPixels: 0 disables area capping and encodes full 0.5x (600x400).
+  controller.updateFrame({
+    bounds: { x: 0, y: 0, width: 1200, height: 800 },
+    field: largeDualField,
+    blurSigma: 6,
+    saturate: 1.4,
+    brightness: 1.0,
+    contrast: 1.0,
+    maxMapPixels: 0,
+  })
+  const uncappedDims = decodePngDimensions(feImage.getAttribute('href') ?? '')
+  assert.deepEqual(uncappedDims, { width: 600, height: 400 })
 
   controller.dispose()
 })

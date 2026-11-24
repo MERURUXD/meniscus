@@ -23,6 +23,7 @@ import {
 } from '@sessile/core'
 
 export const SVG_NS = 'http://www.w3.org/2000/svg'
+export const DEFAULT_MAX_REFRACT_MAP_PIXELS = 96_000
 const FULL_RES_MAP_THRESHOLD_PX = 128
 const MIN_ACTIVE_SIZE = 0.01
 const MIN_NINE_SLICE_DIM = 4
@@ -38,6 +39,8 @@ export interface RefractFilterConfig {
   scaleMultiplier?: number
   /** Base resolution multiplier for Stored-PNG displacement maps (defaults to `0.5`). */
   mapScale?: number
+  /** Maximum encoded pixel budget for full-field Stored-PNG maps (`0` disables capping; defaults to `96_000`). */
+  maxMapPixels?: number
   /** Bezel refraction cross-section profile (`'squircle'`, `'circle'`, `'parabolic'`, `'lip'`, or custom height fn). */
   profile?: RefractionProfileSpec
   /** Index of refraction (`1` = air, `1.5` = glass; defaults to `1.5`). */
@@ -80,6 +83,7 @@ interface NormalizedConfig {
   dispersion: number
   scaleMultiplier: number
   mapScale: number
+  maxMapPixels: number
   profile: RefractionProfileSpec
   ior: number
   caustics: boolean
@@ -132,6 +136,7 @@ function normalizeConfig(input?: RefractFilterConfig, base?: NormalizedConfig): 
     dispersion: 0,
     scaleMultiplier: 1,
     mapScale: 0.5,
+    maxMapPixels: DEFAULT_MAX_REFRACT_MAP_PIXELS,
     profile: 'squircle',
     ior: DEFAULT_REFRACTION_IOR,
     caustics: false,
@@ -143,11 +148,57 @@ function normalizeConfig(input?: RefractFilterConfig, base?: NormalizedConfig): 
     dispersion: normalizeNonNegativeOrDefault(input?.dispersion, b.dispersion),
     scaleMultiplier: normalizeNonNegativeOrDefault(input?.scaleMultiplier, b.scaleMultiplier),
     mapScale: normalizePositiveOrDefault(input?.mapScale, b.mapScale),
+    maxMapPixels: normalizeNonNegativeOrDefault(input?.maxMapPixels, b.maxMapPixels),
     profile: input?.profile !== undefined ? input.profile : b.profile,
     ior: normalizeIorOrDefault(input?.ior, b.ior),
     caustics: input?.caustics !== undefined ? Boolean(input.caustics) : b.caustics,
     nineSlice: input?.nineSlice !== undefined ? Boolean(input.nineSlice) : b.nineSlice,
   }
+}
+
+/**
+ * Resolves effective Stored-PNG resolution scale for full-field refraction maps,
+ * promoting compact controls (`<= 128px`) to 1:1 and capping encoded pixel area to
+ * `maxMapPixels` (`0` disables capping).
+ */
+export function resolveEffectiveMapScale(
+  boundsWidth: number,
+  boundsHeight: number,
+  requestedMapScale: number,
+  maxMapPixels: number = DEFAULT_MAX_REFRACT_MAP_PIXELS,
+): number {
+  let scale =
+    requestedMapScale > 0 && Number.isFinite(requestedMapScale) ? requestedMapScale : 0.5
+  // Promote half-res maps to 1:1 for compact pills/buttons so rim displacement stays crisp.
+  if (scale === 0.5 && Math.max(boundsWidth, boundsHeight) <= FULL_RES_MAP_THRESHOLD_PX) {
+    scale = 1
+  }
+  if (maxMapPixels > 0 && Number.isFinite(maxMapPixels)) {
+    const cssW = Math.max(1, Math.round(boundsWidth))
+    const cssH = Math.max(1, Math.round(boundsHeight))
+    const budget = Math.max(1, maxMapPixels)
+    const encodedPixels = (s: number): number =>
+      Math.max(1, Math.round(cssW * s)) * Math.max(1, Math.round(cssH * s))
+
+    if (encodedPixels(scale) > budget) {
+      scale = Math.min(scale, Math.sqrt(budget / (cssW * cssH)), budget / cssW, budget / cssH)
+      if (encodedPixels(scale) > budget) {
+        let lo = 0
+        let hi = scale
+        for (let i = 0; i < 24; i += 1) {
+          const mid = 0.5 * (lo + hi)
+          if (encodedPixels(mid) <= budget) {
+            lo = mid
+          } else {
+            hi = mid
+          }
+        }
+        // Keep strictly positive scale because `createRefractMapBuilder` treats `<= 0` as 0.5 fallback.
+        scale = lo > 0 ? lo : Math.min(scale, 0.49 / Math.max(cssW, cssH))
+      }
+    }
+  }
+  return scale
 }
 
 function isNearInt(v: number): boolean {
@@ -562,6 +613,10 @@ export function createRefractFilterController(
       frame.mapScale !== undefined
         ? normalizePositiveOrDefault(frame.mapScale, config.mapScale)
         : config.mapScale
+    const maxMapPixels =
+      frame.maxMapPixels !== undefined
+        ? normalizeNonNegativeOrDefault(frame.maxMapPixels, config.maxMapPixels)
+        : config.maxMapPixels
     const profile = frame.profile !== undefined ? frame.profile : config.profile
     const ior =
       frame.ior !== undefined ? normalizeIorOrDefault(frame.ior, config.ior) : config.ior
@@ -678,11 +733,12 @@ export function createRefractFilterController(
 
     if (!usedNineSlice) {
       activateFullMapMode()
-      // Promote half-res maps to 1:1 for compact pills/buttons so rim displacement stays crisp.
-      const frameMapScale =
-        rawMapScale === 0.5 && Math.max(frame.bounds.width, frame.bounds.height) <= FULL_RES_MAP_THRESHOLD_PX
-          ? 1
-          : rawMapScale
+      const frameMapScale = resolveEffectiveMapScale(
+        frame.bounds.width,
+        frame.bounds.height,
+        rawMapScale,
+        maxMapPixels,
+      )
 
       mapBuilder ??= createRefractMapBuilder()
       const mapResult = mapBuilder.build({

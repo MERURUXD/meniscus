@@ -42,9 +42,11 @@ export {
 } from './cssSurface.ts'
 
 export {
+  DEFAULT_MAX_REFRACT_MAP_PIXELS,
   SVG_NS,
   computeAutoBezel,
   createRefractFilterController,
+  resolveEffectiveMapScale,
   resolveFieldBezel,
   type RefractFilterConfig,
   type RefractFilterController,

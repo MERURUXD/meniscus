@@ -699,6 +699,7 @@ export class GlassSurfaceController {
           refCfg?.dispersion ?? this.baseRefraction?.dispersion ?? material.dispersion
         const scaleMultiplier = refCfg?.scaleMultiplier ?? this.baseRefraction?.scaleMultiplier
         const mapScale = refCfg?.mapScale ?? this.baseRefraction?.mapScale
+        const maxMapPixels = refCfg?.maxMapPixels ?? this.baseRefraction?.maxMapPixels
         const profile = refCfg?.profile ?? this.baseRefraction?.profile
         const ior = refCfg?.ior ?? this.baseRefraction?.ior
         const caustics = refCfg?.caustics ?? this.baseRefraction?.caustics
@@ -717,6 +718,7 @@ export class GlassSurfaceController {
           dispersion,
           scaleMultiplier,
           mapScale,
+          maxMapPixels,
           profile,
           ior,
           caustics,

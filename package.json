@@ -10,10 +10,11 @@
   },
   "scripts": {
     "dev": "pnpm --filter @sessile/playground dev",
+    "bench": "node scripts/bench.ts",
     "build": "pnpm -r build",
-    "typecheck": "pnpm -r typecheck",
+    "typecheck": "pnpm -r typecheck && tsc -p tsconfig.scripts.json --noEmit",
     "test": "pnpm -r test",
-    "lint": "oxlint packages apps"
+    "lint": "oxlint packages apps scripts"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",

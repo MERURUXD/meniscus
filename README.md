@@ -27,4 +27,4 @@ Meniscus enables real, interactive HTML elements to morph continuously as physic
 
 ## License
 
-MPL-2.0
+[MPL-2.0](LICENSE). Each published package ships its own copy of the license text.

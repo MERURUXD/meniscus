@@ -166,3 +166,55 @@ test('createDragMergeController: snapToNearestOnRelease, returnToRestOnRelease, 
 
   retCtrl.dispose()
 })
+
+test('createDragMergeController: applies velocity-driven area-preserving deformation and settles back to rest size', () => {
+  const restW = 80
+  const restH = 60
+  const restArea = restW * restH
+
+  const ctrl = createDragMergeController({
+    velocityStretch: 0.14,
+    velocityStretchReferencePxPerSec: 400,
+    nodes: [
+      { id: 'droplet', center: { x: 100, y: 120 }, size: { width: restW, height: restH }, radius: 20 },
+      { id: 'anchor', center: { x: 350, y: 120 }, size: { width: 70, height: 70 }, radius: 35, pinned: true },
+    ],
+  })
+
+  ctrl.startDrag('droplet', { x: 100, y: 120 })
+  ctrl.moveDrag({ x: 320, y: 120 })
+  const moving = ctrl.step(0.016)
+  const dropletMoving = moving.nodes.find((n) => n.id === 'droplet')!
+  const anchorPinned = moving.nodes.find((n) => n.id === 'anchor')!
+
+  assert.equal(dropletMoving.size.width, restW)
+  assert.equal(dropletMoving.size.height, restH)
+  assert.ok(dropletMoving.primitive.size.width > restW, 'fast horizontal drag elongates primitive width')
+  assert.ok(dropletMoving.primitive.size.height < restH, 'cross axis contracts to preserve area')
+  assert.ok(
+    Math.abs(dropletMoving.primitive.size.width * dropletMoving.primitive.size.height - restArea) < 1e-6,
+    'moving primitive area equals nominal rest area',
+  )
+  assert.deepEqual(anchorPinned.primitive.size, { width: 70, height: 70 })
+
+  ctrl.endDrag()
+  for (let i = 0; i < 120; i += 1) {
+    ctrl.step(1 / 60)
+  }
+  const settled = ctrl.getState().nodes.find((n) => n.id === 'droplet')!
+  assert.equal(settled.settled, true)
+  assert.deepEqual(settled.primitive.size, { width: restW, height: restH })
+
+  // velocityStretch: 0 keeps primitive size rigid even during fast movement.
+  const rigidCtrl = createDragMergeController({
+    velocityStretch: 0,
+    nodes: [{ id: 'a', center: { x: 100, y: 100 }, size: { width: restW, height: restH }, radius: 20 }],
+  })
+  rigidCtrl.startDrag('a', { x: 100, y: 100 })
+  rigidCtrl.moveDrag({ x: 260, y: 100 })
+  const rigidMoving = rigidCtrl.step(0.016)
+  assert.deepEqual(rigidMoving.nodes[0]!.primitive.size, { width: restW, height: restH })
+
+  ctrl.dispose()
+  rigidCtrl.dispose()
+})

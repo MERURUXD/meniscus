@@ -92,10 +92,12 @@ export {
 
 export {
   clamp,
+  computeAreaPreservingScale,
   createElasticPressController,
   createMorphTimeline,
   createSpringChannel,
   cubicBezier,
+  deformSizePreservingArea,
   easeInOutCubic,
   easeInQuad,
   easeOutCubic,
@@ -104,6 +106,7 @@ export {
   lerp,
   riseAndFall,
   smoothstep,
+  type AreaPreservingScale,
   type ElasticPressController,
   type ElasticPressOptions,
   type ElasticPressState,

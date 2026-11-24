@@ -12,6 +12,7 @@ import {
   clamp,
   computeRoundedBoxDistance,
   createSpringChannel,
+  deformSizePreservingArea,
   type GlassFieldState,
   type GlassPrimitive,
   type Point,
@@ -74,6 +75,10 @@ export interface DragMergeOptions {
   magneticRadiusPx?: number
   magneticStrength?: number
   neighborTugRatio?: number
+  /** Peak area-preserving squash-and-stretch ratio driven by node spring velocity (`0` disables; defaults to `0.08`). */
+  velocityStretch?: number
+  /** Speed (px/s) at which velocity-driven stretch reaches 50% of `velocityStretch` (defaults to `900`). */
+  velocityStretchReferencePxPerSec?: number
   spring?: SpringParams
   bounds?: Rect
   returnToRestOnRelease?: boolean
@@ -116,12 +121,16 @@ export const DRAG_MERGE_DEFAULTS = {
   magneticRadiusPx: 48,
   magneticStrength: 0.18,
   neighborTugRatio: 0.14,
+  velocityStretch: 0.08,
+  velocityStretchReferencePxPerSec: 900,
   spring: { mass: 1, stiffness: 280, dampingRatio: 0.72 },
 } as const satisfies {
   blendK: number
   magneticRadiusPx: number
   magneticStrength: number
   neighborTugRatio: number
+  velocityStretch: number
+  velocityStretchReferencePxPerSec: number
   spring: SpringParams
 }
 
@@ -230,6 +239,16 @@ export function createDragMergeController(
     options.neighborTugRatio ?? DRAG_MERGE_DEFAULTS.neighborTugRatio,
     0,
     1,
+  )
+  const velocityStretch = clamp(
+    options.velocityStretch ?? DRAG_MERGE_DEFAULTS.velocityStretch,
+    0,
+    0.35,
+  )
+  const velocityStretchRef = Math.max(
+    1,
+    options.velocityStretchReferencePxPerSec ??
+      DRAG_MERGE_DEFAULTS.velocityStretchReferencePxPerSec,
   )
   const springParams = options.spring ?? DRAG_MERGE_DEFAULTS.spring
   const returnToRestOnRelease = options.returnToRestOnRelease ?? false
@@ -442,7 +461,28 @@ export function createDragMergeController(
         animating = true
       }
       const center: Point = { x: xState.value, y: yState.value }
-      const primitive = makePrimitiveFromCoords(node, center)
+      let primitiveSize = node.size
+      let primitiveRadius = node.radius
+      if (!reducedMotion && !node.pinned && !settled && velocityStretch > 0) {
+        const speed = Math.hypot(xState.velocity, yState.velocity)
+        if (speed > 1) {
+          const normSpeed = speed / (speed + velocityStretchRef)
+          primitiveSize = deformSizePreservingArea(
+            node.size,
+            1 + velocityStretch * normSpeed,
+            xState.velocity,
+            yState.velocity,
+          )
+          primitiveRadius = clampNodeRadius(node.radius, primitiveSize)
+        }
+      }
+      const primitive: GlassPrimitive = {
+        id: node.id,
+        center,
+        size: primitiveSize,
+        radius: primitiveRadius,
+        weight: node.weight,
+      }
       primitives.push(primitive)
       nodeStates.push({
         id: node.id,

@@ -746,6 +746,8 @@
   }
 }
 
+/* Keep square corners on ancestors wrapping GlassField: border-radius + overflow: hidden
+   causes Chromium's nested clip-path: path() + backdrop-filter veil to fall back to a box clip. */
 .pg-split-pane {
   display: flex;
   flex-direction: column;
@@ -753,7 +755,6 @@
   min-width: 0;
   background: var(--ground);
   border: 1px solid var(--border);
-  border-radius: 14px;
   overflow: hidden;
 }
 

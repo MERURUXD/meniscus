@@ -137,11 +137,13 @@ export interface ElasticPressController {
   getState(): ElasticPressState
 }
 
-/** Clamps `value` to the inclusive range `[min, max]`. */
+/**
+ * Clamps `value` to the inclusive range `[min, max]`. An inverted range
+ * (`max < min`) resolves to `min`, matching CSS `clamp()`, so content larger
+ * than its container pins to the leading edge instead of overflowing it.
+ */
 export function clamp(value: number, min: number, max: number): number {
-  if (value <= min) return min
-  if (value >= max) return max
-  return value
+  return Math.max(min, Math.min(value, max))
 }
 
 /** Linearly interpolates `a + (b - a) * t` without clamping `t` so spring overshoot is preserved. */

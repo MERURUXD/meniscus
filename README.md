@@ -27,7 +27,12 @@ Meniscus enables real, interactive HTML elements to morph continuously as physic
 
 ## Status
 
-Pre-release. The packages are at `0.0.0`, are not published to npm, and their APIs may change without notice. Each package currently exports its TypeScript sources (`./src/index.ts`), so a consumer needs a bundler that compiles TypeScript, such as Vite.
+Pre-release (`0.x`). APIs may change between minor versions. Published packages ship compiled ES modules and type declarations from `dist/`; inside this workspace they resolve to `src/` so tests and the playground run against the sources.
+
+```sh
+pnpm add @meniscus/core @meniscus/dom @meniscus/presets
+pnpm add @meniscus/react   # React 19 bindings, optional
+```
 
 ## Development
 

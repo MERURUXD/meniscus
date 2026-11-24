@@ -13,7 +13,7 @@ import {
   type RimMode,
   type Size,
   type ThemeMode,
-} from '@meniscus/core'
+} from '@sessile/core'
 import {
   GlassSurfaceController,
   createFrameLoop,
@@ -21,8 +21,8 @@ import {
   type GlassSurfaceCapabilities,
   type RefractFilterConfig,
   type SurfaceRenderMode,
-} from '@meniscus/dom'
-import { GlassField } from '@meniscus/react'
+} from '@sessile/dom'
+import { GlassField } from '@sessile/react'
 import { ControlPanel, SliderControl } from '../components/ControlPanel.tsx'
 import { TestChart } from '../components/TestChart.tsx'
 import { getMessages, type Locale, type PlaygroundMessages } from '../i18n.ts'

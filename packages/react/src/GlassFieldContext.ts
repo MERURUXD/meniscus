@@ -12,7 +12,7 @@ import {
   useLayoutEffect,
   type Ref,
 } from 'react'
-import type { GlassSurfaceController } from '@meniscus/dom'
+import type { GlassSurfaceController } from '@sessile/dom'
 
 export interface RegisteredGlassPrimitive {
   id: string

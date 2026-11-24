@@ -10,7 +10,7 @@ import test from 'node:test'
 import { act, createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { createRoot } from 'react-dom/client'
-import type { CapabilityEnv } from '@meniscus/dom'
+import type { CapabilityEnv } from '@sessile/dom'
 import { useReducedMotion } from '../src/useReducedMotion.ts'
 import { createMockMediaQueryList, installDomEnv } from './testEnv.ts'
 

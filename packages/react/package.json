@@ -1,17 +1,17 @@
 {
-  "name": "@meniscus/react",
+  "name": "@sessile/react",
   "version": "0.1.0",
   "type": "module",
   "license": "MPL-2.0",
-  "description": "Lightweight React bindings for Meniscus glass morphing surfaces.",
+  "description": "Lightweight React bindings for Sessile glass morphing surfaces.",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/MERURUXD/meniscus.git",
+    "url": "git+https://github.com/MERURUXD/sessile.git",
     "directory": "packages/react"
   },
-  "homepage": "https://github.com/MERURUXD/meniscus#readme",
+  "homepage": "https://github.com/MERURUXD/sessile#readme",
   "bugs": {
-    "url": "https://github.com/MERURUXD/meniscus/issues"
+    "url": "https://github.com/MERURUXD/sessile/issues"
   },
   "exports": {
     ".": "./src/index.ts"
@@ -29,8 +29,8 @@
     }
   },
   "dependencies": {
-    "@meniscus/core": "workspace:*",
-    "@meniscus/dom": "workspace:*"
+    "@sessile/core": "workspace:*",
+    "@sessile/dom": "workspace:*"
   },
   "peerDependencies": {
     "react": ">=19.0.0",

@@ -1,7 +1,7 @@
 /**
  * Headless Route B3 SVG `<filter>` DOM controller for Chromium liquid-glass refraction.
  *
- * Manages an off-screen SVG filter graph driven by `@meniscus/core`'s Stored-PNG
+ * Manages an off-screen SVG filter graph driven by `@sessile/core`'s Stored-PNG
  * displacement map (`createRefractMapBuilder`) and Rec.709 color optics matrix
  * (`buildColorOpticsMatrix`), dynamically switching between single-pass displacement
  * and 3-channel RGB chromatic dispersion while self-masking to the displacement map alpha
@@ -16,7 +16,7 @@ import {
   type GlassFieldState,
   type Rect,
   type RefractMapBuilder,
-} from '@meniscus/core'
+} from '@sessile/core'
 
 export const SVG_NS = 'http://www.w3.org/2000/svg'
 const FULL_RES_MAP_THRESHOLD_PX = 128

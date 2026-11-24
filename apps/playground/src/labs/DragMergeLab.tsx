@@ -12,22 +12,22 @@ import {
   type GlassFieldState,
   type Size,
   type ThemeMode,
-} from '@meniscus/core'
+} from '@sessile/core'
 import {
   GlassSurfaceController,
   createFrameLoop,
   observeElementResize,
   type FrameLoop,
   type SurfaceRenderMode,
-} from '@meniscus/dom'
-import { GlassField } from '@meniscus/react'
+} from '@sessile/dom'
+import { GlassField } from '@sessile/react'
 import {
   DRAG_MERGE_DEFAULTS,
   createDragMergeController,
   type DragMergeController,
   type DragMergeNodeInput,
   type DragMergeState,
-} from '@meniscus/presets'
+} from '@sessile/presets'
 import { ControlPanel, SliderControl } from '../components/ControlPanel.tsx'
 import { TestChart } from '../components/TestChart.tsx'
 import { getMessages, type Locale, type PlaygroundMessages } from '../i18n.ts'

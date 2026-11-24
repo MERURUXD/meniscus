@@ -1,5 +1,5 @@
 /**
- * @meniscus/core unit tests for spring physics, easing math, and interruptible morph timelines.
+ * @sessile/core unit tests for spring physics, easing math, and interruptible morph timelines.
  *
  * SPDX-License-Identifier: MPL-2.0
  */

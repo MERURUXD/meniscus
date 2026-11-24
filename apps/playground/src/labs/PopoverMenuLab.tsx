@@ -12,15 +12,15 @@ import {
   type Rect,
   type Size,
   type ThemeMode,
-} from '@meniscus/core'
+} from '@sessile/core'
 import {
   GlassSurfaceController,
   createFrameLoop,
   observeElementResize,
   type FrameLoop,
   type SurfaceRenderMode,
-} from '@meniscus/dom'
-import { GlassField, useElasticPress } from '@meniscus/react'
+} from '@sessile/dom'
+import { GlassField, useElasticPress } from '@sessile/react'
 import {
   POPOVER_MORPH_DEFAULTS,
   createPopoverMorphController,
@@ -30,7 +30,7 @@ import {
   type PopoverMorphPhase,
   type PopoverPanelConfig,
   type PopoverPlacement,
-} from '@meniscus/presets'
+} from '@sessile/presets'
 import { ControlPanel } from '../components/ControlPanel.tsx'
 import { TestChart } from '../components/TestChart.tsx'
 import { getMessages, type Locale } from '../i18n.ts'
@@ -210,9 +210,9 @@ export function PopoverMenuLab({
     const btnEl = triggerBtnRef.current
     if (btnEl) {
       if (motion.phase === 'closed') {
-        btnEl.removeAttribute('data-meniscus-morphing')
+        btnEl.removeAttribute('data-sessile-morphing')
       } else {
-        btnEl.setAttribute('data-meniscus-morphing', 'true')
+        btnEl.setAttribute('data-sessile-morphing', 'true')
       }
       const triggerInteractive =
         motion.phase === 'closed' ||

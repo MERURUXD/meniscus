@@ -1,11 +1,11 @@
 /**
  * Browser capability detection, reduced-motion observation, ResizeObserver wiring,
- * and clamped requestAnimationFrame scheduling for `@meniscus/dom`.
+ * and clamped requestAnimationFrame scheduling for `@sessile/dom`.
  *
  * SPDX-License-Identifier: MPL-2.0
  */
 
-import type { Size } from '@meniscus/core'
+import type { Size } from '@sessile/core'
 
 export type SurfaceRenderMode = 'refract' | 'frosted' | 'solid'
 

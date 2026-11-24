@@ -9,7 +9,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { StrictMode, act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
-import type { MorphTimelineState } from '@meniscus/core'
+import type { MorphTimelineState } from '@sessile/core'
 import {
   useGlassMorph,
   type UseGlassMorphOptions,

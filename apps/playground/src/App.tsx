@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type ReactElement } from 'react'
-import type { ThemeMode } from '@meniscus/core'
-import { detectSurfaceCapabilities, type SurfaceCapabilities } from '@meniscus/dom'
-import { useReducedMotion } from '@meniscus/react'
+import type { ThemeMode } from '@sessile/core'
+import { detectSurfaceCapabilities, type SurfaceCapabilities } from '@sessile/dom'
+import { useReducedMotion } from '@sessile/react'
 import { detectInitialLocale, getMessages, persistLocale, type Locale } from './i18n.ts'
 import { DragMergeLab } from './labs/DragMergeLab.tsx'
 import { OpticsLab } from './labs/OpticsLab.tsx'
@@ -72,7 +72,7 @@ export function App(): ReactElement {
       <div className="bench">
         <nav className="bench-nav" aria-label={t.shell.labsNavAria}>
           <p className="bench-brand">
-            Meniscus
+            Sessile
             <span>{t.shell.tagline}</span>
           </p>
           <div className="bench-labs" role="tablist" aria-label={t.shell.labsNavAria}>

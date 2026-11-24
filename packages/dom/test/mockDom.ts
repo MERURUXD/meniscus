@@ -1,6 +1,6 @@
 /**
  * Lightweight deterministic DOM, SVG, MediaQueryList, and ResizeObserver test mocks
- * for running `@meniscus/dom` unit tests directly under Node 24 (`node --test`).
+ * for running `@sessile/dom` unit tests directly under Node 24 (`node --test`).
  *
  * SPDX-License-Identifier: MPL-2.0
  */

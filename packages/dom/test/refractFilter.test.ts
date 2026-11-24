@@ -6,7 +6,7 @@
 
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import type { GlassFieldState } from '@meniscus/core'
+import type { GlassFieldState } from '@sessile/core'
 import {
   SVG_NS,
   computeAutoBezel,
@@ -62,7 +62,7 @@ test('computeAutoBezel and resolveFieldBezel handle N=0, N=1, N=2, and N>=3 fiel
 test('createRefractFilterController constructs Route B3 graph and switches dispersion dynamically', () => {
   const doc = new MockDocument()
   const controller = createRefractFilterController({
-    id: 'meniscus-test-filter',
+    id: 'sessile-test-filter',
     document: doc as unknown as Document,
     bezel: 20,
     strength: 1.5,
@@ -78,7 +78,7 @@ test('createRefractFilterController constructs Route B3 graph and switches dispe
   assert.equal(svg.namespaceURI, SVG_NS)
 
   const filterEl = svg.querySelectorAll('filter')[0]!
-  assert.equal(filterEl.getAttribute('id'), 'meniscus-test-filter')
+  assert.equal(filterEl.getAttribute('id'), 'sessile-test-filter')
   assert.equal(filterEl.getAttribute('color-interpolation-filters'), 'sRGB')
   assert.equal(filterEl.querySelectorAll('feDisplacementMap').length, 1)
   assert.equal(filterEl.querySelectorAll('feComponentTransfer').length, 0)
@@ -154,7 +154,7 @@ test('createRefractFilterController constructs Route B3 graph and switches dispe
 test('createRefractFilterController promotes <= 128px maps to 1:1 and skips duplicate attribute writes', () => {
   const doc = new MockDocument()
   const controller = createRefractFilterController({
-    id: 'meniscus-cache-test',
+    id: 'sessile-cache-test',
     document: doc as unknown as Document,
     bezel: 12,
     strength: 1.2,

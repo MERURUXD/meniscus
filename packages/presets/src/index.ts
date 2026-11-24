@@ -1,6 +1,6 @@
 /**
- * Public entry point for `@meniscus/presets`.
- * Framework-agnostic interaction presets built on `@meniscus/core`.
+ * Public entry point for `@sessile/presets`.
+ * Framework-agnostic interaction presets built on `@sessile/core`.
  *
  * SPDX-License-Identifier: MPL-2.0
  */

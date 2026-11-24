@@ -1,5 +1,5 @@
 /**
- * @meniscus/core math easing, analytical damped-harmonic-oscillator springs,
+ * @sessile/core math easing, analytical damped-harmonic-oscillator springs,
  * and interruptible morph timelines.
  *
  * Implements closed-form underdamped, critically damped, and overdamped spring

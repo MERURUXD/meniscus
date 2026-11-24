@@ -14,7 +14,7 @@ import {
   type ReactNode,
   type Ref,
 } from 'react'
-import { observeElementResize } from '@meniscus/dom'
+import { observeElementResize } from '@sessile/dom'
 import {
   assignRef,
   useGlassField,

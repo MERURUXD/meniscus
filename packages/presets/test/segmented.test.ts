@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { evaluateFieldDistance } from '@meniscus/core'
+import { evaluateFieldDistance } from '@sessile/core'
 import { createSegmentedPillController, type SegmentItem } from '../src/index.ts'
 
 const TABS: SegmentItem[] = [

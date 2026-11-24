@@ -1,5 +1,5 @@
 /**
- * Morphing Popover / Menu preset for Meniscus.
+ * Morphing Popover / Menu preset for Sessile.
  *
  * Computes viewport-clamped placement, spring-coupled open/close/interrupt motion
  * trajectories, synchronized platter/droplet SDF field geometry, and content/glyph
@@ -28,7 +28,7 @@ import {
   type Rect,
   type Size,
   type SpringParams,
-} from '@meniscus/core'
+} from '@sessile/core'
 
 export type PopoverMorphPhase = MorphTimelinePhase
 

@@ -15,8 +15,8 @@ import {
   type IGlassOverlayRenderer,
   type OverlayRenderFrame,
   type RendererCapabilities,
-} from '@meniscus/core'
-import type { CapabilityEnv, GlassSurfaceController } from '@meniscus/dom'
+} from '@sessile/core'
+import type { CapabilityEnv, GlassSurfaceController } from '@sessile/dom'
 import { GlassField } from '../src/GlassField.ts'
 import { useGlassField } from '../src/GlassFieldContext.ts'
 import { GlassPrimitive } from '../src/GlassPrimitive.ts'

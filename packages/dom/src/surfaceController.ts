@@ -1,5 +1,5 @@
 /**
- * Framework-agnostic headless 3-layer DOM surface controller for Meniscus.
+ * Framework-agnostic headless 3-layer DOM surface controller for Sessile.
  *
  * Orchestrates three sibling layers around live interactive DOM content:
  * 1. `refractBackdrop` (unclipped Route B3 Chromium SVG `backdrop-filter: url(#id)` layer)
@@ -27,7 +27,7 @@ import {
   type RendererCapabilities,
   type Size,
   type ThemeMode,
-} from '@meniscus/core'
+} from '@sessile/core'
 import {
   createFrameLoop,
   detectSurfaceCapabilities,
@@ -413,7 +413,7 @@ export class GlassSurfaceController {
       (typeof document !== 'undefined' ? document : null)
     this.container = options.container ?? null
     this.svgMountTarget = options.svgMountTarget
-    this.filterId = options.filterId ?? `meniscus-refract-${nextAutoFilterId++}`
+    this.filterId = options.filterId ?? `sessile-refract-${nextAutoFilterId++}`
     this.baseRefraction = options.refraction
     this.defaultMaterial = options.material
     this.disableRefractOnReducedMotion = options.disableRefractOnReducedMotion ?? false
@@ -437,7 +437,7 @@ export class GlassSurfaceController {
       refractEl = elements.refractBackdrop ?? null
     } else if (this.container && this.doc) {
       refractEl = this.doc.createElement('div')
-      refractEl.setAttribute('data-meniscus-layer', 'refract')
+      refractEl.setAttribute('data-sessile-layer', 'refract')
       applyManagedBaseLayerStyles(refractEl, positioning, zIndex?.refract ?? defaultRefractZ)
       ownsRefract = true
     }
@@ -448,7 +448,7 @@ export class GlassSurfaceController {
       veilEl = elements.veil ?? null
     } else if (this.container && this.doc) {
       veilEl = this.doc.createElement('div')
-      veilEl.setAttribute('data-meniscus-layer', 'veil')
+      veilEl.setAttribute('data-sessile-layer', 'veil')
       applyManagedBaseLayerStyles(veilEl, positioning, zIndex?.veil ?? defaultVeilZ, true)
       ownsVeil = true
     }
@@ -459,7 +459,7 @@ export class GlassSurfaceController {
       canvasEl = elements.overlayCanvas ?? null
     } else if (this.container && this.doc) {
       canvasEl = this.doc.createElement('canvas')
-      canvasEl.setAttribute('data-meniscus-layer', 'overlay')
+      canvasEl.setAttribute('data-sessile-layer', 'overlay')
       applyManagedBaseLayerStyles(canvasEl, positioning, zIndex?.overlay ?? defaultOverlayZ)
       ownsCanvas = true
     }

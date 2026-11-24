@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { MAX_GPU_PRIMITIVES, extractFieldContourPath } from '@meniscus/core'
+import { MAX_GPU_PRIMITIVES, extractFieldContourPath } from '@sessile/core'
 import {
   DEFAULT_OPTICS_LAB_CONFIG,
   DOCK_SEGMENTS,

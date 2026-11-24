@@ -1,17 +1,17 @@
 {
-  "name": "@meniscus/playground",
+  "name": "@sessile/playground",
   "private": true,
   "version": "0.0.0",
   "type": "module",
   "license": "MPL-2.0",
-  "description": "Interactive showcase and optics lab for Meniscus.",
+  "description": "Interactive showcase and optics lab for Sessile.",
   "dependencies": {
     "@fontsource-variable/bodoni-moda": "^5.3.0",
     "@fontsource-variable/schibsted-grotesk": "^5.3.0",
-    "@meniscus/core": "workspace:*",
-    "@meniscus/dom": "workspace:*",
-    "@meniscus/presets": "workspace:*",
-    "@meniscus/react": "workspace:*",
+    "@sessile/core": "workspace:*",
+    "@sessile/dom": "workspace:*",
+    "@sessile/presets": "workspace:*",
+    "@sessile/react": "workspace:*",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"
   },

@@ -1,5 +1,5 @@
 /**
- * React hook attaching `@meniscus/core`'s elastic press and rubber-band drag physics
+ * React hook attaching `@sessile/core`'s elastic press and rubber-band drag physics
  * to an HTML element via pointer listeners and CSS `transform`.
  *
  * SPDX-License-Identifier: MPL-2.0
@@ -11,12 +11,12 @@ import {
   type ElasticPressOptions,
   type Size,
   type SpringParams,
-} from '@meniscus/core'
+} from '@sessile/core'
 import {
   createFrameLoop,
   type CapabilityEnv,
   type FrameScheduler,
-} from '@meniscus/dom'
+} from '@sessile/dom'
 import { useReducedMotion } from './useReducedMotion.ts'
 
 export interface UseElasticPressOptions extends ElasticPressOptions {
@@ -24,9 +24,9 @@ export interface UseElasticPressOptions extends ElasticPressOptions {
   enabled?: boolean
   /** Scale and drag displacement multiplier (default: `1`). */
   intensity?: number
-  /** Attribute on the target element suppressing elastic press while morphing (default: `'data-meniscus-morphing'`). */
+  /** Attribute on the target element suppressing elastic press while morphing (default: `'data-sessile-morphing'`). */
   ignoreAttribute?: string
-  /** Attribute set on the target element while an elastic press transform is active (default: `'data-meniscus-elastic-press'`). */
+  /** Attribute set on the target element while an elastic press transform is active (default: `'data-sessile-elastic-press'`). */
   activeAttribute?: string
   /** Capability environment override forwarded to `useReducedMotion`. */
   env?: CapabilityEnv
@@ -36,8 +36,8 @@ export interface UseElasticPressOptions extends ElasticPressOptions {
 
 const TRANSFORM_EPS = 1e-4
 const OFFSET_EPS = 0.05
-const DEFAULT_IGNORE_ATTR = 'data-meniscus-morphing'
-const DEFAULT_ACTIVE_ATTR = 'data-meniscus-elastic-press'
+const DEFAULT_IGNORE_ATTR = 'data-sessile-morphing'
+const DEFAULT_ACTIVE_ATTR = 'data-sessile-elastic-press'
 
 interface ElasticPressAttachment {
   el: HTMLElement | null

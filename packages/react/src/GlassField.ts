@@ -1,5 +1,5 @@
 /**
- * Declarative `<GlassField>` container component managing a `@meniscus/dom`
+ * Declarative `<GlassField>` container component managing a `@sessile/dom`
  * `GlassSurfaceController` lifecycle, 3-layer DOM synchronization, and child primitives.
  *
  * SPDX-License-Identifier: MPL-2.0
@@ -21,7 +21,7 @@ import type {
   Rect,
   Size,
   ThemeMode,
-} from '@meniscus/core'
+} from '@sessile/core'
 import {
   GlassSurfaceController,
   resolveElementTheme,
@@ -32,7 +32,7 @@ import {
   type GlassSurfaceZIndex,
   type RefractFilterConfig,
   type SurfaceRenderMode,
-} from '@meniscus/dom'
+} from '@sessile/dom'
 import {
   GlassFieldContext,
   assignRef,
@@ -332,7 +332,7 @@ function createFieldStore(): FieldStore {
 }
 
 /**
- * Container component that hosts a 3-layer Meniscus `GlassSurfaceController` and collects
+ * Container component that hosts a 3-layer Sessile `GlassSurfaceController` and collects
  * geometry from `<GlassPrimitive>` descendants and/or controlled `primitives`.
  */
 export function GlassField(props: GlassFieldProps): ReactElement {
@@ -557,7 +557,7 @@ export function GlassField(props: GlassFieldProps): ReactElement {
     createElement(
       'div',
       { ref: setContainerEl, className, style },
-      createElement('div', { 'data-meniscus-content': '', style: CONTENT_WRAPPER_STYLE }, children),
+      createElement('div', { 'data-sessile-content': '', style: CONTENT_WRAPPER_STYLE }, children),
     ),
   )
 }

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactElement } from 'react'
-import type { ThemeMode } from '@meniscus/core'
+import type { ThemeMode } from '@sessile/core'
 import { createWallpaperRenderer, type WallpaperRenderer } from './wallpaperRenderer.ts'
 import { wallpaperFallbackCss, type WallpaperScene } from './wallpaperScenes.ts'
 

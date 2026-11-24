@@ -1,5 +1,5 @@
 /**
- * Reactive React hook subscribing to `(prefers-reduced-motion: reduce)` via `@meniscus/dom`.
+ * Reactive React hook subscribing to `(prefers-reduced-motion: reduce)` via `@sessile/dom`.
  * Uses `useSyncExternalStore` so SSR, hydration, and live OS toggles stay tear-free
  * without external animation libraries.
  *
@@ -11,7 +11,7 @@ import {
   observeReducedMotion,
   prefersReducedMotion,
   type CapabilityEnv,
-} from '@meniscus/dom'
+} from '@sessile/dom'
 
 const getServerSnapshot = (): boolean => false
 

@@ -1,17 +1,17 @@
 {
-  "name": "@meniscus/presets",
+  "name": "@sessile/presets",
   "version": "0.1.0",
   "type": "module",
   "license": "MPL-2.0",
-  "description": "Optional interaction presets (morphing menu, segmented pill, drag-merge) built on Meniscus.",
+  "description": "Optional interaction presets (morphing menu, segmented pill, drag-merge) built on Sessile.",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/MERURUXD/meniscus.git",
+    "url": "git+https://github.com/MERURUXD/sessile.git",
     "directory": "packages/presets"
   },
-  "homepage": "https://github.com/MERURUXD/meniscus#readme",
+  "homepage": "https://github.com/MERURUXD/sessile#readme",
   "bugs": {
-    "url": "https://github.com/MERURUXD/meniscus/issues"
+    "url": "https://github.com/MERURUXD/sessile/issues"
   },
   "exports": {
     ".": "./src/index.ts"
@@ -29,7 +29,7 @@
     }
   },
   "dependencies": {
-    "@meniscus/core": "workspace:*"
+    "@sessile/core": "workspace:*"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",

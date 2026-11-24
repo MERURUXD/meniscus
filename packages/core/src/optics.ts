@@ -1,5 +1,5 @@
 /**
- * @meniscus/core pure CSS optics parsing, SVG optical matrix generation, and OpticalMaterial interpolation.
+ * @sessile/core pure CSS optics parsing, SVG optical matrix generation, and OpticalMaterial interpolation.
  *
  * Extracts glass surface optical metrics from standard computed CSS (`backdrop-filter`, `border`, `box-shadow`),
  * builds circular-bevel lookup tables, Rec.709 color matrices, and contour alpha Data URLs,

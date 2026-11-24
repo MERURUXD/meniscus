@@ -6,22 +6,22 @@ import {
   useState,
   type ReactElement,
 } from 'react'
-import type { GlassFieldState, ThemeMode } from '@meniscus/core'
+import type { GlassFieldState, ThemeMode } from '@sessile/core'
 import {
   GlassSurfaceController,
   createFrameLoop,
   observeElementResize,
   type FrameLoop,
   type SurfaceRenderMode,
-} from '@meniscus/dom'
-import { GlassField, useElasticPress } from '@meniscus/react'
+} from '@sessile/dom'
+import { GlassField, useElasticPress } from '@sessile/react'
 import {
   SEGMENTED_PILL_DEFAULTS,
   createSegmentedPillController,
   type SegmentItem,
   type SegmentedPillController,
   type SegmentedPillState,
-} from '@meniscus/presets'
+} from '@sessile/presets'
 import { ControlPanel, SliderControl } from '../components/ControlPanel.tsx'
 import { TestChart } from '../components/TestChart.tsx'
 import { getMessages, type Locale } from '../i18n.ts'

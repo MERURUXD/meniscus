@@ -25,6 +25,23 @@ Meniscus enables real, interactive HTML elements to morph continuously as physic
 | `@meniscus/presets` | Optional interaction presets (morphing popover/menu, segmented pill, drag-and-merge) decoupled from the core material engine. |
 | `@meniscus/playground` | Interactive online lab showcasing multi-primitive fusion, optics tuning, degradation comparison, and production presets. |
 
+## Status
+
+Pre-release. The packages are at `0.0.0`, are not published to npm, and their APIs may change without notice. Each package currently exports its TypeScript sources (`./src/index.ts`), so a consumer needs a bundler that compiles TypeScript, such as Vite.
+
+## Development
+
+Requires Node.js 24+ and the pnpm version pinned in `package.json` (`packageManager`).
+
+```sh
+pnpm install --frozen-lockfile
+pnpm dev          # start the playground
+pnpm typecheck    # TypeScript across the workspace
+pnpm lint         # oxlint over packages and apps
+pnpm test         # node --test across the workspace
+pnpm build        # build every package and the playground
+```
+
 ## License
 
 [MPL-2.0](LICENSE). Each published package ships its own copy of the license text.

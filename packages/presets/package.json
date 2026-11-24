@@ -4,6 +4,15 @@
   "type": "module",
   "license": "MPL-2.0",
   "description": "Optional interaction presets (morphing menu, segmented pill, drag-merge) built on Meniscus.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MERURUXD/meniscus.git",
+    "directory": "packages/presets"
+  },
+  "homepage": "https://github.com/MERURUXD/meniscus#readme",
+  "bugs": {
+    "url": "https://github.com/MERURUXD/meniscus/issues"
+  },
   "exports": {
     ".": "./src/index.ts"
   },

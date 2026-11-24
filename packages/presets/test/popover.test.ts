@@ -90,6 +90,19 @@ test('computePopoverTargetRect: placement modes, flips, safe-insets clamping, an
   assert.equal(override.x, 912)
 })
 
+test('computePopoverTargetRect: a panel larger than the viewport pins to the leading margins', () => {
+  const rect = computePopoverTargetRect(
+    {
+      anchorRect: { x: 300, y: 500, width: 0, height: 0 },
+      placement: 'belowPoint',
+      viewportSize: { width: 390, height: 800 },
+      safeInsets: { top: 4, right: 0, bottom: 0, left: 6 },
+    },
+    { size: { width: 420, height: 900 }, screenMargin: 12 },
+  )
+  assert.deepEqual(rect, { x: 18, y: 16, width: 420, height: 900 })
+})
+
 test('evaluatePopoverMotion: open/close envelopes, reduced motion, and point close durations', () => {
   assert.equal(getPopoverPhaseDurationSec('closed'), 0)
   assert.equal(getPopoverPhaseDurationSec('open'), 0)

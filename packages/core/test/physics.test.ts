@@ -34,6 +34,8 @@ test('math and easing utilities respect boundaries and monotonicity', () => {
   assert.equal(clamp(-5, 0, 1), 0)
   assert.equal(clamp(5, 0, 1), 1)
   assert.equal(clamp(0.4, 0, 1), 0.4)
+  assert.equal(clamp(50, 10, -20), 10, 'inverted range resolves to min, like CSS clamp()')
+  assert.equal(clamp(-50, 10, -20), 10)
 
   assert.equal(lerp(10, 20, 0), 10)
   assert.equal(lerp(10, 20, 0.5), 15)

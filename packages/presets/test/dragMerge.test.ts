@@ -218,3 +218,68 @@ test('createDragMergeController: applies velocity-driven area-preserving deforma
   ctrl.dispose()
   rigidCtrl.dispose()
 })
+
+test('createDragMergeController: aligns mid-flight hitTest, keeps stretched primitives in bounds, and isolates snapshot sizes', () => {
+  // 1. Mid-flight hitTest tracks deformed silhouette (stretched width + contracted height).
+  const hitCtrl = createDragMergeController({
+    velocityStretch: 0.14,
+    velocityStretchReferencePxPerSec: 300,
+    nodes: [{ id: 'a', center: { x: 100, y: 120 }, size: { width: 80, height: 60 }, radius: 12 }],
+  })
+  hitCtrl.startDrag('a', { x: 100, y: 120 })
+  hitCtrl.moveDrag({ x: 300, y: 120 })
+  const moving = hitCtrl.step(0.016)
+  const prim = moving.field.primitives[0]!
+  assert.ok(prim.size.width > 80.5)
+  assert.ok(prim.size.height < 59.8)
+  assert.equal(
+    hitCtrl.hitTest({ x: prim.center.x + prim.size.width * 0.5 - 0.1, y: prim.center.y }),
+    'a',
+    'hitTest must succeed just inside the stretched horizontal edge',
+  )
+  assert.equal(
+    hitCtrl.hitTest({ x: prim.center.x, y: prim.center.y - 29.9 }),
+    null,
+    'hitTest must miss outside the contracted vertical edge',
+  )
+  hitCtrl.dispose()
+
+  // 2. Boundary clearance keeps velocity stretch strictly inside configured bounds (X and Y).
+  const xBoundCtrl = createDragMergeController({
+    bounds: { x: 0, y: 0, width: 600, height: 300 },
+    nodes: [{ id: 'xnode', center: { x: 150, y: 100 }, size: { width: 300, height: 60 }, radius: 16 }],
+  })
+  xBoundCtrl.startDrag('xnode', { x: 150, y: 100 })
+  xBoundCtrl.moveDrag({ x: 160, y: 100 })
+  for (let i = 0; i < 15; i += 1) {
+    const s = xBoundCtrl.step(1 / 60)
+    const p = s.field.primitives[0]!
+    assert.ok(p.center.x - p.size.width * 0.5 >= -1e-9, `step ${i} left edge escaped bounds`)
+    assert.ok(p.center.x + p.size.width * 0.5 <= 600 + 1e-9, `step ${i} right edge escaped bounds`)
+  }
+  xBoundCtrl.dispose()
+
+  const yBoundCtrl = createDragMergeController({
+    bounds: { x: 0, y: 0, width: 300, height: 400 },
+    nodes: [{ id: 'ynode', center: { x: 150, y: 100 }, size: { width: 60, height: 200 }, radius: 16 }],
+  })
+  yBoundCtrl.startDrag('ynode', { x: 150, y: 100 })
+  yBoundCtrl.moveDrag({ x: 150, y: 112 })
+  for (let i = 0; i < 15; i += 1) {
+    const s = yBoundCtrl.step(1 / 60)
+    const p = s.field.primitives[0]!
+    assert.ok(p.center.y - p.size.height * 0.5 >= -1e-9, `step ${i} top edge escaped bounds`)
+    assert.ok(p.center.y + p.size.height * 0.5 <= 400 + 1e-9, `step ${i} bottom edge escaped bounds`)
+  }
+  yBoundCtrl.dispose()
+
+  // 3. Snapshot primitive.size must be detached from internal node.size even at rest.
+  const isoCtrl = createDragMergeController({
+    nodes: [{ id: 'iso', center: { x: 100, y: 100 }, size: { width: 80, height: 60 }, radius: 16 }],
+  })
+  const snap1 = isoCtrl.getState()
+  snap1.field.primitives[0]!.size.width = 999
+  const snap2 = isoCtrl.getState()
+  assert.equal(snap2.field.primitives[0]!.size.width, 80)
+  isoCtrl.dispose()
+})

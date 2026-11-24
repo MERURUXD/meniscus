@@ -448,54 +448,86 @@ export function createDragMergeController(
     }
   }
 
-  function buildState(): DragMergeState {
-    const nodeStates: DragMergeNodeState[] = []
-    const primitives: GlassPrimitive[] = []
-    let animating = false
+  function buildRenderedNodeSnapshot(node: InternalNode) {
+    const xState = node.x.getState()
+    const yState = node.y.getState()
+    const settled = xState.settled && yState.settled
+    const center: Point = { x: xState.value, y: yState.value }
+    let primitiveSize: Size = { width: node.size.width, height: node.size.height }
+    let primitiveRadius = node.radius
 
-    for (const node of nodes) {
-      const xState = node.x.getState()
-      const yState = node.y.getState()
-      const settled = xState.settled && yState.settled
-      if (!settled) {
-        animating = true
-      }
-      const center: Point = { x: xState.value, y: yState.value }
-      let primitiveSize = node.size
-      let primitiveRadius = node.radius
-      if (!reducedMotion && !node.pinned && !settled && velocityStretch > 0) {
-        const speed = Math.hypot(xState.velocity, yState.velocity)
-        if (speed > 1) {
-          const normSpeed = speed / (speed + velocityStretchRef)
+    if (!reducedMotion && !node.pinned && !settled && velocityStretch > 0) {
+      const speed = Math.hypot(xState.velocity, yState.velocity)
+      if (speed > 1) {
+        const normSpeed = speed / (speed + velocityStretchRef)
+        let stretch = 1 + velocityStretch * normSpeed
+        if (bounds) {
+          const lenSq = xState.velocity * xState.velocity + yState.velocity * yState.velocity
+          const alpha =
+            lenSq > 1e-12
+              ? (xState.velocity * xState.velocity - yState.velocity * yState.velocity) / lenSq
+              : 0
+          if (alpha > 1e-6 && node.size.width > 0) {
+            const availHalfW = Math.max(
+              0,
+              Math.min(center.x - bounds.x, bounds.x + bounds.width - center.x),
+            )
+            const maxScaleX = (2 * availHalfW) / node.size.width
+            stretch = maxScaleX <= 1 ? 1 : Math.min(stretch, Math.pow(maxScaleX, 1 / alpha))
+          } else if (alpha < -1e-6 && node.size.height > 0) {
+            const availHalfH = Math.max(
+              0,
+              Math.min(center.y - bounds.y, bounds.y + bounds.height - center.y),
+            )
+            const maxScaleY = (2 * availHalfH) / node.size.height
+            stretch = maxScaleY <= 1 ? 1 : Math.min(stretch, Math.pow(maxScaleY, 1 / -alpha))
+          }
+        }
+        if (stretch > 1 + 1e-9) {
           primitiveSize = deformSizePreservingArea(
             node.size,
-            1 + velocityStretch * normSpeed,
+            stretch,
             xState.velocity,
             yState.velocity,
           )
           primitiveRadius = clampNodeRadius(node.radius, primitiveSize)
         }
       }
-      const primitive: GlassPrimitive = {
-        id: node.id,
-        center,
-        size: primitiveSize,
-        radius: primitiveRadius,
-        weight: node.weight,
+    }
+
+    const primitive: GlassPrimitive = {
+      id: node.id,
+      center,
+      size: primitiveSize,
+      radius: primitiveRadius,
+      weight: node.weight,
+    }
+    return { primitive, center, xState, yState, settled }
+  }
+
+  function buildState(): DragMergeState {
+    const nodeStates: DragMergeNodeState[] = []
+    const primitives: GlassPrimitive[] = []
+    let animating = false
+
+    for (const node of nodes) {
+      const snap = buildRenderedNodeSnapshot(node)
+      if (!snap.settled) {
+        animating = true
       }
-      primitives.push(primitive)
+      primitives.push(snap.primitive)
       nodeStates.push({
         id: node.id,
-        primitive,
-        center,
-        targetCenter: { x: xState.target, y: yState.target },
+        primitive: snap.primitive,
+        center: { x: snap.center.x, y: snap.center.y },
+        targetCenter: { x: snap.xState.target, y: snap.yState.target },
         restCenter: { ...node.restCenter },
         size: { ...node.size },
         radius: node.radius,
         pinned: node.pinned,
         weight: node.weight,
         dragging: activeDragId === node.id,
-        settled,
+        settled: snap.settled,
       })
     }
 
@@ -553,11 +585,8 @@ export function createDragMergeController(
     hitTest(point: Point): string | null {
       for (let i = nodes.length - 1; i >= 0; i -= 1) {
         const node = nodes[i]!
-        const prim = makePrimitiveFromCoords(node, {
-          x: node.x.getState().value,
-          y: node.y.getState().value,
-        })
-        if (computeRoundedBoxDistance(point.x, point.y, prim) <= 0) {
+        const { primitive } = buildRenderedNodeSnapshot(node)
+        if (computeRoundedBoxDistance(point.x, point.y, primitive) <= 0) {
           return node.id
         }
       }

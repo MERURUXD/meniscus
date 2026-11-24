@@ -4,6 +4,15 @@
   "type": "module",
   "license": "MPL-2.0",
   "description": "Lightweight React bindings for Meniscus glass morphing surfaces.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MERURUXD/meniscus.git",
+    "directory": "packages/react"
+  },
+  "homepage": "https://github.com/MERURUXD/meniscus#readme",
+  "bugs": {
+    "url": "https://github.com/MERURUXD/meniscus/issues"
+  },
   "exports": {
     ".": "./src/index.ts"
   },

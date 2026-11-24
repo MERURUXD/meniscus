@@ -525,6 +525,18 @@ test('resolveEffectiveMapScale promotes compact controls and caps large full-map
       DEFAULT_MAX_REFRACT_MAP_PIXELS,
   )
 
+  // Thin bounds with small budget clamp to final 1px-floored encoded PNG area without exceeding budget.
+  const thinScale = resolveEffectiveMapScale(1200, 2, 0.5, 100)
+  assert.ok(thinScale > 0 && thinScale <= 0.5)
+  assert.ok(
+    Math.max(1, Math.round(1200 * thinScale)) * Math.max(1, Math.round(2 * thinScale)) <= 100,
+  )
+
+  const unitBudgetScale = resolveEffectiveMapScale(1200, 2, 0.5, 1)
+  assert.ok(unitBudgetScale > 0)
+  assert.equal(Math.max(1, Math.round(1200 * unitBudgetScale)), 1)
+  assert.equal(Math.max(1, Math.round(2 * unitBudgetScale)), 1)
+
   const doc = new MockDocument()
   const controller = createRefractFilterController({
     id: 'sessile-budget-test',

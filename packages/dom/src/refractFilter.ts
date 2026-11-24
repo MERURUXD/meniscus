@@ -176,19 +176,25 @@ export function resolveEffectiveMapScale(
   if (maxMapPixels > 0 && Number.isFinite(maxMapPixels)) {
     const cssW = Math.max(1, Math.round(boundsWidth))
     const cssH = Math.max(1, Math.round(boundsHeight))
-    const rawPixels = cssW * cssH * scale * scale
-    if (rawPixels > maxMapPixels) {
-      scale = scale * Math.sqrt(maxMapPixels / rawPixels)
-      // Guard against Math.round() pushing encoded dimensions slightly past maxMapPixels.
-      const pngW = Math.max(1, Math.round(cssW * scale))
-      const pngH = Math.max(1, Math.round(cssH * scale))
-      if (pngW * pngH > maxMapPixels && (pngW > 1 || pngH > 1)) {
-        const targetW = Math.max(1, Math.floor(cssW * scale))
-        const targetH = Math.max(1, Math.floor(cssH * scale))
-        const downScale = Math.min(targetW / cssW, targetH / cssH)
-        if (downScale > 0) {
-          scale = Math.min(scale, downScale)
+    const budget = Math.max(1, maxMapPixels)
+    const encodedPixels = (s: number): number =>
+      Math.max(1, Math.round(cssW * s)) * Math.max(1, Math.round(cssH * s))
+
+    if (encodedPixels(scale) > budget) {
+      scale = Math.min(scale, Math.sqrt(budget / (cssW * cssH)), budget / cssW, budget / cssH)
+      if (encodedPixels(scale) > budget) {
+        let lo = 0
+        let hi = scale
+        for (let i = 0; i < 24; i += 1) {
+          const mid = 0.5 * (lo + hi)
+          if (encodedPixels(mid) <= budget) {
+            lo = mid
+          } else {
+            hi = mid
+          }
         }
+        // Keep strictly positive scale because `createRefractMapBuilder` treats `<= 0` as 0.5 fallback.
+        scale = lo > 0 ? lo : Math.min(scale, 0.49 / Math.max(cssW, cssH))
       }
     }
   }

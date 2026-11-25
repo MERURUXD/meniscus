@@ -66,3 +66,14 @@ export {
   type GlassSurfaceZIndex,
   type SurfaceFrameProducer,
 } from './surfaceController.ts'
+
+export {
+  createRegionProbe,
+  measureImageTelemetry,
+  type BackdropProbe,
+  type MeasureImageTelemetryOptions,
+  type RegionProbe,
+  type RegionProbeOptions,
+} from './backdropProbe.ts'
+
+export type { GlassLegibilityOptions } from './legibility.ts'

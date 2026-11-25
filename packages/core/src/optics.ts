@@ -188,6 +188,15 @@ export function buildContourAlphaDataUrl(
 
 /** Parses a browser-computed `rgb(...)`, `rgba(...)`, or `color(srgb ...)` string into normalized `[0..1]` RGBA. */
 export function parseCssRgba(color: string): [number, number, number, number] {
+  return tryParseCssRgba(color) ?? [0, 0, 0, 0]
+}
+
+/**
+ * Like `parseCssRgba`, but returns `null` instead of transparent black for anything it cannot
+ * resolve (`var()`, percentage `color(srgb ...)` channels, other color spaces), so callers can
+ * tell a real transparent color from an unsupported one.
+ */
+export function tryParseCssRgba(color: string): [number, number, number, number] | null {
   const trimmed = color.trim().toLowerCase()
   if (!trimmed || trimmed === 'none' || trimmed === 'transparent') {
     return [0, 0, 0, 0]
@@ -229,7 +238,7 @@ export function parseCssRgba(color: string): [number, number, number, number] {
     }
   }
 
-  return [0, 0, 0, 0]
+  return null
 }
 
 const VEIL_SINGULAR_EPS = 1e-6

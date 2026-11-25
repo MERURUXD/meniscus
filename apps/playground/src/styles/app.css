@@ -1084,6 +1084,101 @@
   color: var(--glass-ink-soft);
 }
 
+/* ---------- Lab: cover wall ---------- */
+
+.pg-cover-scroll {
+  position: absolute;
+  inset: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+
+.pg-cover-scroll:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+
+.pg-cover-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(128px, 1fr));
+  gap: 6px;
+  padding: 76px 20px 96px;
+}
+
+/* No border or padding: probe telemetry grids map onto the canvas border box. */
+.pg-cover {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 2 / 3;
+  border-radius: 2px;
+}
+
+/* Deliberately no text-shadow halo: the glass alone must carry contrast here. */
+.pg-cover-bar,
+.pg-cover-drop {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  text-shadow: none;
+}
+
+.pg-cover-bar {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  padding: 0 24px;
+  min-width: 0;
+  text-align: center;
+}
+
+.pg-cover-bar-title {
+  font-size: var(--text-lg);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.15;
+}
+
+.pg-cover-bar-caption,
+.pg-cover-bar-title {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pg-cover-bar-caption {
+  font-size: var(--text-sm);
+  font-weight: 550;
+  line-height: 1.2;
+}
+
+.pg-cover-drop {
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  font-size: var(--text-sm);
+  font-weight: 700;
+  pointer-events: auto;
+  touch-action: none;
+  cursor: grab;
+}
+
+.pg-cover-drop[data-dragging='true'] {
+  cursor: grabbing;
+}
+
+@media (min-width: 901px) {
+  .bench[data-inspector='open'] .pg-cover-grid {
+    padding-right: 348px;
+  }
+}
+
 /* ---------- Lab: optics ---------- */
 
 .pg-wireframe-svg {
@@ -1349,7 +1444,8 @@
   .hud-tabs {
     width: 100%;
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(0, 1fr);
     gap: 2px;
     overflow: visible;
   }
@@ -1409,6 +1505,12 @@
   .pg-dock-item {
     padding: 10px 14px;
     font-size: var(--text-base);
+  }
+
+  .pg-cover-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 4px;
+    padding: 8px 8px 12px;
   }
 }
 

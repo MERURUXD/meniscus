@@ -12,11 +12,13 @@
 
 import {
   DEFAULT_REFRACTION_IOR,
+  LEGIBILITY_STAGES,
   buildColorOpticsMatrix,
   createRefractMapBuilder,
   resolveRefractTiles,
   type GlassFieldState,
   type GlassPrimitive,
+  type LegibilityParams,
   type Rect,
   type RefractMapBuilder,
   type RefractionProfileSpec,
@@ -74,8 +76,32 @@ export interface RefractFilterController {
   mount(target?: Element | null): boolean
   updateConfig(config: Partial<RefractFilterConfig>): void
   updateFrame(frame: RefractFilterFrame): void
+  /**
+   * Attaches (or with `null` detaches) the per-pixel legibility stage between the refracted
+   * backdrop and the self-mask. Only node attributes change, so updates never re-encode the map.
+   */
+  updateLegibility(params: LegibilityParams | null): void
   dispose(): void
 }
+
+interface LegibilityNodes {
+  /** Attached in graph order: opaque, luminance, gain, composite, mask. */
+  chain: Element[]
+  luminance: Element
+  funcs: Element[]
+  composite: Element
+  polarity: LegibilityParams['polarity'] | null
+  /** Revisions count per params object, so the uploaded table is keyed by identity too. */
+  table: Float32Array | null
+  tableRevision: number
+}
+
+// Rec. 709 weights replicated into RGB with alpha pinned to 1.
+const LUMINANCE_MATRIX =
+  '0.2126 0.7152 0.0722 0 0  0.2126 0.7152 0.0722 0 0  0.2126 0.7152 0.0722 0 0  0 0 0 0 1'
+// `feComposite arithmetic` runs on premultiplied color, so the dark-text `+ (1 - M)` term would
+// lift partially transparent fringe pixels toward white; compose on an opaque copy, re-mask after.
+const OPAQUE_MATRIX = '1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 0 1'
 
 interface NormalizedConfig {
   bezel: number
@@ -358,6 +384,7 @@ export function createRefractFilterController(
         config = normalizeConfig(next, config)
       },
       updateFrame: () => {},
+      updateLegibility: () => {},
       dispose: () => {},
     }
   }
@@ -450,6 +477,7 @@ export function createRefractFilterController(
   let prevScaleKey = ''
   let disposed = false
   let mapBuilder: RefractMapBuilder | null = null
+  let legibilityNodes: LegibilityNodes | null = null
 
   const createFloodPiece = (resultName: string): NineSlicePiece => {
     const element = createSvgEl('feFlood')
@@ -643,6 +671,84 @@ export function createRefractFilterController(
   }
 
   rebuildDisplacementStage(config.dispersion > 0)
+
+  const ensureLegibilityNodes = (): LegibilityNodes => {
+    if (legibilityNodes) return legibilityNodes
+    const opaque = createSvgEl('feColorMatrix')
+    opaque.setAttribute('in', 'refractSmooth')
+    opaque.setAttribute('type', 'matrix')
+    opaque.setAttribute('values', OPAQUE_MATRIX)
+    opaque.setAttribute('result', 'legibleOpaque')
+    const luminance = createSvgEl('feColorMatrix')
+    luminance.setAttribute('in', 'legibleOpaque')
+    luminance.setAttribute('type', 'matrix')
+    luminance.setAttribute('values', LUMINANCE_MATRIX)
+    luminance.setAttribute('result', 'legibleLuminance')
+    const gain = createSvgEl('feComponentTransfer')
+    gain.setAttribute('in', 'legibleLuminance')
+    gain.setAttribute('result', 'legibleGain')
+    const funcs = ['feFuncR', 'feFuncG', 'feFuncB'].map((tag) => {
+      const fn = createSvgEl(tag)
+      fn.setAttribute('type', 'table')
+      gain.appendChild(fn)
+      return fn
+    })
+    const composite = createSvgEl('feComposite')
+    composite.setAttribute('in', 'legibleOpaque')
+    composite.setAttribute('in2', 'legibleGain')
+    composite.setAttribute('operator', 'arithmetic')
+    composite.setAttribute('result', 'legibleOpaqueOut')
+    const mask = createSvgEl('feComposite')
+    mask.setAttribute('in', 'legibleOpaqueOut')
+    mask.setAttribute('in2', 'refractSmooth')
+    mask.setAttribute('operator', 'in')
+    mask.setAttribute('result', 'legible')
+    legibilityNodes = {
+      chain: [opaque, luminance, gain, composite, mask],
+      luminance,
+      funcs,
+      composite,
+      polarity: null,
+      table: null,
+      tableRevision: -1,
+    }
+    return legibilityNodes
+  }
+
+  const updateLegibility = (params: LegibilityParams | null): void => {
+    if (disposed) return
+    if (!params) {
+      if (legibilityNodes?.composite.parentNode) {
+        for (const node of legibilityNodes.chain) filterEl.removeChild(node)
+        glassOnlyEl.setAttribute('in', 'refractSmooth')
+      }
+      return
+    }
+    const nodes = ensureLegibilityNodes()
+    if (!nodes.composite.parentNode) {
+      for (const node of nodes.chain) filterEl.insertBefore(node, glassOnlyEl)
+      glassOnlyEl.setAttribute('in', 'legible')
+    }
+    if (nodes.polarity !== params.polarity) {
+      const stage = LEGIBILITY_STAGES[params.polarity]
+      nodes.luminance.setAttribute('color-interpolation-filters', stage.luminanceSpace)
+      for (let i = 0; i < 4; i++) {
+        nodes.composite.setAttribute(`k${i + 1}`, String(stage.k[i]))
+      }
+      nodes.polarity = params.polarity
+    }
+    if (nodes.table !== params.table || nodes.tableRevision !== params.tableRevision) {
+      let values = ''
+      for (let i = 0; i < params.table.length; i++) {
+        values += (i === 0 ? '' : ' ') + params.table[i]!.toFixed(4)
+      }
+      for (let i = 0; i < nodes.funcs.length; i++) {
+        nodes.funcs[i]!.setAttribute('tableValues', values)
+      }
+      nodes.table = params.table
+      nodes.tableRevision = params.tableRevision
+    }
+  }
 
   const mount = (target?: Element | null): boolean => {
     if (disposed) return false
@@ -877,6 +983,7 @@ export function createRefractFilterController(
     }
     stageNodes = []
     dispNodes = []
+    legibilityNodes = null
     mapBuilder?.reset()
     mapBuilder = null
   }
@@ -892,6 +999,7 @@ export function createRefractFilterController(
     mount,
     updateConfig,
     updateFrame,
+    updateLegibility,
     dispose,
   }
 }

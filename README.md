@@ -12,6 +12,13 @@ Sessile enables real, interactive HTML elements to morph continuously as physica
 - **Route B3 Self-Masked Backdrop Refraction**: Unclipped SVG refraction sibling self-masked to shape alpha to prevent Chromium rectangular `backdrop-filter` bounding-box leaks.
 - **Zero-Leak Marching Squares Contour & Area-Preserving Springs**: High-precision contour extraction paired with interruptible analytical springs and 2D incompressible squash-and-stretch motion.
 - **WebGL2 + 2D Edge Optics**: Perimeter-only transparent overlay rendering outside shadows, outer hairlines, and directional or optional physical 3D rim specular highlights with `0px` seam alignment.
+- **Adaptive Backdrop Legibility**: The host fixes the foreground (text color and a `clear` / `regular` / `legible` tier, i.e. WCAG 3 / 4.5 / 7); the glass yields. On Chromium a luminance-keyed multiplicative film inside the Route B3 filter compresses the backdrop per pixel while keeping hue, so one pane over bright, dark and saturated cover art still meets the target. Elsewhere it maps to `backdrop-filter` brightness/contrast plus a film. Risk from host-injected telemetry or a `BackdropProbe` drives film, blur, displacement attenuation and edge alphas through an attack/hold/release smoother. None of these updates re-encodes the displacement map.
+
+  ```ts
+  const probe = createRegionProbe({ background: pageTelemetry })
+  probe.set(coverEl, measureImageTelemetry(coverCanvas)!)
+  controller.setLegibility({ foreground: [1, 1, 1], tier: 'regular', probe })
+  ```
 - **Progressive Enhancement**:
   - **Chromium**: Full live-DOM refractive distortion, chromatic dispersion, and edge optics.
   - **Safari / Firefox**: Liquid SDF contour, frosted backdrop, and physical edge specular highlights.

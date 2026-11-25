@@ -12,9 +12,9 @@ import {
 import type { RefractFilterConfig, SurfaceRenderMode } from '@sessile/dom'
 import type { DragMergeNodeInput, PopoverPlacement } from '@sessile/presets'
 
-export type LabId = 'drag-merge' | 'segmented-dock' | 'popover-menu'
+export type LabId = 'drag-merge' | 'segmented-dock' | 'popover-menu' | 'cover-wall'
 
-export const LAB_IDS: readonly LabId[] = ['drag-merge', 'segmented-dock', 'popover-menu']
+export const LAB_IDS: readonly LabId[] = ['drag-merge', 'segmented-dock', 'popover-menu', 'cover-wall']
 
 export interface GlobalGlassMaterial {
   config: OpticsLabConfig
@@ -38,6 +38,41 @@ export const DOCK_SEGMENTS: readonly DockSegmentMeta[] = [
   { id: 'motion', label: 'Springs' },
   { id: 'export', label: 'Spec' },
 ] as const
+
+export const COVER_WALL_BLEND_K = 30
+
+/** Viewport widths above this keep the floating HUD plates over the stage. */
+const DESKTOP_MIN_WIDTH = 901
+
+/**
+ * Lays out the cover wall's pinned shelf bar and its draggable droplet. At rest the droplet sits
+ * inside the blend radius, so the pair is one bridged contour until it is pulled away.
+ */
+export function createCoverWallNodes(stageSize: Size, inspectorWidth: number): DragMergeNodeInput[] {
+  const desktop = stageSize.width >= DESKTOP_MIN_WIDTH
+  const available = Math.max(300, stageSize.width - (desktop ? inspectorWidth : 0))
+  const pad = desktop ? 24 : 12
+  const height = desktop ? 60 : 52
+  const gap = 10
+  const barWidth = Math.min(520, available - pad * 2 - height - gap)
+  const left = (available - (barWidth + gap + height)) * 0.5
+  const cy = desktop ? 136 : 12 + height * 0.5
+  return [
+    {
+      id: 'bar',
+      center: { x: left + barWidth * 0.5, y: cy },
+      size: { width: barWidth, height },
+      radius: height * 0.5,
+      pinned: true,
+    },
+    {
+      id: 'drop',
+      center: { x: left + barWidth + gap + height * 0.5, y: cy },
+      size: { width: height, height },
+      radius: height * 0.5,
+    },
+  ]
+}
 
 export interface DragNodeMeta {
   id: string

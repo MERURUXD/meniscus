@@ -9,6 +9,8 @@ import {
   SHOWCASE_MATERIALS,
   buildOpticsLabMaterial,
   buildOpticsLabPrimitives,
+  COVER_WALL_BLEND_K,
+  createCoverWallNodes,
   createExtraDropletInput,
   createInitialDragMergeNodes,
 } from '../src/labDefaults.ts'
@@ -106,4 +108,30 @@ test('showcase materials bend clearly when refracting and stay frosted on the fa
   assert.equal(physical.bevelProfile, 'lip')
   assert.equal(physical.lightAngle, 60)
   assert.ok((physical.rimShade ?? 0) > 0)
+})
+
+test('createCoverWallNodes fits phone and desktop stages and rests as one bridged contour', () => {
+  for (const [stage, inspector] of [
+    [{ width: 390, height: 420 }, 0],
+    [{ width: 1280, height: 800 }, 348],
+    [{ width: 1280, height: 800 }, 0],
+  ] as const) {
+    const [bar, drop] = createCoverWallNodes(stage, inspector)
+    assert.ok(bar && drop, 'a bar and a droplet')
+    assert.equal(bar.pinned, true)
+    assert.notEqual(drop.pinned, true)
+    const usable = stage.width >= 901 ? stage.width - inspector : stage.width
+    for (const node of [bar, drop]) {
+      assert.ok(node.center.x - node.size.width / 2 >= 0, `${node.id} left edge at ${stage.width}px`)
+      assert.ok(node.center.x + node.size.width / 2 <= usable, `${node.id} right edge at ${stage.width}px`)
+      assert.ok(node.center.y - node.size.height / 2 >= 0, `${node.id} top edge at ${stage.width}px`)
+    }
+    const gap = drop.center.x - drop.size.width / 2 - (bar.center.x + bar.size.width / 2)
+    assert.ok(gap > 0, `the droplet must stay a separate primitive (gap ${gap}px)`)
+    const contours = (primitives: readonly (typeof bar)[]) =>
+      (extractFieldContourPath({ primitives, blendK: COVER_WALL_BLEND_K }).match(/M/g) ?? []).length
+    assert.equal(contours([bar, drop]), 1, `bar and droplet fuse at rest at ${stage.width}px`)
+    const pulled = { ...drop, center: { x: drop.center.x, y: drop.center.y + 200 } }
+    assert.equal(contours([bar, pulled]), 2, 'pulling the droplet away splits the contour')
+  }
 })

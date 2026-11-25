@@ -18,10 +18,13 @@ import {
   computeFieldBounds,
   createGlassOverlayRenderer,
   extractFieldContourPath,
+  tryParseCssRgba,
+  type BackdropTelemetry,
   type BackdropVeilOptics,
   type GlassFieldState,
   type GlassPrimitive,
   type IGlassOverlayRenderer,
+  type LegibilityParams,
   type OpticalMaterial,
   type Rect,
   type RendererCapabilities,
@@ -47,6 +50,7 @@ import {
   formatRgbaCss,
   resolveElementTheme,
 } from './cssSurface.ts'
+import { LegibilityDriver, type GlassLegibilityOptions } from './legibility.ts'
 import {
   createRefractFilterController,
   resolveEffectiveMapScale,
@@ -127,6 +131,11 @@ export interface GlassSurfaceFrame {
   blurBumpPx?: number
   dpr?: number
   solidBackground?: string
+  /**
+   * Veil background overrides. While legibility is active, an `rgb()` / `rgba()` /
+   * `color(srgb)` value with literal channels gets the film composited onto it; anything else
+   * (hex, gradients, `var()`, percentage `color(srgb)` channels) is kept verbatim without film, and the contrast bound falls back to `material.tintRgba`.
+   */
   frostedBackground?: string
   refractTintBackground?: string
   refraction?: Partial<RefractFilterConfig>
@@ -159,6 +168,8 @@ export interface GlassSurfaceControllerOptions {
   overlayRenderer?: IGlassOverlayRenderer
   scheduler?: Partial<FrameScheduler>
   ResizeObserverCtor?: typeof ResizeObserver
+  /** Adaptive backdrop legibility for a fixed foreground; see `setLegibility`. */
+  legibility?: GlassLegibilityOptions | null
 }
 
 interface MutablePrimitive {
@@ -436,6 +447,20 @@ export class GlassSurfaceController {
   private frameLoop: FrameLoop | null = null
   private readonly loopScheduler: Partial<FrameScheduler> | undefined
 
+  private readonly positioning: 'absolute' | 'fixed'
+  private legibility: LegibilityDriver | null = null
+  private legibilityLoop: FrameLoop | null = null
+  private stopProbeObserver: (() => void) | null = null
+  private readonly baseVeilRgba = new Float32Array(4)
+  private parsedVeilSource: string | null = null
+  private readonly parsedVeilRgba = new Float32Array(4)
+  private parsedVeilValid = false
+  /** Host veil string kept verbatim this frame because it cannot carry the film. */
+  private opaqueVeilOverride: string | null = null
+  private renderedSinceTick = false
+  private samplingEnabled = true
+  private readonly edgeMaterial: OpticalMaterial = { ...DEFAULT_OPTICAL_MATERIALS.light.frosted }
+
   private readonly refractCache: LayerStyleCache = {}
   private readonly veilCache: LayerStyleCache = {}
   private readonly overlayCache: LayerStyleCache = {}
@@ -471,6 +496,7 @@ export class GlassSurfaceController {
 
     const elements = options.elements ?? {}
     const positioning = options.positioning ?? 'absolute'
+    this.positioning = positioning
     const zIndex = options.zIndex
     const hasCustomRefractSlot = 'refractBackdrop' in elements
     const hasCustomVeilSlot = 'veil' in elements
@@ -636,6 +662,10 @@ export class GlassSurfaceController {
     } else if (this.container) {
       this.containerSize = measureElementBorderBox(this.container)
     }
+
+    if (options.legibility) {
+      this.setLegibility(options.legibility)
+    }
   }
 
   private hideRefractBackdrop(): void {
@@ -715,9 +745,18 @@ export class GlassSurfaceController {
     }
 
     this.lastRenderedFrame = frame
+    this.renderedSinceTick = true
 
     const contourPath = extractFieldContourPath(frame.field, { x: bounds.x, y: bounds.y })
     const opacityStr = `${opacity}`
+    const refractPath = this.effectiveMode === 'refract' && Boolean(contourPath && this.refractBackdropEl)
+
+    const legibility =
+      this.effectiveMode === 'solid' || !this.legibility
+        ? null
+        : this.resolveLegibility(this.legibility, frame, material, refractPath)
+    const blurSigma = activeBlur + (legibility?.blurBoostPx ?? 0)
+    const saturation = material.saturation * (legibility?.saturationScale ?? 1)
 
     if (this.veilEl) {
       setVisibilityCached(this.veilEl, this.veilCache, 'visible')
@@ -745,7 +784,11 @@ export class GlassSurfaceController {
           refCfg?.strength ?? this.baseRefraction?.strength ?? clamp(material.refraction / 50, 0, 2.5)
         const dispersion =
           refCfg?.dispersion ?? this.baseRefraction?.dispersion ?? material.dispersion
-        const scaleMultiplier = refCfg?.scaleMultiplier ?? this.baseRefraction?.scaleMultiplier
+        const baseScaleMultiplier = refCfg?.scaleMultiplier ?? this.baseRefraction?.scaleMultiplier
+        // Attenuating through the displacement `scale` keeps the encoded map (and its key) intact.
+        const scaleMultiplier = legibility
+          ? (baseScaleMultiplier ?? 1) * legibility.refractionScale
+          : baseScaleMultiplier
         const mapScale = refCfg?.mapScale ?? this.baseRefraction?.mapScale
         const maxMapPixels = refCfg?.maxMapPixels ?? this.baseRefraction?.maxMapPixels
         const profile = refCfg?.profile ?? this.baseRefraction?.profile
@@ -777,8 +820,8 @@ export class GlassSurfaceController {
         filterController.updateFrame({
           bounds: refractBounds,
           field: frame.field,
-          blurSigma: activeBlur,
-          saturate: material.saturation,
+          blurSigma,
+          saturate: saturation,
           brightness: veilOptics.brightness,
           contrast: veilOptics.contrast,
           contrastFirst: veilOptics.contrastFirst,
@@ -793,6 +836,7 @@ export class GlassSurfaceController {
           caustics,
           nineSlice,
         })
+        filterController.updateLegibility(legibility)
 
         // Route B3: keep `refractBackdrop` unclipped so Chromium avoids rectangular backdrop leaks
         // while the SVG filter self-masks output alpha to the displaced glass interior.
@@ -807,14 +851,16 @@ export class GlassSurfaceController {
           setBackgroundCached(
             this.veilEl,
             this.veilCache,
-            frame.refractTintBackground ?? formatRgbaCss(material.tintRgba),
+            legibility
+              ? (this.opaqueVeilOverride ?? formatRgbaCss(legibility.veilRgba))
+              : (frame.refractTintBackground ?? formatRgbaCss(material.tintRgba)),
           )
         }
       } else {
-        this.applyFrostedVeil(activeBlur, material, veilOptics, frame.frostedBackground)
+        this.applyFrostedVeil(blurSigma, saturation, material, veilOptics, frame, legibility)
       }
     } else {
-      this.applyFrostedVeil(activeBlur, material, veilOptics, frame.frostedBackground)
+      this.applyFrostedVeil(blurSigma, saturation, material, veilOptics, frame, legibility)
     }
 
     if (this.overlayCanvasEl) {
@@ -829,32 +875,174 @@ export class GlassSurfaceController {
         dpr,
         theme,
         field: shifted,
-        material,
+        material: legibility ? this.compensateEdges(material, legibility) : material,
         opacity,
         blurBumpPx,
       })
     }
+
+    if (this.legibility && !this.legibility.settled) {
+      this.wakeLegibility()
+    }
   }
 
   private applyFrostedVeil(
-    activeBlur: number,
+    blurSigma: number,
+    saturation: number,
     material: OpticalMaterial,
     veilOptics: BackdropVeilOptics,
-    frostedBackground?: string,
+    frame: GlassSurfaceFrame,
+    legibility: LegibilityParams | null,
   ): void {
     this.hideRefractBackdrop()
     if (!this.veilEl) return
     const bf = buildBackdropFilterCss({
-      blurPx: activeBlur,
-      saturation: material.saturation,
+      blurPx: blurSigma,
+      saturation,
       veil: veilOptics,
+      correction: legibility?.fallbackVeil,
     })
     setVeilBackdropFilterCached(this.veilEl, this.veilCache, bf)
     setBackgroundCached(
       this.veilEl,
       this.veilCache,
-      frostedBackground ?? formatRgbaCss(material.tintRgba),
+      legibility
+        ? (this.opaqueVeilOverride ?? formatRgbaCss(legibility.veilRgba))
+        : (frame.frostedBackground ?? formatRgbaCss(material.tintRgba)),
     )
+  }
+
+  /**
+   * Resolves this frame's material response, sampling telemetry first unless the call comes from
+   * the smoothing loop. Host renders measure layout right before calling `render`, so the probe
+   * reads here precede every style write and stay clean.
+   */
+  private resolveLegibility(
+    driver: LegibilityDriver,
+    frame: GlassSurfaceFrame,
+    material: OpticalMaterial,
+    refractPath: boolean,
+  ): LegibilityParams {
+    const override = refractPath ? frame.refractTintBackground : frame.frostedBackground
+    const baseVeil = this.baseVeilRgba
+    this.opaqueVeilOverride = null
+    if (override !== undefined && override !== this.parsedVeilSource) {
+      this.parsedVeilSource = override
+      const parsed = tryParseCssRgba(override)
+      this.parsedVeilValid = parsed !== null
+      this.parsedVeilRgba.set(parsed ?? material.tintRgba)
+    }
+    if (override === undefined) {
+      baseVeil.set(material.tintRgba)
+    } else if (this.parsedVeilValid) {
+      baseVeil.set(this.parsedVeilRgba)
+    } else {
+      baseVeil.set(material.tintRgba)
+      this.opaqueVeilOverride = override
+    }
+
+    if (this.samplingEnabled) {
+      let originX = 0
+      let originY = 0
+      if (this.positioning === 'absolute' && this.container && driver.probe) {
+        // Absolute layers live in the container's scrolled padding box.
+        const box = this.container.getBoundingClientRect()
+        originX = box.left + this.container.clientLeft - this.container.scrollLeft
+        originY = box.top + this.container.clientTop - this.container.scrollTop
+      }
+      driver.sample(frame.field, originX, originY, baseVeil, frame.veilOptics, material.saturation)
+    }
+    return driver.resolve(baseVeil)
+  }
+
+  /** Edge Optics compensation scales alphas only: blur radii and offsets feed surface bounds. */
+  private compensateEdges(material: OpticalMaterial, params: LegibilityParams): OpticalMaterial {
+    const edge = Object.assign(this.edgeMaterial, material)
+    // Object.assign never clears optional keys a previous material set and this one omits.
+    edge.borderWidth = material.borderWidth
+    edge.borderRgba = material.borderRgba
+    edge.rimBottomRatio = material.rimBottomRatio
+    edge.bevelProfile = material.bevelProfile
+    edge.lightAngle = material.lightAngle
+    edge.lightElevation = material.lightElevation
+    edge.rimShade = material.rimShade
+    edge.hairlineSideAlpha = clamp(material.hairlineSideAlpha * params.hairlineScale, 0, 1)
+    edge.hairlineCornerAlpha = clamp(material.hairlineCornerAlpha * params.hairlineScale, 0, 1)
+    edge.hairlineFlatAlpha = clamp(material.hairlineFlatAlpha * params.hairlineScale, 0, 1)
+    edge.rimOpacity = clamp(material.rimOpacity * params.hairlineScale, 0, 1)
+    edge.shadowAlpha = clamp(material.shadowAlpha * params.shadowScale, 0, 1)
+    return edge
+  }
+
+  /**
+   * Enables adaptive legibility for a fixed foreground, or disables it with `null`. The glass
+   * yields: per-pixel compression in the Route B3 filter on Chromium, film plus affine
+   * brightness/contrast on the `backdrop-filter` fallback, and alpha-only edge compensation.
+   */
+  setLegibility(options: GlassLegibilityOptions | null): void {
+    if (this.disposed) return
+    this.legibilityLoop?.stop()
+    this.stopProbeObserver?.()
+    this.stopProbeObserver = null
+    this.legibility = options ? new LegibilityDriver(options) : null
+    if (this.legibility?.probe?.observe) {
+      this.stopProbeObserver = this.legibility.probe.observe(() => this.onBackdropInvalidated())
+    }
+    if (this.lastRenderedFrame) {
+      this.render(this.lastRenderedFrame)
+    }
+  }
+
+  /** Latest resolved legibility response (live object, read-only), or `null` when disabled. */
+  getLegibilityParams(): Readonly<LegibilityParams> | null {
+    return this.legibility?.params ?? null
+  }
+
+  /** Injects host-known backdrop telemetry; `null` hands control back to the probe. */
+  setBackdropTelemetry(telemetry: BackdropTelemetry | null): void {
+    if (!this.legibility) return
+    this.legibility.setTelemetry(telemetry)
+    this.onBackdropInvalidated()
+  }
+
+  /**
+   * Scroll events dispatch before animation-frame callbacks while layout is still clean, so the
+   * probe is read here and the frame loop only smooths and writes.
+   */
+  private onBackdropInvalidated(): void {
+    const frame = this.lastRenderedFrame
+    if (this.disposed || !this.legibility || !frame || this.effectiveMode === 'solid') return
+    const material =
+      frame.material ??
+      this.defaultMaterial ??
+      DEFAULT_OPTICAL_MATERIALS[frame.theme ?? this.activeTheme].frosted
+    this.resolveLegibility(this.legibility, frame, material, this.effectiveMode === 'refract')
+    this.wakeLegibility()
+  }
+
+  private wakeLegibility(): void {
+    if (this.disposed) return
+    this.legibilityLoop ??= createFrameLoop(
+      (dtSec) => {
+        const driver = this.legibility
+        const frame = this.lastRenderedFrame
+        if (this.disposed || !driver || !frame) return false
+        // A host render since the last tick already applied the newest smoothed values; only
+        // re-render a static surface, and without re-reading layout through the probe.
+        if (driver.advance(dtSec * 1000) && !this.renderedSinceTick) {
+          this.samplingEnabled = false
+          try {
+            this.render(frame)
+          } finally {
+            this.samplingEnabled = true
+          }
+        }
+        this.renderedSinceTick = false
+        return !driver.settled
+      },
+      { scheduler: this.loopScheduler },
+    )
+    this.legibilityLoop.start()
   }
 
   /** Hides all surface layers and clears the overlay canvas without detaching DOM nodes. */
@@ -967,6 +1155,11 @@ export class GlassSurfaceController {
     this.disposed = true
 
     this.stopLoop()
+    this.legibilityLoop?.stop()
+    this.legibilityLoop = null
+    this.stopProbeObserver?.()
+    this.stopProbeObserver = null
+    this.legibility = null
     this.stopReducedMotionObserver?.()
     this.stopReducedMotionObserver = null
     this.stopResizeObserver?.()

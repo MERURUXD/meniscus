@@ -4,6 +4,7 @@ import { detectSurfaceCapabilities, type SurfaceCapabilities, type SurfaceRender
 import { useReducedMotion } from '@sessile/react'
 import { SegmentedControl } from './components/ControlPanel.tsx'
 import { detectInitialLocale, getMessages, persistLocale, type Locale } from './i18n.ts'
+import { CoverWallLab } from './labs/CoverWallLab.tsx'
 import { DragMergeLab } from './labs/DragMergeLab.tsx'
 import { GlobalMaterialPanel, OpticsCompareStage } from './labs/OpticsLab.tsx'
 import { PopoverMenuLab } from './labs/PopoverMenuLab.tsx'
@@ -75,6 +76,13 @@ const LAB_ICONS: Readonly<Record<LabId, ReactElement>> = {
       <rect x="5" y="5.5" width="9" height="8" rx="2.2" stroke="currentColor" strokeWidth="1.4" />
     </svg>
   ),
+  'cover-wall': (
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <rect x="1.5" y="1.5" width="5.5" height="8" rx="1" fill="currentColor" />
+      <rect x="9" y="1.5" width="5.5" height="8" rx="1" stroke="currentColor" strokeWidth="1.4" />
+      <rect x="1.5" y="11" width="13" height="3.5" rx="1.75" stroke="currentColor" strokeWidth="1.4" />
+    </svg>
+  ),
 }
 
 type SheetTab = 'material' | 'scene'
@@ -131,9 +139,9 @@ export function App(): ReactElement {
       ) {
         return
       }
-      if (e.key === '1' || e.key === '2' || e.key === '3') {
-        const nextLab = LAB_IDS[Number(e.key) - 1]
-        if (nextLab) selectScene(nextLab)
+      const nextLab = /^[1-9]$/.test(e.key) ? LAB_IDS[Number(e.key) - 1] : undefined
+      if (nextLab) {
+        selectScene(nextLab)
       } else if (e.key === 'i' || e.key === 'I') {
         setInspectorOpen((open) => !open)
       } else if (e.key === 'm' || e.key === 'M') {
@@ -274,6 +282,18 @@ export function App(): ReactElement {
                   inspectorOpen={inspectorOpen}
                   showScenePanel={showScenePanel}
                   panelHeaderSlot={sheetSwitcher}
+                />
+              ) : null}
+              {activeLab === 'cover-wall' ? (
+                <CoverWallLab
+                  theme={theme}
+                  locale={locale}
+                  reducedMotion={reducedMotion}
+                  glass={globalGlass}
+                  inspectorOpen={inspectorOpen}
+                  showScenePanel={showScenePanel}
+                  panelHeaderSlot={sheetSwitcher}
+                  onRenderModeChange={(mode) => updateOpticsConfig('renderView', mode)}
                 />
               ) : null}
             </>

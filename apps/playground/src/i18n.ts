@@ -222,6 +222,28 @@ export interface PlaygroundMessages {
     springMode: string
     noneAction: string
   }
+  coverWall: {
+    wallAriaLabel: string
+    barTitle: string
+    barCaption: string
+    dropLabel: string
+    panelTitle: string
+    panelDescription: string
+    sectionTier: string
+    sectionRender: string
+    sectionForeground: string
+    tiers: Record<'off' | 'clear' | 'regular' | 'legible', string>
+    renderModes: Record<'refract' | 'frosted', string>
+    foregrounds: Record<'auto' | 'light' | 'dark', string>
+    statTarget: string
+    statFilm: string
+    statBlur: string
+    statRefraction: string
+    statSaturation: string
+    statLimit: string
+    readoutOff: string
+    infeasible: string
+  }
 }
 
 export const MESSAGES: Record<Locale, PlaygroundMessages> = {
@@ -274,6 +296,10 @@ export const MESSAGES: Record<Locale, PlaygroundMessages> = {
       'segmented-dock': {
         title: 'Segmented',
         description: 'The highlight stretches and slides between options.',
+      },
+      'cover-wall': {
+        title: 'Cover wall',
+        description: 'Scroll loud comic covers under glass that keeps its text readable.',
       },
       'popover-menu': {
         title: 'Popover',
@@ -423,6 +449,29 @@ export const MESSAGES: Record<Locale, PlaygroundMessages> = {
         refractDowngraded: 'Frosted, refraction unavailable',
       },
     },
+    coverWall: {
+      wallAriaLabel: 'Procedural comic covers',
+      barTitle: 'New this week',
+      barCaption: 'Fixed text color. The glass yields.',
+      dropLabel: 'Drag',
+      panelTitle: 'Legibility stress test',
+      panelDescription:
+        'Scroll the wall under the bar and drag the droplet across covers. Compare how much the glass gives up at each tier.',
+      sectionTier: 'Legibility tier',
+      sectionRender: 'Render path',
+      sectionForeground: 'Text color',
+      tiers: { off: 'Off', clear: 'Clear', regular: 'Regular', legible: 'Legible' },
+      renderModes: { refract: 'Refract', frosted: 'Frosted' },
+      foregrounds: { auto: 'Theme', light: 'Light text', dark: 'Dark text' },
+      statTarget: 'WCAG target',
+      statFilm: 'Film alpha',
+      statBlur: 'Blur boost',
+      statRefraction: 'Refraction',
+      statSaturation: 'Saturation',
+      statLimit: 'Backdrop limit',
+      readoutOff: 'Off',
+      infeasible: 'veil alone fails',
+    },
     popoverMenu: {
       backdropTitle: 'Popover menu',
       backdropCaption:
@@ -519,6 +568,10 @@ export const MESSAGES: Record<Locale, PlaygroundMessages> = {
       'segmented-dock': {
         title: '分段切换',
         description: '选中块在选项之间拉伸、滑动。',
+      },
+      'cover-wall': {
+        title: '封面墙',
+        description: '在高饱和漫画封面上滚动，玻璃让位保证文字可读。',
       },
       'popover-menu': {
         title: '弹出菜单',
@@ -666,6 +719,28 @@ export const MESSAGES: Record<Locale, PlaygroundMessages> = {
         splitDowngraded: '两侧均为磨砂',
         refractDowngraded: '磨砂，不支持折射',
       },
+    },
+    coverWall: {
+      wallAriaLabel: '程序生成的漫画封面',
+      barTitle: '本周新刊',
+      barCaption: '文字颜色由宿主固定，玻璃负责让位。',
+      dropLabel: '拖动',
+      panelTitle: '可读性压力测试',
+      panelDescription: '让封面在玻璃条下滚动，或把液滴拖过封面，对比各档位下玻璃让出了多少。',
+      sectionTier: '可读性档位',
+      sectionRender: '渲染路径',
+      sectionForeground: '文字颜色',
+      tiers: { off: '关闭', clear: '通透', regular: '标准', legible: '易读' },
+      renderModes: { refract: '折射', frosted: '磨砂' },
+      foregrounds: { auto: '跟随主题', light: '浅色字', dark: '深色字' },
+      statTarget: 'WCAG 目标',
+      statFilm: '薄膜不透明度',
+      statBlur: '附加模糊',
+      statRefraction: '折射倍率',
+      statSaturation: '饱和度倍率',
+      statLimit: '底色亮度界限',
+      readoutOff: '关闭',
+      infeasible: '仅底色已不达标',
     },
     popoverMenu: {
       backdropTitle: '弹出菜单',

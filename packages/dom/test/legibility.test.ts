@@ -279,7 +279,8 @@ test('region probe maps grid cells, fills uncovered area with the background and
   const events = new EventTarget()
   const probe = createRegionProbe({ eventTarget: events, background: CALM })
   const cover = { getBoundingClientRect: () => rect(0, 0, 100, 50) } as unknown as Element
-  const data = new Float32Array([0.1, 0.0, 0.1, 0.0, 1, 0.8, 0.9, 0.6])
+  // Records follow TELEMETRY_STRIDE: lumaHigh, lumaLow, channelHigh, channelLow, chroma, detail.
+  const data = new Float32Array([0.1, 0.0, 0.1, 0.0, 0.1, 0.0, 1, 0.8, 1, 0.1, 0.9, 0.6])
   probe.set(cover, { cols: 2, rows: 1, data })
 
   const acc = createTelemetryAccumulator()
@@ -287,6 +288,7 @@ test('region probe maps grid cells, fills uncovered area with the background and
   probe.sample([rect(50, 0, 50, 50)], acc)
   acc.resolve(out)
   assert.ok(Math.abs(out.lumaHigh - 1) < 1e-6 && Math.abs(out.chroma - 0.9) < 1e-6, 'right cell only')
+  assert.ok(Math.abs(out.channelLow! - 0.1) < 1e-6, 'channel extremes travel with the cell')
 
   acc.reset()
   probe.sample([rect(100, 0, 50, 50)], acc)

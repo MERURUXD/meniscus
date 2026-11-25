@@ -151,8 +151,22 @@ export interface LegibilityGoal {
 export interface BackdropTelemetry {
   /** Bright-tail encoded luminance (about the 95th percentile). */
   lumaHigh: number
-  /** Dark-tail encoded luminance (about the 5th percentile). */
+  /**
+   * Dark tail (about the 5th percentile) of sRGB luma (`srgbLuma`). Dark text needs a lower
+   * bound that survives per-channel lifts: by Jensen's inequality luma never exceeds encoded
+   * luminance, and unlike luminance it moves exactly affinely under per-channel
+   * `brightness`/`contrast` and the fallback lift, so a lift solved on it holds on saturated
+   * pixels too.
+   */
   lumaLow: number
+  /**
+   * Bright tail (about the 95th percentile) of each pixel's largest sRGB channel. Host
+   * brightness/contrast clip per channel, so luminance alone cannot bound a colored backdrop
+   * under them. Omitted, the backdrop is assumed neutral (`lumaHigh`).
+   */
+  channelHigh?: number
+  /** Dark tail (about the 5th percentile) of each pixel's smallest sRGB channel; defaults to `lumaLow`. */
+  channelLow?: number
   /** Mean chroma (`max - min` of the sRGB channels). */
   chroma: number
   /** Mean absolute luminance gradient per pixel, scaled to roughly `[0, 1]` (dense text reads high). */
@@ -165,8 +179,8 @@ export interface LegibilityRisk {
   detail: number
 }
 
-/** Telemetry floats per grid cell, ordered as `lumaHigh, lumaLow, chroma, detail`. */
-export const TELEMETRY_STRIDE = 4
+/** Telemetry floats per grid cell: `lumaHigh, lumaLow, channelHigh, channelLow, chroma, detail`. */
+export const TELEMETRY_STRIDE = 6
 
 export interface BackdropTelemetryGrid {
   cols: number
@@ -211,6 +225,11 @@ export function linearToSrgb(l: number): number {
 }
 
 /** WCAG 2 relative luminance of a normalized sRGB color. */
+/** Rec. 709 weights applied to the encoded sRGB channels; a lower bound on encoded luminance. */
+export function srgbLuma(r: number, g: number, b: number): number {
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b
+}
+
 export function relativeLuminance(r: number, g: number, b: number): number {
   return 0.2126 * srgbToLinear(r) + 0.7152 * srgbToLinear(g) + 0.0722 * srgbToLinear(b)
 }
@@ -290,10 +309,63 @@ function applyVeilOptics(optics: BackdropVeilOptics, x: number): number {
 }
 
 /**
+ * Extreme of `applyVeilOptics(x) - x` over `[lo, hi]`. The map is piecewise linear, so the
+ * extreme sits at an endpoint or at one of its (at most three) clip kinks.
+ */
+function opticsDeviation(optics: BackdropVeilOptics, lo: number, hi: number, upper: boolean): number {
+  const b = Math.max(0, optics.brightness)
+  const c = Math.max(0, optics.contrast)
+  const k = 0.5 * (1 - c)
+  let k1 = Number.NaN
+  let k2 = Number.NaN
+  let k3 = Number.NaN
+  if (optics.contrastFirst) {
+    if (c > 0) {
+      k1 = -k / c
+      k2 = (1 - k) / c
+      if (b > 0) k3 = (1 / b - k) / c
+    }
+  } else if (b > 0) {
+    k1 = 1 / b
+    if (c > 0) {
+      k2 = -k / c / b
+      k3 = (1 - k) / c / b
+    }
+  }
+  let best = applyVeilOptics(optics, lo) - lo
+  best = deviationAt(optics, hi, lo, hi, best, upper)
+  best = deviationAt(optics, k1, lo, hi, best, upper)
+  best = deviationAt(optics, k2, lo, hi, best, upper)
+  return deviationAt(optics, k3, lo, hi, best, upper)
+}
+
+function deviationAt(
+  optics: BackdropVeilOptics,
+  x: number,
+  lo: number,
+  hi: number,
+  best: number,
+  upper: boolean,
+): number {
+  if (!(x >= lo && x <= hi)) return best
+  const d = applyVeilOptics(optics, x) - x
+  return upper ? Math.max(best, d) : Math.min(best, d)
+}
+
+/**
  * Maps backdrop telemetry to `[0, 1]` risk per channel for the given goal and base veil.
  * Telemetry describes the raw page, but the glass shows it after the host's `optics`, and the
- * fallback correction runs after those optics too. Each clamped step is monotonic, so the
- * luminance percentiles map exactly; chroma and gradients scale by at most the affine slope.
+ * fallback correction runs after those optics too. The optics clip each channel, so a colored
+ * pixel's output luminance is not a function of its input luminance. It is bounded instead:
+ * - by the optics applied to its extreme channel, since luminance lies between min and max
+ *   channel and the optics are monotonic;
+ * - by `L + D`, where `D` is the extreme of `f(x) - x` over its channel range. The dark tail is
+ *   sRGB luma, a weighted mean of the channels, so this holds exactly; the bright tail is
+ *   encoded luminance, a translated power mean, which by Minkowski's inequality moves no
+ *   further than a shift applied to every channel.
+ * Both bounds are exact for neutral pixels and collapse to `L` under identity optics, so the
+ * estimate stays continuous as the host's optics change. Chroma and gradients scale by the
+ * affine slope.
  */
 export function computeBackdropRisk(
   telemetry: BackdropTelemetry,
@@ -304,10 +376,21 @@ export function computeBackdropRisk(
 ): LegibilityRisk {
   const s = veilAffineScale(optics)
   const ceiling = backdropCeiling(goal, veilRgba)
+  const high = clamp(telemetry.lumaHigh, 0, 1)
+  const low = clamp(telemetry.lumaLow, 0, 1)
+  const channelHigh = clamp(Math.max(telemetry.channelHigh ?? high, high), 0, 1)
+  const channelLow = clamp(Math.min(telemetry.channelLow ?? low, low), 0, 1)
   const tail =
     goal.polarity === 'light'
-      ? applyVeilOptics(optics, telemetry.lumaHigh)
-      : 1 - applyVeilOptics(optics, telemetry.lumaLow)
+      ? Math.min(
+          high + Math.max(0, opticsDeviation(optics, channelLow, channelHigh, true)),
+          applyVeilOptics(optics, channelHigh),
+        )
+      : 1 -
+        Math.max(
+          low + Math.min(0, opticsDeviation(optics, channelLow, channelHigh, false)),
+          applyVeilOptics(optics, channelLow),
+        )
   if (ceiling >= 1) {
     out.luma = 0
   } else {
@@ -473,15 +556,30 @@ export function createTelemetryAccumulator(): BackdropTelemetryAccumulator {
   let weight = 0
   let high = 0
   let low = 0
+  let channelHigh = 0
+  let channelLow = 0
   let chroma = 0
   let detail = 0
-  const push = (h: number, l: number, c: number, d: number, w: number): void => {
+  const push = (
+    h: number,
+    l: number,
+    ch: number,
+    cl: number,
+    c: number,
+    d: number,
+    w: number,
+  ): void => {
     if (!(w > 0)) return
     const hh = clamp(h, 0, 1)
     const ll = 1 - clamp(l, 0, 1)
+    // Luminance lies between a pixel's extreme channels; inconsistent input falls back to neutral.
+    const chh = Math.max(hh, clamp(ch, 0, 1))
+    const cll = Math.max(ll, 1 - clamp(cl, 0, 1))
     weight += w
     high += w * hh * hh
     low += w * ll * ll
+    channelHigh += w * chh * chh
+    channelLow += w * cll * cll
     chroma += w * clamp(c, 0, 1)
     detail += w * clamp(d, 0, 1)
   }
@@ -490,18 +588,28 @@ export function createTelemetryAccumulator(): BackdropTelemetryAccumulator {
       return weight
     },
     reset() {
-      weight = high = low = chroma = detail = 0
+      weight = high = low = channelHigh = channelLow = chroma = detail = 0
     },
     add(t, w) {
-      push(t.lumaHigh, t.lumaLow, t.chroma, t.detail, w)
+      push(t.lumaHigh, t.lumaLow, t.channelHigh ?? t.lumaHigh, t.channelLow ?? t.lumaLow, t.chroma, t.detail, w)
     },
     addRecord(data, offset, w) {
-      push(data[offset]!, data[offset + 1]!, data[offset + 2]!, data[offset + 3]!, w)
+      push(
+        data[offset]!,
+        data[offset + 1]!,
+        data[offset + 2]!,
+        data[offset + 3]!,
+        data[offset + 4]!,
+        data[offset + 5]!,
+        w,
+      )
     },
     resolve(out) {
       if (!(weight > 0)) return false
       out.lumaHigh = Math.sqrt(high / weight)
       out.lumaLow = 1 - Math.sqrt(low / weight)
+      out.channelHigh = Math.sqrt(channelHigh / weight)
+      out.channelLow = 1 - Math.sqrt(channelLow / weight)
       out.chroma = chroma / weight
       out.detail = detail / weight
       return true
@@ -529,16 +637,23 @@ export function measureTelemetryGrid(
   const gr = Math.max(1, Math.floor(rows))
   const data = new Float32Array(gc * gr * TELEMETRY_STRIDE)
   const lum = new Float32Array(w * h)
-  const chromaPx = new Float32Array(w * h)
+  const luma = new Float32Array(w * h)
+  const maxPx = new Float32Array(w * h)
+  const minPx = new Float32Array(w * h)
   for (let i = 0; i < w * h; i++) {
     const r = (rgba[i * 4] ?? 0) / 255
     const g = (rgba[i * 4 + 1] ?? 0) / 255
     const b = (rgba[i * 4 + 2] ?? 0) / 255
     lum[i] = linearToSrgb(relativeLuminance(r, g, b))
-    chromaPx[i] = Math.max(r, g, b) - Math.min(r, g, b)
+    luma[i] = srgbLuma(r, g, b)
+    maxPx[i] = Math.max(r, g, b)
+    minPx[i] = Math.min(r, g, b)
   }
 
   const hist = new Uint32Array(HISTOGRAM_BINS)
+  const lumaHist = new Uint32Array(HISTOGRAM_BINS)
+  const maxHist = new Uint32Array(HISTOGRAM_BINS)
+  const minHist = new Uint32Array(HISTOGRAM_BINS)
   for (let cy = 0; cy < gr; cy++) {
     const y0 = Math.floor((cy * h) / gr)
     const y1 = Math.max(y0 + 1, Math.floor(((cy + 1) * h) / gr))
@@ -546,6 +661,9 @@ export function measureTelemetryGrid(
       const x0 = Math.floor((cx * w) / gc)
       const x1 = Math.max(x0 + 1, Math.floor(((cx + 1) * w) / gc))
       hist.fill(0)
+      lumaHist.fill(0)
+      maxHist.fill(0)
+      minHist.fill(0)
       let count = 0
       let chroma = 0
       let gradient = 0
@@ -553,8 +671,11 @@ export function measureTelemetryGrid(
         for (let x = x0; x < x1; x++) {
           const i = y * w + x
           const l = lum[i]!
-          hist[Math.min(HISTOGRAM_BINS - 1, Math.floor(l * HISTOGRAM_BINS))]! += 1
-          chroma += chromaPx[i]!
+          hist[histogramBin(l)]! += 1
+          lumaHist[histogramBin(luma[i]!)]! += 1
+          maxHist[histogramBin(maxPx[i]!)]! += 1
+          minHist[histogramBin(minPx[i]!)]! += 1
+          chroma += maxPx[i]! - minPx[i]!
           // Gradients stay inside the cell so a card edge on a cell border is not counted as detail.
           const right = x + 1 < x1 ? lum[i + 1]! : l
           const down = y + 1 < y1 ? lum[i + w]! : l
@@ -564,20 +685,28 @@ export function measureTelemetryGrid(
       }
       const o = (cy * gc + cx) * TELEMETRY_STRIDE
       data[o] = percentileFromHistogram(hist, count, 0.95)
-      data[o + 1] = percentileFromHistogram(hist, count, 0.05)
-      data[o + 2] = chroma / count
-      data[o + 3] = Math.min(1, (gradient / count) * 4)
+      data[o + 1] = percentileFromHistogram(lumaHist, count, 0.05)
+      // Bin bounds rather than centers keep the channel extremes conservative after quantization.
+      data[o + 2] = Math.max(data[o]!, percentileFromHistogram(maxHist, count, 0.95, 1))
+      data[o + 3] = Math.min(data[o + 1]!, percentileFromHistogram(minHist, count, 0.05, 0))
+      data[o + 4] = chroma / count
+      data[o + 5] = Math.min(1, (gradient / count) * 4)
     }
   }
   return { cols: gc, rows: gr, data }
 }
 
-function percentileFromHistogram(hist: Uint32Array, count: number, q: number): number {
+function histogramBin(v: number): number {
+  return Math.min(HISTOGRAM_BINS - 1, Math.max(0, Math.floor(v * HISTOGRAM_BINS)))
+}
+
+/** `edge` places the result inside the matching bin: `0.5` its center, `0` / `1` its bounds. */
+function percentileFromHistogram(hist: Uint32Array, count: number, q: number, edge = 0.5): number {
   const target = q * count
   let acc = 0
   for (let i = 0; i < hist.length; i++) {
     acc += hist[i]!
-    if (acc >= target) return (i + 0.5) / hist.length
+    if (acc >= target) return (i + edge) / hist.length
   }
   return 1
 }

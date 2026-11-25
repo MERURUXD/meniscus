@@ -14,6 +14,7 @@ import {
   linearToSrgb,
   measureTelemetryGrid,
   relativeLuminance,
+  srgbLuma,
   type BackdropTelemetry,
   type BackdropTelemetryGrid,
   type ForegroundPolarity,
@@ -87,10 +88,11 @@ const SHELF_GROUND = {
 
 function solidTelemetry(hex: string): BackdropTelemetry {
   const [r, g, b] = hexToRgb(hex)
-  const luma = linearToSrgb(relativeLuminance(r, g, b))
   return {
-    lumaHigh: luma,
-    lumaLow: luma,
+    lumaHigh: linearToSrgb(relativeLuminance(r, g, b)),
+    lumaLow: srgbLuma(r, g, b),
+    channelHigh: Math.max(r, g, b),
+    channelLow: Math.min(r, g, b),
     chroma: Math.max(r, g, b) - Math.min(r, g, b),
     detail: 0,
   }

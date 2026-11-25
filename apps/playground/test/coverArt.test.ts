@@ -14,8 +14,10 @@ function measureCells(pixels: Uint8ClampedArray): BackdropTelemetry[] {
     cells.push({
       lumaHigh: grid.data[o]!,
       lumaLow: grid.data[o + 1]!,
-      chroma: grid.data[o + 2]!,
-      detail: grid.data[o + 3]!,
+      channelHigh: grid.data[o + 2]!,
+      channelLow: grid.data[o + 3]!,
+      chroma: grid.data[o + 4]!,
+      detail: grid.data[o + 5]!,
     })
   }
   return cells

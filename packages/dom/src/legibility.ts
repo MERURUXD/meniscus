@@ -42,7 +42,14 @@ export class LegibilityDriver {
   private readonly targetRisk: LegibilityRisk = { luma: 0, chroma: 0, detail: 0 }
   private readonly smoothedRisk: LegibilityRisk = { luma: 0, chroma: 0, detail: 0 }
   private readonly accumulator = createTelemetryAccumulator()
-  private readonly sampled: BackdropTelemetry = { lumaHigh: 0, lumaLow: 0, chroma: 0, detail: 0 }
+  private readonly sampled: BackdropTelemetry = {
+    lumaHigh: 0,
+    lumaLow: 0,
+    channelHigh: 0,
+    channelLow: 0,
+    chroma: 0,
+    detail: 0,
+  }
   private readonly rectPool: Rect[] = []
   private readonly rects: Rect[] = []
   private injected: BackdropTelemetry | null = null

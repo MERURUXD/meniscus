@@ -11,7 +11,9 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
+  LEGIBILITY_LIMIT_MARGIN,
   LEGIBILITY_POLICIES,
+  TELEMETRY_STRIDE,
   LEGIBILITY_STAGES,
   computeBackdropRisk,
   contrastRatio,
@@ -21,6 +23,7 @@ import {
   linearToSrgb,
   measureTelemetryGrid,
   relativeLuminance,
+  srgbLuma,
   resolveLegibilityGoal,
   resolveLegibilityParams,
   type BackdropTelemetry,
@@ -244,6 +247,65 @@ test('the fallback stage holds the limit after host optics, including tails they
   }
 })
 
+test('fallback correction holds per pixel on colored backdrops under arbitrary host optics', () => {
+  // One pixel per telemetry, so its tails are exact; CSS clips per channel at every stage and the
+  // text sits on the encoded luminance of the result.
+  const encoded = (rgb: readonly number[]): number =>
+    linearToSrgb(relativeLuminance(rgb[0]!, rgb[1]!, rgb[2]!))
+  let seed = 7
+  const rand = (): number => {
+    seed = (seed * 1664525 + 1013904223) >>> 0
+    return seed / 2 ** 32
+  }
+  for (let n = 0; n < 4000; n++) {
+    const rgb = [rand(), rand(), rand()].map((v) => (n % 3 === 0 ? Math.round(v) : v))
+    const optics: VeilOptics = { brightness: rand() * 2.5, contrast: rand() * 2.5, contrastFirst: rand() < 0.5 }
+    const L = encoded(rgb)
+    const t: BackdropTelemetry = {
+      lumaHigh: L,
+      lumaLow: srgbLuma(rgb[0]!, rgb[1]!, rgb[2]!),
+      channelHigh: Math.max(...rgb),
+      channelLow: Math.min(...rgb),
+      chroma: 0,
+      detail: 0,
+    }
+    for (const foreground of [WHITE, INK]) {
+      const goal = resolveLegibilityGoal({ foreground, tier: n % 2 ? 'regular' : 'legible' })
+      const params = createLegibilityParams()
+      const risk = computeBackdropRisk(t, goal, NO_VEIL, { luma: 0, chroma: 0, detail: 0 }, optics)
+      resolveLegibilityParams(goal, risk, NO_VEIL, params)
+      const shown = encoded(rgb.map((v) => cssOptics(params.fallbackVeil, cssOptics(optics, v))))
+      const ok =
+        goal.polarity === 'light'
+          ? shown <= params.backdropLimit + LEGIBILITY_LIMIT_MARGIN
+          : shown >= params.backdropLimit - LEGIBILITY_LIMIT_MARGIN
+      assert.ok(ok, `${goal.polarity}: ${rgb} ${JSON.stringify(optics)} shows ${shown}, limit ${params.backdropLimit}`)
+    }
+  }
+})
+
+test('pure blue under host brightness and contrast still triggers the dark-text correction', () => {
+  const goal = resolveLegibilityGoal({ foreground: INK, tier: 'regular' })
+  const blue = [0, 0, 1]
+  const t: BackdropTelemetry = {
+    lumaHigh: linearToSrgb(relativeLuminance(0, 0, 1)),
+    lumaLow: srgbLuma(0, 0, 1),
+    channelHigh: 1,
+    channelLow: 0,
+    chroma: 1,
+    detail: 0,
+  }
+  const optics: VeilOptics = { brightness: 2, contrast: 2, contrastFirst: false }
+  const params = createLegibilityParams()
+  const risk = computeBackdropRisk(t, goal, NO_VEIL, { luma: 0, chroma: 0, detail: 0 }, optics)
+  resolveLegibilityParams(goal, risk, NO_VEIL, params)
+  // Per-channel clipping leaves pure blue unchanged; the lift then runs per channel too.
+  const shown = linearToSrgb(
+    relativeLuminance(...(blue.map((v) => cssOptics(params.fallbackVeil, cssOptics(optics, v))) as [number, number, number])),
+  )
+  assert.ok(shown >= params.backdropLimit - 1e-9, `blue corrected to ${shown}, limit ${params.backdropLimit}`)
+})
+
 test('backdrop risk is zero under the knee, saturates at white and tracks chroma and detail', () => {
   const goal = resolveLegibilityGoal({ foreground: WHITE, tier: 'regular' })
   const risk = { luma: 0, chroma: 0, detail: 0 }
@@ -304,11 +366,23 @@ test('measureTelemetryGrid separates bright, dark, saturated and text-dense cell
     }
   }
   const grid = measureTelemetryGrid(rgba, w, h, 4, 1)
-  const cell = (c: number): number[] => Array.from(grid.data.subarray(c * 4, c * 4 + 4))
-  assert.ok(cell(0)[0]! > 0.98 && cell(0)[3]! < 0.01, 'white cell')
-  assert.ok(cell(1)[0]! < 0.02 && cell(1)[2]! < 0.01, 'black cell')
-  assert.ok(Math.abs(cell(2)[0]! - linearToSrgb(0.2126)) < 0.02 && cell(2)[2]! > 0.99, 'red cell')
-  assert.ok(cell(3)[3]! > 0.9 && cell(3)[0]! > 0.98 && cell(3)[1]! < 0.02, 'striped cell')
+  const cell = (c: number) => {
+    const [lumaHigh, lumaLow, channelHigh, channelLow, chroma, detail] = grid.data.subarray(
+      c * TELEMETRY_STRIDE,
+      (c + 1) * TELEMETRY_STRIDE,
+    )
+    return { lumaHigh: lumaHigh!, lumaLow: lumaLow!, channelHigh: channelHigh!, channelLow: channelLow!, chroma: chroma!, detail: detail! }
+  }
+  assert.ok(cell(0).lumaHigh > 0.98 && cell(0).detail < 0.01, 'white cell')
+  assert.ok(cell(1).lumaHigh < 0.02 && cell(1).chroma < 0.01, 'black cell')
+  const red = cell(2)
+  assert.ok(Math.abs(red.lumaHigh - linearToSrgb(0.2126)) < 0.02 && red.chroma > 0.99, 'red cell')
+  assert.ok(red.channelHigh === 1 && red.channelLow === 0, 'red spans the full channel range')
+  assert.ok(cell(3).detail > 0.9 && cell(3).lumaHigh > 0.98 && cell(3).lumaLow < 0.02, 'striped cell')
+  for (let c = 0; c < 4; c++) {
+    const t = cell(c)
+    assert.ok(t.channelHigh >= t.lumaHigh && t.channelLow <= t.lumaLow, 'channel extremes enclose luminance')
+  }
 })
 
 test('asymmetric smoother attacks fast, holds across gaps, releases slowly, independent of dt', () => {

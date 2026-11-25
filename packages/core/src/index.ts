@@ -156,6 +156,7 @@ export {
   linearToSrgb,
   measureTelemetryGrid,
   relativeLuminance,
+  srgbLuma,
   resolveLegibilityGoal,
   resolveLegibilityParams,
   srgbToLinear,

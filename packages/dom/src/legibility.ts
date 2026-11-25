@@ -53,6 +53,7 @@ export class LegibilityDriver {
     this.goal = resolveLegibilityGoal(options)
     this.probe = options.probe ?? null
     this.smoother.reset(this.goal.policy.assumedRisk)
+    this.previous.set(this.smoother.values)
   }
 
   setTelemetry(telemetry: BackdropTelemetry | null): void {
@@ -101,15 +102,20 @@ export class LegibilityDriver {
     }
   }
 
-  /** Advances smoothing by `dtMs`; returns whether the smoothed risk moved. */
+  /**
+   * Advances smoothing by `dtMs`; returns whether the smoothed risk changed since the previous
+   * advance. Comparing against that value rather than the pre-step one also reports the snap
+   * `sample` applies outside the loop, which would otherwise never reach the layers.
+   */
   advance(dtMs: number): boolean {
     const values = this.smoother.values
-    this.previous.set(values)
     this.settled = this.smoother.step(this.target, dtMs)
+    let changed = false
     for (let i = 0; i < RISK_CHANNELS; i++) {
-      if (values[i] !== this.previous[i]) return true
+      if (values[i] !== this.previous[i]) changed = true
     }
-    return false
+    this.previous.set(values)
+    return changed
   }
 
   resolve(baseVeil: ArrayLike<number>): LegibilityParams {

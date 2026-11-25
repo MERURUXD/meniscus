@@ -410,6 +410,49 @@ test('the first real telemetry snaps the smoother even after empty probe samples
   assert.ok(Math.abs(driver.resolve(veil).veilRgba[3]! - veil[3]) < 1e-6, 'no film left over from the assumed risk')
 })
 
+test('replacing the params object uploads its table even when the revisions coincide', () => {
+  const doc = new MockDocument()
+  const filter = createRefractFilterController({ id: 'swap', document: doc as unknown as Document })
+  filter.mount()
+  const resolved = (tier: 'clear' | 'legible') => {
+    const params = createLegibilityParams()
+    resolveLegibilityParams(
+      resolveLegibilityGoal({ foreground: WHITE, tier }),
+      { luma: 0, chroma: 0, detail: 0 },
+      [1, 1, 1, 0],
+      params,
+    )
+    return params
+  }
+  const clear = resolved('clear')
+  const legible = resolved('legible')
+  assert.equal(clear.tableRevision, legible.tableRevision, 'precondition: fresh params share a revision')
+  const uploaded = () =>
+    descendants(filterOf(doc), 'feFuncR')[0]!.attributes.get('tableValues')!.split(' ').map(Number)
+  const last = (table: Float32Array) => Number(table[table.length - 1]!.toFixed(4))
+
+  filter.updateLegibility(clear)
+  filter.updateLegibility(legible)
+  assert.equal(uploaded().at(-1), last(legible.table), 'replaced params reach the filter')
+  filter.updateLegibility(null)
+  filter.updateLegibility(clear)
+  assert.equal(uploaded().at(-1), last(clear.table), 're-attaching with other params uploads them')
+})
+
+test('a snapped first telemetry sample reaches the layers before the loop sleeps', () => {
+  const { controller, frames, doc } = setup(CHROME_ENV, SINGLE)
+  frames.run(600)
+  assert.equal(frames.pending.size, 0, 'precondition: assumed-risk material has settled')
+  const blur = () => descendants(filterOf(doc), 'feGaussianBlur')[0]!.attributes.get('stdDeviation')
+  const assumed = blur()
+
+  controller.setBackdropTelemetry(CALM)
+  frames.run(600)
+  assert.equal(frames.pending.size, 0)
+  assert.notEqual(blur(), assumed, 'calm backdrop drops the assumed-risk blur boost')
+  assert.ok(Math.abs(controller.getLegibilityParams()!.veilRgba[3]! - DEFAULT_OPTICAL_MATERIALS.dark.crisp.tintRgba[3]) < 0.02)
+})
+
 function rect(x: number, y: number, width: number, height: number): DOMRect {
   return { x, y, width, height, left: x, top: y, right: x + width, bottom: y + height } as DOMRect
 }

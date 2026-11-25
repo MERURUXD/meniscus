@@ -91,6 +91,8 @@ interface LegibilityNodes {
   funcs: Element[]
   composite: Element
   polarity: LegibilityParams['polarity'] | null
+  /** Revisions count per params object, so the uploaded table is keyed by identity too. */
+  table: Float32Array | null
   tableRevision: number
 }
 
@@ -707,6 +709,7 @@ export function createRefractFilterController(
       funcs,
       composite,
       polarity: null,
+      table: null,
       tableRevision: -1,
     }
     return legibilityNodes
@@ -734,7 +737,7 @@ export function createRefractFilterController(
       }
       nodes.polarity = params.polarity
     }
-    if (nodes.tableRevision !== params.tableRevision) {
+    if (nodes.table !== params.table || nodes.tableRevision !== params.tableRevision) {
       let values = ''
       for (let i = 0; i < params.table.length; i++) {
         values += (i === 0 ? '' : ' ') + params.table[i]!.toFixed(4)
@@ -742,6 +745,7 @@ export function createRefractFilterController(
       for (let i = 0; i < nodes.funcs.length; i++) {
         nodes.funcs[i]!.setAttribute('tableValues', values)
       }
+      nodes.table = params.table
       nodes.tableRevision = params.tableRevision
     }
   }

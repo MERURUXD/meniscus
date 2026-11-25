@@ -966,6 +966,11 @@ export class GlassSurfaceController {
     }
   }
 
+  /** Latest resolved legibility response (live object, read-only), or `null` when disabled. */
+  getLegibilityParams(): Readonly<LegibilityParams> | null {
+    return this.legibility?.params ?? null
+  }
+
   /** Injects host-known backdrop telemetry; `null` hands control back to the probe. */
   setBackdropTelemetry(telemetry: BackdropTelemetry | null): void {
     if (!this.legibility) return

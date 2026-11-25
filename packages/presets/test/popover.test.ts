@@ -150,6 +150,30 @@ test('evaluatePopoverMotion: open/close envelopes, reduced motion, and point clo
   assert.equal(atEndClose.morphProgress, 1)
 })
 
+test('the last opening frame is the resting open frame', () => {
+  const anchor: PopoverAnchorConfig = {
+    anchorRect: { x: 260, y: 560, width: 96, height: 40 },
+    placement: 'overAnchorEnd',
+    viewportSize: { width: 420, height: 720 },
+  }
+  const panel: PopoverPanelConfig = { size: { width: 360, height: 280 } }
+  const interruptStart = { startNormalizedT: 0.3, startSettled: 0.4, contentOpacity: 0.2, contentBlurPx: 3 }
+  for (const options of [{}, { hasControlSource: false }, { interruptStart }]) {
+    const last = evaluatePopoverMotion('opening', 1, options)
+    const open = evaluatePopoverMotion('open', 1, options)
+    for (const key of ['morphProgress', 'cornerProgress', 'platterDipEnvelope', 'blurBumpPx', 'settled', 'contentOpacity', 'contentBlurPx'] as const) {
+      assert.equal(last[key], open[key], `${key} lands on open (${JSON.stringify(options)})`)
+    }
+    assert.deepEqual(
+      computePopoverMorphGeometry(last, anchor, panel).field,
+      computePopoverMorphGeometry(open, anchor, panel).field,
+    )
+  }
+
+  // The landing only trims the tail: the spring overshoot is still there mid-flight.
+  assert.ok(evaluatePopoverMotion('opening', 0.6).morphProgress > 1.02)
+})
+
 test('computePopoverMorphGeometry: beyondRound, internal merge, bareSource, externalTrigger, and close trajectory', () => {
   const anchor: PopoverAnchorConfig = {
     anchorRect: { x: 260, y: 560, width: 96, height: 40 },

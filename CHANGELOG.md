@@ -2,6 +2,12 @@
 
 All notable changes to the published `@sessile/*` packages (`@sessile/core`, `@sessile/dom`, `@sessile/presets`, `@sessile/react`) are documented in this file.
 
+## [Unreleased]
+
+### Fixed
+
+- **Popover Opening Lands on Open (`@sessile/presets`)**: The opening springs were still ringing at `openDurationSec`, so the last opening frame sat about 1.3px of corner radius (on a 360px panel) and a fraction of morph, dip and blur short of the resting `open` state, and the hand-off to a resting surface stepped. Their residuals now fade out from `POPOVER_MORPH_DEFAULTS.openLandingStart` (normalized `0.7`), so `evaluatePopoverMotion('opening', 1)` equals the `open` state and the geometry matches exactly.
+
 ## [0.3.0] - 2026-11-25
 
 ### Added

@@ -9,18 +9,26 @@
  */
 import type { ThemeMode } from '@sessile/core'
 
-export const WALLPAPER_SCENES = ['folds', 'lava', 'contours', 'aurora', 'bokeh', 'mesh'] as const
+export const WALLPAPER_SCENES = [
+  'prism',
+  'folds',
+  'lava',
+  'contours',
+  'aurora',
+  'bokeh',
+  'mesh',
+] as const
 export type WallpaperScene = (typeof WALLPAPER_SCENES)[number]
 
 export const WALLPAPER_FOLD_COUNT = 8
 
 /**
- * Fold colors from back to front: Prussian-blue folds lit by sodium-amber front folds, in the
- * bench palette. Neighbouring folds differ enough that their edges read when the glass bends them.
+ * Fold colors from back to front: Gallery Quartz / Anodized Carbon monochrome ridges cut by
+ * photonic emerald and signal vermilion edges so Snell displacement reads sharply.
  */
 export const WALLPAPER_PALETTES: Readonly<Record<ThemeMode, readonly string[]>> = {
-  light: ['#e8eef7', '#cddcf0', '#a6c2ea', '#7aa3e0', '#4a7fd0', '#2753a8', '#f3c24f', '#e8892e'],
-  dark: ['#0b2140', '#14306a', '#1f4fa8', '#2f74dc', '#5aa0f0', '#a8d3fa', '#f5bd3d', '#e07b2a'],
+  light: ['#f5f5f2', '#d5dbe0', '#a8b2bc', '#6c7885', '#363f48', '#14181d', '#0d8a6a', '#e03c1f'],
+  dark: ['#0a0b0e', '#1d232c', '#343f4e', '#59697c', '#94a3b3', '#dce2e8', '#14a37f', '#f04e30'],
 }
 
 export function hexToRgb(hex: string): [number, number, number] {
@@ -83,6 +91,82 @@ void emit(vec3 light, vec3 dark) {
   outColor = vec4(clamp(c, 0.0, 1.0), 1.0);
 }
 `
+
+// Prismatic silk caustics: flowing domain-warped optical ribbons crossed by crisp fluted
+// contour ribs and glowing caustic crests, engineered to give curved glass bevels rich
+// high-contrast filaments to bend and disperse in both light and dark modes.
+const PRISM = `${PRELUDE}
+void main() {
+  vec2 uv = gl_FragCoord.xy / uRes;
+  vec2 p = (gl_FragCoord.xy - 0.5 * uRes) / uRes.y;
+  float t = uTime * 0.16;
+
+  // Domain-warped optical coordinate field.
+  vec2 q = p * 1.45;
+  q += 0.34 * vec2(
+    sin(q.y * 2.1 + t * 1.15) + 0.5 * cos(q.x * 1.7 - t * 0.8),
+    cos(q.x * 2.3 - t * 0.95) + 0.5 * sin(q.y * 1.9 + t * 0.7)
+  );
+  vec2 r = q + 0.24 * vec2(
+    sin(q.y * 3.4 - t * 1.3 + 1.2),
+    cos(q.x * 3.1 + t * 1.1 + 2.4)
+  );
+
+  // Coupled interference waves forming broad silk ribbons and sharp caustic ridges.
+  float w1 = sin(r.x * 2.2 + r.y * 1.6 + t * 0.7);
+  float w2 = sin(r.x * 1.3 - r.y * 2.7 - t * 0.55 + 1.4);
+  float w3 = cos(length(r) * 3.1 - t * 0.9 + w1 * 0.8);
+
+  float band = 0.5 + 0.5 * sin(w1 * 1.6 + w2 * 1.2 + 0.4 * w3);
+  float causticA = exp(-abs(w1 + 0.45 * w2) * 5.2);
+  float causticB = exp(-abs(w2 - 0.55 * w3) * 6.5);
+
+  // Fine anti-aliased fluted optical ribs running across the silk ribbons.
+  float phase = (w1 * 1.8 - w2 * 1.4 + r.y * 1.1) * 9.0;
+  float ribDist = abs(fract(phase) - 0.5);
+  float ribLine = smoothstep(0.5 - 1.6 * fwidth(phase), 0.5, ribDist);
+
+  // Dark mode: deep obsidian-indigo ground swept by ultramarine, cyan, coral-vermilion, and gold.
+  vec3 bgD = mix(vec3(0.024, 0.031, 0.059), vec3(0.045, 0.062, 0.118), uv.y);
+  vec3 cBlueD = vec3(0.14, 0.30, 0.96);
+  vec3 cCyanD = vec3(0.04, 0.78, 0.84);
+  vec3 cCoralD = vec3(0.96, 0.27, 0.16);
+  vec3 cGoldD = vec3(0.97, 0.71, 0.22);
+
+  vec3 silkD = mix(cBlueD, cCyanD, smoothstep(0.15, 0.55, band));
+  silkD = mix(silkD, cCoralD, smoothstep(0.48, 0.82, band));
+  silkD = mix(silkD, cGoldD, smoothstep(0.76, 0.98, band));
+
+  float bodyD = smoothstep(-0.35, 0.85, w1 * 0.6 + w3 * 0.4);
+  vec3 dark = mix(bgD, silkD * 0.78, 0.28 + 0.68 * bodyD);
+  dark += cCyanD * causticA * 0.46;
+  dark += vec3(1.0, 0.84, 0.62) * causticB * 0.42;
+  dark += vec3(0.82, 0.92, 1.0) * pow(causticA * causticB, 0.6) * 0.45;
+  dark = mix(dark, dark * 0.72 + vec3(0.06, 0.09, 0.15), ribLine * 0.45);
+
+  // Light mode: warm pearl ground under clear aqua, cerulean, violet, coral and gold silk. Hues
+  // are ordered around the wheel so neighbouring bands never blend through grey, and ribs
+  // darken the local silk instead of overlaying ink so they stay crisp without dulling it.
+  vec3 bgL = mix(vec3(0.995, 0.985, 0.97), vec3(0.955, 0.965, 0.99), uv.y);
+  vec3 cAquaL = vec3(0.16, 0.76, 0.78);
+  vec3 cBlueL = vec3(0.22, 0.48, 0.98);
+  vec3 cVioletL = vec3(0.55, 0.40, 0.96);
+  vec3 cCoralL = vec3(0.99, 0.42, 0.36);
+  vec3 cGoldL = vec3(1.0, 0.74, 0.30);
+
+  vec3 silkL = mix(cAquaL, cBlueL, smoothstep(0.12, 0.40, band));
+  silkL = mix(silkL, cVioletL, smoothstep(0.38, 0.62, band));
+  silkL = mix(silkL, cCoralL, smoothstep(0.64, 0.86, band));
+  silkL = mix(silkL, cGoldL, smoothstep(0.90, 1.0, band));
+
+  float bodyL = smoothstep(-0.25, 0.9, w1 * 0.55 + w3 * 0.45);
+  vec3 light = mix(bgL, silkL, 0.16 + 0.62 * bodyL);
+  light = mix(light, vec3(1.0), causticA * 0.55);
+  light = mix(light, vec3(1.0, 0.86, 0.62), causticB * 0.40);
+  light *= mix(vec3(1.0), vec3(0.80, 0.83, 0.90), ribLine);
+
+  emit(light, dark);
+}`
 
 // Tilted folds, each filling below a slow sum-of-sines ridge with a sheen, a hairline crest, a
 // cast shadow and faint pleats parallel to the ridge.
@@ -148,13 +232,13 @@ void main() {
   float rim = (1.0 - smoothstep(1.0, 1.08, field)) * inside;
   float halo = (1.0 - inside) * smoothstep(0.35, 1.0, field);
 
-  vec3 bgL = mix(vec3(0.93, 0.95, 0.98), vec3(0.85, 0.90, 0.97), uv.y);
-  vec3 blobL = mix(vec3(0.17, 0.35, 0.80), vec3(0.06, 0.16, 0.44), core) + rim * 0.32;
-  vec3 light = mix(bgL - halo * 0.06, blobL, inside);
+  vec3 bgL = mix(vec3(0.96, 0.96, 0.95), vec3(0.89, 0.91, 0.93), uv.y);
+  vec3 blobL = mix(vec3(0.14, 0.18, 0.24), vec3(0.06, 0.08, 0.11), core) + rim * 0.26;
+  vec3 light = mix(bgL - halo * 0.05, blobL, inside);
 
-  vec3 bgD = mix(vec3(0.03, 0.07, 0.15), vec3(0.06, 0.12, 0.24), uv.y);
-  vec3 blobD = mix(vec3(1.0, 0.68, 0.22), vec3(0.93, 0.34, 0.15), core) + rim * 0.25;
-  vec3 dark = mix(bgD + halo * blobD * 0.3, blobD, inside);
+  vec3 bgD = mix(vec3(0.039, 0.043, 0.055), vec3(0.065, 0.075, 0.10), uv.y);
+  vec3 blobD = mix(vec3(0.96, 0.34, 0.20), vec3(0.95, 0.68, 0.22), core) + rim * 0.26;
+  vec3 dark = mix(bgD + halo * blobD * 0.28, blobD, inside);
   emit(light, dark);
 }`
 
@@ -180,10 +264,10 @@ void main() {
   // fract(q) wraps at each terrace edge, where the distance from the band centre reaches 0.5.
   float rule = smoothstep(0.5 - 1.5 * fwidth(q), 0.5, edge);
 
-  vec3 light = mix(vec3(0.93, 0.95, 0.99), vec3(0.20, 0.42, 0.84), level);
-  light = mix(light, vec3(0.08, 0.20, 0.46), rule * 0.55);
-  vec3 dark = mix(vec3(0.03, 0.07, 0.15), vec3(0.16, 0.42, 0.80), level);
-  dark = mix(dark, vec3(0.97, 0.76, 0.32), rule * 0.8);
+  vec3 light = mix(vec3(0.96, 0.96, 0.95), vec3(0.22, 0.27, 0.34), level);
+  light = mix(light, vec3(0.84, 0.20, 0.09), rule * 0.65);
+  vec3 dark = mix(vec3(0.039, 0.043, 0.055), vec3(0.20, 0.26, 0.36), level);
+  dark = mix(dark, vec3(0.98, 0.36, 0.22), rule * 0.88);
   emit(light, dark);
 }`
 
@@ -193,8 +277,8 @@ void main() {
   vec2 uv = gl_FragCoord.xy / uRes;
   vec2 p = gl_FragCoord.xy / uRes.y;
   float t = uTime * 0.06;
-  vec3 light = mix(vec3(0.99, 0.90, 0.82), vec3(0.66, 0.80, 0.97), uv.y);
-  vec3 dark = mix(vec3(0.02, 0.06, 0.13), vec3(0.0, 0.01, 0.04), uv.y);
+  vec3 light = mix(vec3(0.96, 0.95, 0.93), vec3(0.86, 0.89, 0.94), uv.y);
+  vec3 dark = mix(vec3(0.039, 0.043, 0.055), vec3(0.02, 0.025, 0.035), uv.y);
   for (int i = 0; i < 3; i++) {
     float fi = float(i);
     float x = p.x * (0.9 + 0.3 * fi) + fi * 5.0;
@@ -203,9 +287,9 @@ void main() {
     float curtain = dy < 0.0 ? exp(dy * 30.0) : exp(-dy * 4.5);
     float rays = 0.4 + 0.6 * fbm(vec2(x * 16.0, t * 1.5 + fi * 4.0));
     float g = curtain * rays;
-    vec3 tint = fi < 0.5 ? vec3(0.32, 0.86, 0.66) : (fi < 1.5 ? vec3(0.36, 0.66, 1.0) : vec3(0.78, 0.52, 1.0));
-    light = mix(light, tint * 0.9, min(1.0, g * 0.8));
-    dark += tint * g * 0.8;
+    vec3 tint = fi < 0.5 ? vec3(0.08, 0.64, 0.50) : (fi < 1.5 ? vec3(0.24, 0.52, 0.92) : vec3(0.92, 0.34, 0.22));
+    light = mix(light, tint * 0.9, min(1.0, g * 0.76));
+    dark += tint * g * 0.78;
   }
   float star = step(0.9975, hash12(floor(gl_FragCoord.xy / 2.0)));
   dark += star * uv.y * (0.55 + 0.35 * sin(uTime * 1.7 + hash12(floor(gl_FragCoord.xy)) * 40.0));
@@ -219,8 +303,8 @@ void main() {
   vec2 uv = gl_FragCoord.xy / uRes;
   vec2 p = gl_FragCoord.xy / uRes.y;
   float t = uTime * 0.05;
-  vec3 light = mix(vec3(0.95, 0.96, 0.99), vec3(0.80, 0.87, 0.97), uv.y);
-  vec3 dark = mix(vec3(0.04, 0.07, 0.15), vec3(0.01, 0.02, 0.06), uv.y);
+  vec3 light = mix(vec3(0.96, 0.96, 0.95), vec3(0.88, 0.90, 0.92), uv.y);
+  vec3 dark = mix(vec3(0.039, 0.043, 0.055), vec3(0.02, 0.025, 0.035), uv.y);
   for (int l = 0; l < 4; l++) {
     float fl = float(l);
     float near = 1.0 - fl / 4.0;
@@ -235,9 +319,9 @@ void main() {
     float aa = fwidth(d) * 1.5;
     float disk = step(h, 0.5) * smoothstep(r + aa, r - aa, d);
     float ring = disk * smoothstep(r - 0.035, r, d);
-    vec3 tone = hash12(cell + 7.0) > 0.45 ? vec3(0.36, 0.62, 1.0) : vec3(1.0, 0.72, 0.26);
-    light = mix(light, mix(tone, vec3(1.0), 0.4), disk * (0.25 + 0.2 * near) + ring * 0.25);
-    dark += tone * (disk * 0.32 + ring * 0.4) * near;
+    vec3 tone = hash12(cell + 7.0) > 0.45 ? vec3(0.08, 0.64, 0.52) : vec3(0.94, 0.34, 0.20);
+    light = mix(light, mix(tone, vec3(1.0), 0.34), disk * (0.24 + 0.2 * near) + ring * 0.25);
+    dark += tone * (disk * 0.32 + ring * 0.42) * near;
   }
   emit(light, dark);
 }`
@@ -245,8 +329,8 @@ void main() {
 // Soft color fields drifting into one another, warped by noise. Deliberately smooth: it shows
 // how little a lens has to bend when the backdrop has no edges.
 const MESH = `${PRELUDE}
-const vec3 ML[5] = vec3[5](vec3(0.99, 0.80, 0.62), vec3(0.70, 0.78, 1.0), vec3(0.55, 0.75, 1.0), vec3(0.86, 0.72, 0.98), vec3(1.0, 0.88, 0.60));
-const vec3 MD[5] = vec3[5](vec3(0.08, 0.12, 0.36), vec3(0.30, 0.10, 0.48), vec3(0.02, 0.32, 0.52), vec3(0.04, 0.05, 0.18), vec3(0.62, 0.36, 0.10));
+const vec3 ML[5] = vec3[5](vec3(0.96, 0.96, 0.95), vec3(0.84, 0.88, 0.92), vec3(0.76, 0.89, 0.85), vec3(0.92, 0.88, 0.86), vec3(0.96, 0.82, 0.76));
+const vec3 MD[5] = vec3[5](vec3(0.04, 0.045, 0.06), vec3(0.10, 0.13, 0.18), vec3(0.04, 0.18, 0.16), vec3(0.05, 0.06, 0.09), vec3(0.54, 0.16, 0.10));
 void main() {
   float ar = uRes.x / uRes.y;
   vec2 p = gl_FragCoord.xy / uRes.y;
@@ -269,6 +353,7 @@ void main() {
 }`
 
 export const WALLPAPER_FRAGMENT_SHADERS: Readonly<Record<WallpaperScene, string>> = {
+  prism: PRISM,
   folds: FOLDS,
   lava: LAVA,
   contours: CONTOURS,

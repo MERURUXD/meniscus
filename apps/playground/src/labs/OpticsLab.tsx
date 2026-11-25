@@ -4,7 +4,10 @@ import {
   useMemo,
   useRef,
   useState,
+  type PointerEvent as ReactPointerEvent,
   type ReactElement,
+  type ReactNode,
+  type RefObject,
 } from 'react'
 import {
   extractFieldContourPath,
@@ -20,39 +23,66 @@ import {
   createFrameLoop,
   observeElementResize,
   type GlassSurfaceCapabilities,
-  type RefractFilterConfig,
-  type SurfaceRenderMode,
 } from '@sessile/dom'
 import { GlassField } from '@sessile/react'
-import { ControlPanel, SliderControl } from '../components/ControlPanel.tsx'
+import {
+  ControlPanel,
+  ControlSection,
+  SegmentedControl,
+  SliderControl,
+  SwitchControl,
+  TelemetryGrid,
+  TelemetryItem,
+} from '../components/ControlPanel.tsx'
 import { TestChart } from '../components/TestChart.tsx'
 import { getMessages, type Locale, type PlaygroundMessages } from '../i18n.ts'
 import {
   DEFAULT_OPTICS_LAB_CONFIG,
-  buildOpticsLabMaterial,
   buildOpticsLabPrimitives,
+  updateWireframeDom,
+  type GlobalGlassMaterial,
   type OpticsLabConfig,
+  type OpticsPresetId,
   type OpticsViewMode,
 } from '../labDefaults.ts'
 
-export interface OpticsLabProps {
-  theme: ThemeMode
-  locale: Locale
-  reducedMotion: boolean
+type TierLabelKey = keyof PlaygroundMessages['optics']['tierLabels']
+type OpticsBank = 'geometry' | 'optics' | 'surface'
+
+const DEFAULT_SPLIT_STAGE: Size = { width: 420, height: 520 }
+const OPTICS_PRESET_IDS: readonly OpticsPresetId[] = ['crown', 'prism', 'meniscus', 'frost']
+const OPTICS_BANKS: readonly OpticsBank[] = ['geometry', 'optics', 'surface']
+
+const PROFILE_GLYPHS: Readonly<Record<RefractionProfileName, ReactElement>> = {
+  squircle: (
+    <svg width="16" height="10" viewBox="0 0 18 10" fill="none">
+      <path d="M1 9 C1 2.5 5 1.5 17 1.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  ),
+  circle: (
+    <svg width="16" height="10" viewBox="0 0 18 10" fill="none">
+      <path d="M1 9 A9 8 0 0 1 10 1.5 L17 1.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  ),
+  parabolic: (
+    <svg width="16" height="10" viewBox="0 0 18 10" fill="none">
+      <path d="M1 9 Q6 1.5 17 1.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  ),
+  lip: (
+    <svg width="16" height="10" viewBox="0 0 18 10" fill="none">
+      <path d="M1 9 C3 2 6 1 9 2.5 C12 4 14 2 17 2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  ),
 }
 
-type TierLabelKey = keyof PlaygroundMessages['optics']['tierLabels']
-
-const DEFAULT_SINGLE_STAGE: Size = { width: 760, height: 520 }
-const DEFAULT_SPLIT_STAGE: Size = { width: 374, height: 520 }
-
-interface SdfWireframeOverlayProps {
+export interface SdfWireframeOverlayProps {
   field: GlassFieldState
   pathRef?: (el: SVGPathElement | null) => void
   primRefs?: (index: number, el: SVGRectElement | null) => void
 }
 
-function SdfWireframeOverlay({
+export function SdfWireframeOverlay({
   field,
   pathRef,
   primRefs,
@@ -76,114 +106,395 @@ function SdfWireframeOverlay({
           className="pg-wire-prim"
         />
       ))}
-      <path
-        ref={pathRef}
-        d={contourPath}
-        className="pg-wire-contour"
-      />
+      <path ref={pathRef} d={contourPath} className="pg-wire-contour" />
     </svg>
   )
 }
 
-export function OpticsLab({ theme, locale, reducedMotion }: OpticsLabProps): ReactElement {
+export interface GlobalMaterialPanelProps {
+  locale: Locale
+  reducedMotion: boolean
+  config: OpticsLabConfig
+  activePreset: OpticsPresetId | null
+  svgRefractionSupported: boolean
+  gapReadoutRef: RefObject<HTMLElement | null>
+  /** Only scenes that draw an SDF overlay expose the toggle. */
+  wireframeSupported: boolean
+  headerSlot?: ReactNode
+  onUpdateConfig: <K extends keyof OpticsLabConfig>(key: K, value: OpticsLabConfig[K]) => void
+  onApplyPreset: (presetId: OpticsPresetId) => void
+  onReset: () => void
+}
+
+export function GlobalMaterialPanel({
+  locale,
+  reducedMotion,
+  config,
+  activePreset,
+  svgRefractionSupported,
+  gapReadoutRef,
+  wireframeSupported,
+  headerSlot,
+  onUpdateConfig,
+  onApplyPreset,
+  onReset,
+}: GlobalMaterialPanelProps): ReactElement {
   const t = getMessages(locale)
   const op = t.optics
+  const [activeBank, setActiveBank] = useState<OpticsBank>('geometry')
 
-  const [config, setConfig] = useState<OpticsLabConfig>(DEFAULT_OPTICS_LAB_CONFIG)
-  const [stageSize, setStageSize] = useState<Size>(DEFAULT_SINGLE_STAGE)
+  const isSplit = config.renderView === 'split'
+  const tierKey: TierLabelKey = isSplit
+    ? svgRefractionSupported
+      ? 'split'
+      : 'splitDowngraded'
+    : config.renderView === 'refract' && !svgRefractionSupported
+      ? 'refractDowngraded'
+      : config.renderView
+
+  return (
+    <ControlPanel
+      title={op.panelTitle}
+      description={op.panelDescription}
+      headerSlot={headerSlot}
+    >
+      <ControlSection title={op.sectionView}>
+        <SegmentedControl
+          ariaLabel={op.sectionView}
+          value={config.renderView}
+          size="sm"
+          onChange={(modeKey) => onUpdateConfig('renderView', modeKey)}
+          options={(['refract', 'frosted', 'solid', 'split'] as const satisfies readonly OpticsViewMode[]).map(
+            (modeKey) => ({
+              value: modeKey,
+              label: op.views[modeKey],
+            }),
+          )}
+        />
+      </ControlSection>
+
+      <ControlSection title={op.sectionPreset}>
+        <SegmentedControl
+          ariaLabel={op.sectionPreset}
+          value={(activePreset ?? '') as OpticsPresetId}
+          size="sm"
+          onChange={onApplyPreset}
+          options={OPTICS_PRESET_IDS.map((presetId) => ({
+            value: presetId,
+            label: op.presets[presetId],
+          }))}
+        />
+      </ControlSection>
+
+      <section className="pg-section">
+        <SegmentedControl
+          ariaLabel={op.panelTitle}
+          value={activeBank}
+          size="sm"
+          onChange={setActiveBank}
+          options={OPTICS_BANKS.map((bank) => ({
+            value: bank,
+            label: op.banks[bank],
+          }))}
+        />
+        <div className="pg-section-body">
+          {activeBank === 'geometry' ? (
+            <>
+              {isSplit ? (
+                <>
+                  <SliderControl
+                    id="optics-gap"
+                    label={op.gapLabel}
+                    value={config.gapPx}
+                    defaultValue={DEFAULT_OPTICS_LAB_CONFIG.gapPx}
+                    min={-24}
+                    max={56}
+                    unit="px"
+                    onChange={(v) => onUpdateConfig('gapPx', v)}
+                  />
+                  <SliderControl
+                    id="optics-blend"
+                    label={op.blendKLabel}
+                    value={config.blendK}
+                    defaultValue={DEFAULT_OPTICS_LAB_CONFIG.blendK}
+                    min={0}
+                    max={56}
+                    unit="px"
+                    onChange={(v) => onUpdateConfig('blendK', v)}
+                  />
+                </>
+              ) : null}
+              <SliderControl
+                id="optics-bevel"
+                label={op.bevelLabel}
+                value={config.bevelPx}
+                defaultValue={DEFAULT_OPTICS_LAB_CONFIG.bevelPx}
+                min={4}
+                max={32}
+                unit="px"
+                onChange={(v) => onUpdateConfig('bevelPx', v)}
+              />
+              <div className="pg-sub-label">{op.profileLabel}</div>
+              <SegmentedControl
+                ariaLabel={op.profileLabel}
+                value={config.refractionProfile}
+                columns={2}
+                size="sm"
+                onChange={(profileKey) => onUpdateConfig('refractionProfile', profileKey)}
+                options={(
+                  ['squircle', 'circle', 'parabolic', 'lip'] as const satisfies readonly RefractionProfileName[]
+                ).map((profileKey) => ({
+                  value: profileKey,
+                  label: op.profiles[profileKey],
+                  icon: PROFILE_GLYPHS[profileKey],
+                }))}
+              />
+            </>
+          ) : null}
+
+          {activeBank === 'optics' ? (
+            <>
+              <SliderControl
+                id="optics-ior"
+                label={op.iorLabel}
+                value={config.ior}
+                defaultValue={DEFAULT_OPTICS_LAB_CONFIG.ior}
+                min={1.0}
+                max={2.4}
+                step={0.05}
+                precision={2}
+                onChange={(v) => onUpdateConfig('ior', v)}
+              />
+              <SliderControl
+                id="optics-strength"
+                label={op.strengthLabel}
+                value={config.refractionStrength}
+                defaultValue={DEFAULT_OPTICS_LAB_CONFIG.refractionStrength}
+                min={0}
+                max={2.2}
+                step={0.05}
+                precision={2}
+                onChange={(v) => onUpdateConfig('refractionStrength', v)}
+              />
+              <SliderControl
+                id="optics-dispersion"
+                label={op.dispersionLabel}
+                value={config.dispersionPx}
+                defaultValue={DEFAULT_OPTICS_LAB_CONFIG.dispersionPx}
+                min={0}
+                max={4}
+                step={0.1}
+                precision={1}
+                unit="px"
+                onChange={(v) => onUpdateConfig('dispersionPx', v)}
+              />
+              <SwitchControl
+                id="optics-caustics"
+                label={op.causticsButton}
+                checked={config.caustics}
+                onChange={(checked) => onUpdateConfig('caustics', checked)}
+              />
+            </>
+          ) : null}
+
+          {activeBank === 'surface' ? (
+            <>
+              <SliderControl
+                id="optics-blur"
+                label={op.blurLabel}
+                value={config.blurPx}
+                defaultValue={DEFAULT_OPTICS_LAB_CONFIG.blurPx}
+                min={0}
+                max={24}
+                step={0.5}
+                precision={1}
+                unit="px"
+                onChange={(v) => onUpdateConfig('blurPx', v)}
+              />
+              <SliderControl
+                id="optics-saturation"
+                label={op.saturationLabel}
+                value={config.saturation}
+                defaultValue={DEFAULT_OPTICS_LAB_CONFIG.saturation}
+                min={0.5}
+                max={3.2}
+                step={0.05}
+                precision={2}
+                onChange={(v) => onUpdateConfig('saturation', v)}
+              />
+              <SliderControl
+                id="optics-tint"
+                label={op.tintLabel}
+                value={config.tintAlpha}
+                defaultValue={DEFAULT_OPTICS_LAB_CONFIG.tintAlpha}
+                min={0}
+                max={0.8}
+                step={0.02}
+                precision={2}
+                onChange={(v) => onUpdateConfig('tintAlpha', v)}
+              />
+              <SliderControl
+                id="optics-rim-opacity"
+                label={op.rimOpacityLabel}
+                value={config.rimOpacity}
+                defaultValue={DEFAULT_OPTICS_LAB_CONFIG.rimOpacity}
+                min={0}
+                max={0.85}
+                step={0.02}
+                precision={2}
+                onChange={(v) => onUpdateConfig('rimOpacity', v)}
+              />
+              <div className="pg-sub-label">{op.rimModeLabel}</div>
+              <SegmentedControl
+                ariaLabel={op.rimModeLabel}
+                value={config.rimMode}
+                size="sm"
+                onChange={(rm) => onUpdateConfig('rimMode', rm)}
+                options={(['directional', 'soft', 'physical'] as const satisfies readonly RimMode[]).map(
+                  (rm) => ({
+                    value: rm,
+                    label: op.rimModes[rm],
+                  }),
+                )}
+              />
+              {config.rimMode === 'physical' ? (
+                <SliderControl
+                  id="optics-light-angle"
+                  label={op.lightAngleLabel}
+                  value={config.lightAngle}
+                  defaultValue={DEFAULT_OPTICS_LAB_CONFIG.lightAngle}
+                  min={-180}
+                  max={180}
+                  step={5}
+                  unit="°"
+                  onChange={(v) => onUpdateConfig('lightAngle', v)}
+                />
+              ) : null}
+            </>
+          ) : null}
+        </div>
+      </section>
+
+      <ControlSection title={op.sectionStage}>
+        {wireframeSupported ? (
+          <SwitchControl
+            id="optics-wireframe"
+            label={op.wireframeButton}
+            checked={config.showWireframe}
+            onChange={(checked) => onUpdateConfig('showWireframe', checked)}
+          />
+        ) : null}
+        {isSplit ? (
+          <SwitchControl
+            id="optics-oscillate"
+            label={op.oscillateButton}
+            checked={config.oscillateGap && !reducedMotion}
+            disabled={reducedMotion}
+            onChange={(checked) => onUpdateConfig('oscillateGap', checked)}
+          />
+        ) : null}
+        <div className="pg-btn-group">
+          <button type="button" className="pg-btn" onClick={onReset}>
+            {op.resetButton}
+          </button>
+        </div>
+      </ControlSection>
+
+      <TelemetryGrid>
+        <TelemetryItem label={op.statEffectiveTier} value={op.tierLabels[tierKey]} />
+        {isSplit ? (
+          <TelemetryItem
+            label={op.statGapOffset}
+            value={`${config.gapPx.toFixed(1)}px`}
+            valueRef={gapReadoutRef}
+          />
+        ) : (
+          <TelemetryItem label={op.iorLabel} value={config.ior.toFixed(2)} />
+        )}
+      </TelemetryGrid>
+    </ControlPanel>
+  )
+}
+
+export interface OpticsCompareStageProps {
+  theme: ThemeMode
+  locale: Locale
+  reducedMotion: boolean
+  glass: GlobalGlassMaterial
+  gapReadoutRef: RefObject<HTMLElement | null>
+  onGapChange: (gapPx: number) => void
+  onStopOscillate: () => void
+  onCapabilitiesChange?: (caps: GlassSurfaceCapabilities) => void
+}
+
+export function OpticsCompareStage({
+  theme,
+  locale,
+  reducedMotion,
+  glass,
+  gapReadoutRef,
+  onGapChange,
+  onStopOscillate,
+  onCapabilitiesChange,
+}: OpticsCompareStageProps): ReactElement {
+  const t = getMessages(locale)
+  const op = t.optics
+  const { config, material, fallbackMaterial, refraction, styleMix } = glass
+
   const [splitSize, setSplitSize] = useState<Size>(DEFAULT_SPLIT_STAGE)
-  const [tierKey, setTierKey] = useState<TierLabelKey>('refract')
-
-  const singleStageRef = useRef<HTMLDivElement | null>(null)
   const splitLeftRef = useRef<HTMLDivElement | null>(null)
-
   const primarySurfaceRef = useRef<GlassSurfaceController | null>(null)
   const secondarySurfaceRef = useRef<GlassSurfaceController | null>(null)
-  const gapReadoutRef = useRef<HTMLSpanElement | null>(null)
   const primaryWirePathRef = useRef<SVGPathElement | null>(null)
   const secondaryWirePathRef = useRef<SVGPathElement | null>(null)
   const primaryRectRefs = useRef<Array<SVGRectElement | null>>([])
   const secondaryRectRefs = useRef<Array<SVGRectElement | null>>([])
+  const satelliteHitboxRefs = useRef<Array<HTMLDivElement | null>>([])
+  const dragGapRef = useRef<{ pointerId: number; startX: number; startGap: number } | null>(null)
+  // Last gap actually drawn; differs from config.gapPx while the breathe animation runs.
+  const renderedGapRef = useRef(config.gapPx)
 
-  // The primary surface shows the frosted tier whenever it cannot refract, so its material
-  // must carry the fallback blur too; the split view's right pane is always the fallback.
-  const primaryTier =
-    config.renderView === 'frosted' ||
-    tierKey === 'refractDowngraded' ||
-    tierKey === 'splitDowngraded'
-      ? 'frosted'
-      : 'refract'
-  const material = useMemo(
-    () => buildOpticsLabMaterial(theme, config, primaryTier),
-    [theme, config, primaryTier],
-  )
-  const fallbackMaterial = useMemo(
-    () => buildOpticsLabMaterial(theme, config, 'frosted'),
-    [theme, config],
-  )
-  const refraction = useMemo<Partial<RefractFilterConfig>>(
-    () => ({
-      bezel: config.bevelPx,
-      strength: config.refractionStrength,
-      dispersion: config.dispersionPx,
-      profile: config.refractionProfile,
-      ior: config.ior,
-      caustics: config.caustics,
-    }),
-    [
-      config.bevelPx,
-      config.refractionStrength,
-      config.dispersionPx,
-      config.refractionProfile,
-      config.ior,
-      config.caustics,
-    ],
-  )
-
-  const activeSinglePrimitives = useMemo(
-    () => buildOpticsLabPrimitives(stageSize, config.gapPx),
-    [stageSize, config.gapPx],
-  )
-  const activeSplitPrimitives = useMemo(
+  const splitPrimitives = useMemo(
     () => buildOpticsLabPrimitives(splitSize, config.gapPx),
     [splitSize, config.gapPx],
   )
+  const splitField: GlassFieldState = useMemo(
+    () => ({
+      primitives: splitPrimitives,
+      blendK: config.blendK,
+      rimOpacity: 1,
+      styleMix,
+    }),
+    [splitPrimitives, config.blendK, styleMix],
+  )
 
-  const configRef = useRef(config)
-  const materialRef = useRef(material)
-  const fallbackMaterialRef = useRef(fallbackMaterial)
-  const refractionRef = useRef(refraction)
-  const themeRef = useRef(theme)
-  const liveSuffixRef = useRef(op.liveSuffix)
-  const sizeRef = useRef({ single: stageSize, split: splitSize })
+  const latestRef = useRef({
+    config,
+    material,
+    fallbackMaterial,
+    refraction,
+    styleMix,
+    theme,
+    liveSuffix: op.liveSuffix,
+    splitSize,
+  })
 
   useEffect(() => {
-    configRef.current = config
-    materialRef.current = material
-    fallbackMaterialRef.current = fallbackMaterial
-    refractionRef.current = refraction
-    themeRef.current = theme
-    liveSuffixRef.current = op.liveSuffix
-    sizeRef.current = { single: stageSize, split: splitSize }
-  }, [config, material, fallbackMaterial, refraction, theme, op.liveSuffix, stageSize, splitSize])
-
-  useEffect(() => {
-    const el = singleStageRef.current
-    if (!el || config.renderView === 'split') return
-    return observeElementResize(
-      el,
-      (next) => {
-        if (next.width > 0 && next.height > 0) {
-          setStageSize(next)
-        }
-      },
-      { emitInitial: true },
-    )
-  }, [config.renderView])
+    latestRef.current = {
+      config,
+      material,
+      fallbackMaterial,
+      refraction,
+      styleMix,
+      theme,
+      liveSuffix: op.liveSuffix,
+      splitSize,
+    }
+  }, [config, material, fallbackMaterial, refraction, styleMix, theme, op.liveSuffix, splitSize])
 
   useEffect(() => {
     const el = splitLeftRef.current
-    if (!el || config.renderView !== 'split') return
+    if (!el) return
     return observeElementResize(
       el,
       (next) => {
@@ -193,72 +504,44 @@ export function OpticsLab({ theme, locale, reducedMotion }: OpticsLabProps): Rea
       },
       { emitInitial: true },
     )
-  }, [config.renderView])
+  }, [])
 
   useEffect(() => {
-    const ctrl = primarySurfaceRef.current
-    if (!ctrl) return
-    const effective = ctrl.getEffectiveMode()
-    if (config.renderView === 'split') {
-      setTierKey(effective === 'refract' ? 'split' : 'splitDowngraded')
-    } else if (config.renderView === 'refract' && effective !== 'refract') {
-      setTierKey('refractDowngraded')
-    } else {
-      setTierKey(effective)
-    }
-  }, [config.renderView])
-
-  const updateWireframeDom = (
-    field: GlassFieldState,
-    pathEl: SVGPathElement | null,
-    rectEls: Array<SVGRectElement | null>,
-  ) => {
-    if (pathEl) {
-      pathEl.setAttribute('d', extractFieldContourPath(field, { x: 0, y: 0 }) ?? '')
-    }
-    for (let i = 0; i < field.primitives.length; i++) {
-      const p = field.primitives[i]!
-      const rectEl = rectEls[i]
-      if (!rectEl) continue
-      rectEl.setAttribute('x', String(p.center.x - p.size.width * 0.5))
-      rectEl.setAttribute('y', String(p.center.y - p.size.height * 0.5))
-      rectEl.setAttribute('width', String(p.size.width))
-      rectEl.setAttribute('height', String(p.size.height))
-      rectEl.setAttribute('rx', String(p.radius))
-    }
-  }
-
-  useEffect(() => {
-    const syncBenchGap = (gapPx: number) => {
-      const cfg = configRef.current
-      const activeTheme = themeRef.current
-      const activeMat = materialRef.current
-      const activeRefract = refractionRef.current
-      const activeSize = cfg.renderView === 'split' ? sizeRef.current.split : sizeRef.current.single
+    const syncSplitGap = (gapPx: number) => {
+      renderedGapRef.current = gapPx
+      const l = latestRef.current
       const field: GlassFieldState = {
-        primitives: buildOpticsLabPrimitives(activeSize, gapPx),
-        blendK: cfg.blendK,
+        primitives: buildOpticsLabPrimitives(l.splitSize, gapPx),
+        blendK: l.config.blendK,
         rimOpacity: 1,
-        styleMix: cfg.rimMode === 'soft' ? 1 : 0,
+        styleMix: l.styleMix,
       }
       primarySurfaceRef.current?.render({
         field,
-        material: activeMat,
-        refraction: activeRefract,
-        theme: activeTheme,
+        material: l.material,
+        refraction: l.refraction,
+        theme: l.theme,
       })
-      if (cfg.renderView === 'split') {
-        secondarySurfaceRef.current?.render({
-          field,
-          material: fallbackMaterialRef.current,
-          refraction: activeRefract,
-          theme: activeTheme,
-        })
-      }
-      if (cfg.showWireframe) {
+      secondarySurfaceRef.current?.render({
+        field,
+        material: l.fallbackMaterial,
+        refraction: l.refraction,
+        theme: l.theme,
+      })
+      if (l.config.showWireframe) {
         updateWireframeDom(field, primaryWirePathRef.current, primaryRectRefs.current)
-        if (cfg.renderView === 'split') {
-          updateWireframeDom(field, secondaryWirePathRef.current, secondaryRectRefs.current)
+        updateWireframeDom(field, secondaryWirePathRef.current, secondaryRectRefs.current)
+      }
+      const sat = field.primitives[1]
+      if (sat) {
+        const x = sat.center.x - sat.size.width * 0.5
+        const y = sat.center.y - sat.size.height * 0.5
+        for (const el of satelliteHitboxRefs.current) {
+          if (!el) continue
+          el.style.width = `${sat.size.width}px`
+          el.style.height = `${sat.size.height}px`
+          el.style.borderRadius = `${sat.radius}px`
+          el.style.transform = `translate3d(${x}px, ${y}px, 0)`
         }
       }
     }
@@ -267,18 +550,19 @@ export function OpticsLab({ theme, locale, reducedMotion }: OpticsLabProps): Rea
       if (gapReadoutRef.current) {
         gapReadoutRef.current.textContent = `${config.gapPx.toFixed(1)}px`
       }
-      syncBenchGap(config.gapPx)
+      syncSplitGap(config.gapPx)
       return
     }
+
     let phase = 0
     const loop = createFrameLoop((dtSec) => {
       phase += dtSec * 1.45
-      if (!configRef.current.oscillateGap) return false
+      if (!latestRef.current.config.oscillateGap) return false
       const dynamicGap = Math.round((16 + 34 * Math.sin(phase)) * 10) / 10
       if (gapReadoutRef.current) {
-        gapReadoutRef.current.textContent = `${dynamicGap.toFixed(1)}px ${liveSuffixRef.current}`
+        gapReadoutRef.current.textContent = `${dynamicGap.toFixed(1)}px ${latestRef.current.liveSuffix}`
       }
-      syncBenchGap(dynamicGap)
+      syncSplitGap(dynamicGap)
       return true
     })
     loop.start()
@@ -289,143 +573,111 @@ export function OpticsLab({ theme, locale, reducedMotion }: OpticsLabProps): Rea
     config.oscillateGap,
     config.gapPx,
     config.blendK,
-    config.rimMode,
     config.showWireframe,
-    config.renderView,
+    styleMix,
     material,
     fallbackMaterial,
     refraction,
     theme,
-    stageSize,
     splitSize,
     reducedMotion,
+    gapReadoutRef,
   ])
 
-  const handleCapabilitiesChange = useCallback((caps: GlassSurfaceCapabilities) => {
-    const view = configRef.current.renderView
-    if ((view === 'refract' || view === 'split') && !caps.svgBackdropRefraction) {
-      setTierKey(view === 'split' ? 'splitDowngraded' : 'refractDowngraded')
-    } else {
-      setTierKey(view)
-    }
-  }, [])
+  const handleCapabilities = useCallback(
+    (caps: GlassSurfaceCapabilities) => {
+      onCapabilitiesChange?.(caps)
+    },
+    [onCapabilitiesChange],
+  )
 
-  const updateConfig = <K extends keyof OpticsLabConfig>(key: K, value: OpticsLabConfig[K]) => {
-    setConfig((prev) => ({ ...prev, [key]: value }))
+  const handleSatellitePointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
+    e.stopPropagation()
+    e.currentTarget.setPointerCapture(e.pointerId)
+    const startGap = renderedGapRef.current
+    if (config.oscillateGap) {
+      // Freeze at the live gap so the stopped effect does not snap back to the stored value.
+      onGapChange(startGap)
+      onStopOscillate()
+    }
+    dragGapRef.current = {
+      pointerId: e.pointerId,
+      startX: e.clientX,
+      startGap,
+    }
   }
 
-  const singleField: GlassFieldState = useMemo(
-    () => ({
-      primitives: activeSinglePrimitives,
-      blendK: config.blendK,
-      rimOpacity: 1,
-      styleMix: config.rimMode === 'soft' ? 1 : 0,
-    }),
-    [activeSinglePrimitives, config.blendK, config.rimMode],
-  )
+  const handleSatellitePointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = dragGapRef.current
+    if (!drag || drag.pointerId !== e.pointerId) return
+    const nextGap = Math.max(-24, Math.min(56, Math.round(drag.startGap + (e.clientX - drag.startX) * 2)))
+    if (nextGap !== latestRef.current.config.gapPx) {
+      onGapChange(nextGap)
+    }
+  }
 
-  const splitField: GlassFieldState = useMemo(
-    () => ({
-      primitives: activeSplitPrimitives,
-      blendK: config.blendK,
-      rimOpacity: 1,
-      styleMix: config.rimMode === 'soft' ? 1 : 0,
-    }),
-    [activeSplitPrimitives, config.blendK, config.rimMode],
-  )
+  const handleSatellitePointerEnd = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = dragGapRef.current
+    if (!drag || drag.pointerId !== e.pointerId) return
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId)
+    }
+    dragGapRef.current = null
+  }
 
-  const requestedMode: SurfaceRenderMode =
-    config.renderView === 'split' ? 'refract' : config.renderView
+  const renderSatelliteHitbox = (slotIndex: number, primitive: GlassPrimitive | undefined) => {
+    if (!primitive) return null
+    const x = primitive.center.x - primitive.size.width * 0.5
+    const y = primitive.center.y - primitive.size.height * 0.5
+    return (
+      <div
+        ref={(el) => {
+          satelliteHitboxRefs.current[slotIndex] = el
+        }}
+        className="pg-optics-drag-lens"
+        style={{
+          width: `${primitive.size.width}px`,
+          height: `${primitive.size.height}px`,
+          borderRadius: `${primitive.radius}px`,
+          transform: `translate3d(${x}px, ${y}px, 0)`,
+        }}
+        title={op.dragLensHint}
+        onPointerDown={handleSatellitePointerDown}
+        onPointerMove={handleSatellitePointerMove}
+        onPointerUp={handleSatellitePointerEnd}
+        onPointerCancel={handleSatellitePointerEnd}
+      >
+        <span>{op.dragLensHint}</span>
+      </div>
+    )
+  }
 
   return (
-    <>
-      {config.renderView === 'split' ? (
-        <div className="pg-stage-split" data-testid="optics-split-stage">
-          <div className="pg-split-pane" ref={splitLeftRef}>
-            <TestChart
-              title={op.splitLeftTitle}
-              caption={op.splitLeftCaption}
-              messages={t.chart}
-              wordmark={false}
-            />
-            <GlassField
-              className="pg-glass-stage"
-              controllerRef={primarySurfaceRef}
-              mode="refract"
-              theme={theme}
-              blendK={config.blendK}
-              styleMix={config.rimMode === 'soft' ? 1 : 0}
-              primitives={splitField.primitives}
-              material={material}
-              refraction={refraction}
-              onCapabilitiesChange={handleCapabilitiesChange}
-            />
-            {config.showWireframe ? (
-              <SdfWireframeOverlay
-                field={splitField}
-                pathRef={(el) => {
-                  primaryWirePathRef.current = el
-                }}
-                primRefs={(idx, el) => {
-                  primaryRectRefs.current[idx] = el
-                }}
-              />
-            ) : null}
-          </div>
-
-          <div className="pg-split-pane">
-            <TestChart
-              title={op.splitRightTitle}
-              caption={op.splitRightCaption}
-              messages={t.chart}
-              wordmark={false}
-            />
-            <GlassField
-              className="pg-glass-stage"
-              controllerRef={secondarySurfaceRef}
-              mode="frosted"
-              theme={theme}
-              blendK={config.blendK}
-              styleMix={config.rimMode === 'soft' ? 1 : 0}
-              primitives={splitField.primitives}
-              material={fallbackMaterial}
-              refraction={refraction}
-            />
-            {config.showWireframe ? (
-              <SdfWireframeOverlay
-                field={splitField}
-                pathRef={(el) => {
-                  secondaryWirePathRef.current = el
-                }}
-                primRefs={(idx, el) => {
-                  secondaryRectRefs.current[idx] = el
-                }}
-              />
-            ) : null}
-          </div>
-        </div>
-      ) : (
-        <div className="pg-stage" ref={singleStageRef} data-testid="optics-single-stage">
-          <TestChart
-            title={op.backdropTitle}
-            caption={op.backdropCaption}
-            messages={t.chart}
-          />
+    <div className="pg-stage-split" data-testid="optics-split-stage">
+      <div className="pg-split-pane">
+        <header className="pg-split-head">
+          <h3 className="pg-split-title">{op.splitLeftTitle}</h3>
+          <p className="pg-split-caption">{op.splitLeftCaption}</p>
+        </header>
+        <div className="pg-split-pane-stage" ref={splitLeftRef}>
+          <TestChart messages={t.chart} compact />
           <GlassField
             className="pg-glass-stage"
             controllerRef={primarySurfaceRef}
-            mode={requestedMode}
+            mode="refract"
             theme={theme}
             blendK={config.blendK}
-            styleMix={config.rimMode === 'soft' ? 1 : 0}
-            primitives={singleField.primitives}
+            styleMix={styleMix}
+            primitives={splitField.primitives}
             material={material}
             refraction={refraction}
-            onCapabilitiesChange={handleCapabilitiesChange}
-          />
+            onCapabilitiesChange={handleCapabilities}
+          >
+            {renderSatelliteHitbox(0, splitField.primitives[1])}
+          </GlassField>
           {config.showWireframe ? (
             <SdfWireframeOverlay
-              field={singleField}
+              field={splitField}
               pathRef={(el) => {
                 primaryWirePathRef.current = el
               }}
@@ -435,218 +687,41 @@ export function OpticsLab({ theme, locale, reducedMotion }: OpticsLabProps): Rea
             />
           ) : null}
         </div>
-      )}
+      </div>
 
-      <ControlPanel title={op.panelTitle} description={op.panelDescription}>
-        <div className="pg-btn-group">
-          {(['refract', 'frosted', 'solid', 'split'] as const satisfies readonly OpticsViewMode[]).map(
-            (modeKey) => (
-              <button
-                key={modeKey}
-                type="button"
-                className="pg-btn"
-                aria-pressed={config.renderView === modeKey}
-                onClick={() => updateConfig('renderView', modeKey)}
-              >
-                {op.views[modeKey]}
-              </button>
-            ),
-          )}
-        </div>
-
-        <SliderControl
-          id="optics-gap"
-          label={op.gapLabel}
-          value={config.gapPx}
-          min={-24}
-          max={56}
-          unit="px"
-          onChange={(v) => updateConfig('gapPx', v)}
-        />
-        <SliderControl
-          id="optics-blend"
-          label={op.blendKLabel}
-          value={config.blendK}
-          min={0}
-          max={56}
-          unit="px"
-          onChange={(v) => updateConfig('blendK', v)}
-        />
-        <SliderControl
-          id="optics-bevel"
-          label={op.bevelLabel}
-          value={config.bevelPx}
-          min={4}
-          max={32}
-          unit="px"
-          onChange={(v) => updateConfig('bevelPx', v)}
-        />
-        <div className="bench-backdrop">
-          <div className="bench-backdrop-label">{op.profileLabel}</div>
-          <div className="pg-btn-group">
-            {(
-              ['squircle', 'circle', 'parabolic', 'lip'] as const satisfies readonly RefractionProfileName[]
-            ).map((profileKey) => (
-              <button
-                key={profileKey}
-                type="button"
-                className="pg-btn"
-                aria-pressed={config.refractionProfile === profileKey}
-                onClick={() => updateConfig('refractionProfile', profileKey)}
-              >
-                {op.profiles[profileKey]}
-              </button>
-            ))}
-          </div>
-        </div>
-        <SliderControl
-          id="optics-ior"
-          label={op.iorLabel}
-          value={config.ior}
-          min={1.0}
-          max={2.4}
-          step={0.05}
-          precision={2}
-          onChange={(v) => updateConfig('ior', v)}
-        />
-        <SliderControl
-          id="optics-strength"
-          label={op.strengthLabel}
-          value={config.refractionStrength}
-          min={0}
-          max={2.2}
-          step={0.05}
-          precision={2}
-          onChange={(v) => updateConfig('refractionStrength', v)}
-        />
-        <SliderControl
-          id="optics-dispersion"
-          label={op.dispersionLabel}
-          value={config.dispersionPx}
-          min={0}
-          max={4}
-          step={0.1}
-          precision={1}
-          unit="px"
-          onChange={(v) => updateConfig('dispersionPx', v)}
-        />
-        <SliderControl
-          id="optics-blur"
-          label={op.blurLabel}
-          value={config.blurPx}
-          min={0}
-          max={24}
-          step={0.5}
-          precision={1}
-          unit="px"
-          onChange={(v) => updateConfig('blurPx', v)}
-        />
-        <SliderControl
-          id="optics-saturation"
-          label={op.saturationLabel}
-          value={config.saturation}
-          min={0.5}
-          max={3.2}
-          step={0.05}
-          precision={2}
-          onChange={(v) => updateConfig('saturation', v)}
-        />
-        <SliderControl
-          id="optics-tint"
-          label={op.tintLabel}
-          value={config.tintAlpha}
-          min={0}
-          max={0.8}
-          step={0.02}
-          precision={2}
-          onChange={(v) => updateConfig('tintAlpha', v)}
-        />
-        <SliderControl
-          id="optics-rim-opacity"
-          label={op.rimOpacityLabel}
-          value={config.rimOpacity}
-          min={0}
-          max={0.85}
-          step={0.02}
-          precision={2}
-          onChange={(v) => updateConfig('rimOpacity', v)}
-        />
-
-        <div className="pg-btn-group">
-          {(['directional', 'soft', 'physical'] as const).map((rm: RimMode) => (
-            <button
-              key={rm}
-              type="button"
-              className="pg-btn"
-              aria-pressed={config.rimMode === rm}
-              onClick={() => updateConfig('rimMode', rm)}
-            >
-              {op.rimModes[rm]}
-            </button>
-          ))}
-        </div>
-
-        {config.rimMode === 'physical' ? (
-          <SliderControl
-            id="optics-light-angle"
-            label={op.lightAngleLabel}
-            value={config.lightAngle}
-            min={-180}
-            max={180}
-            step={5}
-            unit="°"
-            onChange={(v) => updateConfig('lightAngle', v)}
-          />
-        ) : null}
-
-        <div className="pg-btn-group">
-          <button
-            type="button"
-            className="pg-btn"
-            aria-pressed={config.caustics}
-            onClick={() => updateConfig('caustics', !config.caustics)}
+      <div className="pg-split-pane">
+        <header className="pg-split-head">
+          <h3 className="pg-split-title">{op.splitRightTitle}</h3>
+          <p className="pg-split-caption">{op.splitRightCaption}</p>
+        </header>
+        <div className="pg-split-pane-stage">
+          <TestChart messages={t.chart} compact />
+          <GlassField
+            className="pg-glass-stage"
+            controllerRef={secondarySurfaceRef}
+            mode="frosted"
+            theme={theme}
+            blendK={config.blendK}
+            styleMix={styleMix}
+            primitives={splitField.primitives}
+            material={fallbackMaterial}
+            refraction={refraction}
           >
-            {op.causticsButton}
-          </button>
-          <button
-            type="button"
-            className="pg-btn"
-            aria-pressed={config.showWireframe}
-            onClick={() => updateConfig('showWireframe', !config.showWireframe)}
-          >
-            {op.wireframeButton}
-          </button>
-          <button
-            type="button"
-            className="pg-btn"
-            disabled={reducedMotion}
-            aria-pressed={config.oscillateGap && !reducedMotion}
-            onClick={() => updateConfig('oscillateGap', !config.oscillateGap)}
-          >
-            {op.oscillateButton}
-          </button>
-          <button
-            type="button"
-            className="pg-btn"
-            onClick={() => setConfig(DEFAULT_OPTICS_LAB_CONFIG)}
-          >
-            {op.resetButton}
-          </button>
+            {renderSatelliteHitbox(1, splitField.primitives[1])}
+          </GlassField>
+          {config.showWireframe ? (
+            <SdfWireframeOverlay
+              field={splitField}
+              pathRef={(el) => {
+                secondaryWirePathRef.current = el
+              }}
+              primRefs={(idx, el) => {
+                secondaryRectRefs.current[idx] = el
+              }}
+            />
+          ) : null}
         </div>
-
-        <div className="pg-telemetry">
-          <div>
-            <div className="pg-stat-label">{op.statEffectiveTier}</div>
-            <div className="pg-stat-value">{op.tierLabels[tierKey]}</div>
-          </div>
-          <div>
-            <div className="pg-stat-label">{op.statGapOffset}</div>
-            <div className="pg-stat-value">
-              <span ref={gapReadoutRef}>{config.gapPx.toFixed(1)}px</span>
-            </div>
-          </div>
-        </div>
-      </ControlPanel>
-    </>
+      </div>
+    </div>
   )
 }

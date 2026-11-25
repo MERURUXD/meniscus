@@ -1,54 +1,83 @@
 /*
- * Optical bench palette, after the cyanotype: Prussian-blue ink on cool paper in light,
- * the inverted print in dark. The single accent is the sodium D line (589 nm), the
- * reference yellow of optics labs; it marks only the active choice and focus.
+ * Full-bleed Optical Studio palette: "Gallery Quartz" in light mode, "Anodized Carbon" in
+ * dark mode. Floating HUD plates are strictly matte opaque precision hardware so Sessile's
+ * live glass field remains the sole glass surface in the viewport.
  */
 :root,
 [data-theme='light'] {
   color-scheme: light;
-  --ground: #eef2f6;
-  --ink: #13315c;
-  --ink-soft: #3d5679;
-  --ink-faint: #6a7f9c;
-  --rule: rgba(19, 49, 92, 0.2);
-  --rule-major: rgba(19, 49, 92, 0.42);
-  --star: rgba(19, 49, 92, 0.5);
-  --rail: #ffffff;
-  --rail-line: rgba(19, 49, 92, 0.12);
-  --control-fill: rgba(19, 49, 92, 0.06);
-  --control-fill-hover: rgba(19, 49, 92, 0.11);
-  --sodium: #f0b429;
-  --sodium-ink: #3b2a00;
-  --focus: #13315c;
-  --glass-ink: #0d2647;
-  --glass-ink-soft: #3d5679;
-  /* Cartographic halo: keeps labels legible over the bent, moving chart behind the glass. */
-  --glass-halo: 0 0 2px rgba(238, 242, 246, 0.95), 0 0 8px rgba(238, 242, 246, 0.9);
-  --wire-prim: #c2410c;
-  --wire-contour: #13315c;
+  --ground: #f5f5f2;
+  --surface: #ffffff;
+  --surface-recessed: #ededeb;
+  --surface-active: #ffffff;
+  --ink: #14181d;
+  --ink-soft: #4c5560;
+  --ink-faint: #5b6572;
+  --border: rgba(20, 24, 29, 0.12);
+  --border-strong: rgba(20, 24, 29, 0.22);
+  --rule: rgba(20, 24, 29, 0.09);
+  --rule-major: rgba(20, 24, 29, 0.22);
+  --star: rgba(20, 24, 29, 0.34);
+  --specimen-ink: rgba(20, 24, 29, 0.88);
+  --specimen-sub: rgba(20, 24, 29, 0.56);
+  --control-fill: rgba(20, 24, 29, 0.05);
+  --control-fill-hover: rgba(20, 24, 29, 0.1);
+  --accent: #d63317;
+  --accent-indicator: #d63317;
+  --accent-ink: #ffffff;
+  --focus: #d63317;
+  --dock-track-bg: rgba(255, 255, 255, 0.54);
+  --dock-track-border: rgba(20, 24, 29, 0.16);
+  --glass-ink: #11151a;
+  --glass-ink-soft: #262e38;
+  --glass-halo: 0 0 2px rgba(245, 245, 242, 0.96), 0 0 8px rgba(245, 245, 242, 0.9);
+  --wire-prim: #d63317;
+  --wire-contour: #14181d;
+  --shadow-segment: 0 1px 2px rgba(20, 24, 29, 0.08), 0 0 0 1px rgba(20, 24, 29, 0.06);
+  --shadow-hud: 0 10px 30px rgba(20, 24, 29, 0.1), 0 1px 3px rgba(20, 24, 29, 0.06);
+  --prism-1: #2563eb;
+  --prism-2: #0891b2;
+  --prism-3: #16a34a;
+  --prism-4: #eab308;
+  --prism-5: #dc2626;
 }
 
 [data-theme='dark'] {
   color-scheme: dark;
-  --ground: #102b4c;
-  --ink: #eaf1f9;
-  --ink-soft: #b6c6da;
-  --ink-faint: #8aa0bb;
-  --rule: rgba(234, 241, 249, 0.17);
-  --rule-major: rgba(234, 241, 249, 0.36);
-  --star: rgba(234, 241, 249, 0.42);
-  --rail: #0b2140;
-  --rail-line: rgba(234, 241, 249, 0.12);
-  --control-fill: rgba(234, 241, 249, 0.07);
-  --control-fill-hover: rgba(234, 241, 249, 0.13);
-  --sodium: #f5bd3d;
-  --sodium-ink: #2b1f00;
-  --focus: #f5bd3d;
-  --glass-ink: #f4f8fc;
-  --glass-ink-soft: #c5d3e4;
-  --glass-halo: 0 0 2px rgba(16, 43, 76, 0.95), 0 0 8px rgba(16, 43, 76, 0.9);
-  --wire-prim: #fb923c;
-  --wire-contour: #f5bd3d;
+  --ground: #0a0b0e;
+  --surface: #13151a;
+  --surface-recessed: #1b1e26;
+  --surface-active: #252a35;
+  --ink: #eef1f5;
+  --ink-soft: #a3adb9;
+  --ink-faint: #95a0ae;
+  --border: rgba(238, 241, 245, 0.12);
+  --border-strong: rgba(238, 241, 245, 0.22);
+  --rule: rgba(238, 241, 245, 0.09);
+  --rule-major: rgba(238, 241, 245, 0.22);
+  --star: rgba(238, 241, 245, 0.3);
+  --specimen-ink: rgba(238, 241, 245, 0.9);
+  --specimen-sub: rgba(238, 241, 245, 0.56);
+  --control-fill: rgba(238, 241, 245, 0.06);
+  --control-fill-hover: rgba(238, 241, 245, 0.12);
+  --accent: #ff5733;
+  --accent-indicator: #ff5733;
+  --accent-ink: #120502;
+  --focus: #ff5733;
+  --dock-track-bg: rgba(19, 21, 26, 0.62);
+  --dock-track-border: rgba(238, 241, 245, 0.16);
+  --glass-ink: #f4f7fb;
+  --glass-ink-soft: #dce3ee;
+  --glass-halo: 0 0 2px rgba(10, 11, 14, 0.96), 0 0 8px rgba(10, 11, 14, 0.9);
+  --wire-prim: #ff5733;
+  --wire-contour: #f5b13d;
+  --shadow-segment: 0 1px 2px rgba(0, 0, 0, 0.38), 0 0 0 1px rgba(238, 241, 245, 0.08);
+  --shadow-hud: 0 14px 36px rgba(0, 0, 0, 0.45), 0 1px 3px rgba(0, 0, 0, 0.3);
+  --prism-1: #3b82f6;
+  --prism-2: #06b6d4;
+  --prism-3: #22c55e;
+  --prism-4: #facc15;
+  --prism-5: #ef4444;
 }
 
 :root {
@@ -58,7 +87,11 @@
   --font-specimen:
     'Bodoni Moda Variable', 'Songti SC', 'STSong', 'Noto Serif SC', 'Source Han Serif SC',
     'SimSun', serif;
-  --rail-width: 340px;
+  --text-lg: 1.0625rem;
+  --text-base: 0.875rem;
+  --text-sm: 0.8125rem;
+  --sheet-width: 312px;
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 * {
@@ -72,7 +105,7 @@ body {
   background: var(--ground);
   color: var(--ink);
   font-family: var(--font-ui);
-  font-size: 14px;
+  font-size: var(--text-base);
   line-height: 1.45;
   -webkit-font-smoothing: antialiased;
 }

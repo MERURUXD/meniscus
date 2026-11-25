@@ -144,22 +144,26 @@ void main() {
   dark += vec3(0.82, 0.92, 1.0) * pow(causticA * causticB, 0.6) * 0.45;
   dark = mix(dark, dark * 0.72 + vec3(0.06, 0.09, 0.15), ribLine * 0.45);
 
-  // Light mode: sunlit porcelain ground with rich cerulean, teal, coral, and ink-slate ribbons.
-  vec3 bgL = mix(vec3(0.96, 0.97, 0.98), vec3(0.90, 0.93, 0.96), uv.y);
-  vec3 cBlueL = vec3(0.12, 0.39, 0.86);
-  vec3 cTealL = vec3(0.04, 0.62, 0.59);
-  vec3 cCoralL = vec3(0.91, 0.29, 0.18);
-  vec3 cInkL = vec3(0.11, 0.16, 0.26);
+  // Light mode: warm pearl ground under clear aqua, cerulean, violet, coral and gold silk. Hues
+  // are ordered around the wheel so neighbouring bands never blend through grey, and ribs
+  // darken the local silk instead of overlaying ink so they stay crisp without dulling it.
+  vec3 bgL = mix(vec3(0.995, 0.985, 0.97), vec3(0.955, 0.965, 0.99), uv.y);
+  vec3 cAquaL = vec3(0.16, 0.76, 0.78);
+  vec3 cBlueL = vec3(0.22, 0.48, 0.98);
+  vec3 cVioletL = vec3(0.55, 0.40, 0.96);
+  vec3 cCoralL = vec3(0.99, 0.42, 0.36);
+  vec3 cGoldL = vec3(1.0, 0.74, 0.30);
 
-  vec3 silkL = mix(cBlueL, cTealL, smoothstep(0.15, 0.52, band));
-  silkL = mix(silkL, cCoralL, smoothstep(0.50, 0.80, band));
-  silkL = mix(silkL, cInkL, smoothstep(0.78, 0.98, band));
+  vec3 silkL = mix(cAquaL, cBlueL, smoothstep(0.12, 0.40, band));
+  silkL = mix(silkL, cVioletL, smoothstep(0.38, 0.62, band));
+  silkL = mix(silkL, cCoralL, smoothstep(0.64, 0.86, band));
+  silkL = mix(silkL, cGoldL, smoothstep(0.90, 1.0, band));
 
   float bodyL = smoothstep(-0.25, 0.9, w1 * 0.55 + w3 * 0.45);
-  vec3 light = mix(bgL, mix(bgL, silkL, 0.72), 0.22 + 0.65 * bodyL);
-  light = mix(light, vec3(1.0), causticA * 0.52);
-  light = mix(light, mix(cCoralL, vec3(1.0, 0.88, 0.70), 0.55), causticB * 0.38);
-  light = mix(light, cInkL, ribLine * 0.22);
+  vec3 light = mix(bgL, silkL, 0.16 + 0.62 * bodyL);
+  light = mix(light, vec3(1.0), causticA * 0.55);
+  light = mix(light, vec3(1.0, 0.86, 0.62), causticB * 0.40);
+  light *= mix(vec3(1.0), vec3(0.80, 0.83, 0.90), ribLine);
 
   emit(light, dark);
 }`

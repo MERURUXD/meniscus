@@ -289,6 +289,15 @@
     #f7b438 275deg 360deg
   );
 }
+[data-theme='light'] .hud-swatch[data-scene='prism'] .hud-swatch-fill {
+  background: conic-gradient(
+    #29c2c7 0deg 72deg,
+    #387afa 72deg 144deg,
+    #8c66f5 144deg 216deg,
+    #fc6b5c 216deg 288deg,
+    #ffbd4d 288deg 360deg
+  );
+}
 .hud-swatch[data-scene='chart'] .hud-swatch-fill {
   background: conic-gradient(
     var(--prism-1) 0deg 72deg,

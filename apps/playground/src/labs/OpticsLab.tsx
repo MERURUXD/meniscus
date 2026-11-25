@@ -446,6 +446,8 @@ export function OpticsCompareStage({
   const secondaryRectRefs = useRef<Array<SVGRectElement | null>>([])
   const satelliteHitboxRefs = useRef<Array<HTMLDivElement | null>>([])
   const dragGapRef = useRef<{ pointerId: number; startX: number; startGap: number } | null>(null)
+  // Last gap actually drawn; differs from config.gapPx while the breathe animation runs.
+  const renderedGapRef = useRef(config.gapPx)
 
   const splitPrimitives = useMemo(
     () => buildOpticsLabPrimitives(splitSize, config.gapPx),
@@ -501,6 +503,7 @@ export function OpticsCompareStage({
 
   useEffect(() => {
     const syncSplitGap = (gapPx: number) => {
+      renderedGapRef.current = gapPx
       const l = latestRef.current
       const field: GlassFieldState = {
         primitives: buildOpticsLabPrimitives(l.splitSize, gapPx),
@@ -586,13 +589,16 @@ export function OpticsCompareStage({
   const handleSatellitePointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
     e.stopPropagation()
     e.currentTarget.setPointerCapture(e.pointerId)
+    const startGap = renderedGapRef.current
     if (config.oscillateGap) {
+      // Freeze at the live gap so the stopped effect does not snap back to the stored value.
+      onGapChange(startGap)
       onStopOscillate()
     }
     dragGapRef.current = {
       pointerId: e.pointerId,
       startX: e.clientX,
-      startGap: config.gapPx,
+      startGap,
     }
   }
 

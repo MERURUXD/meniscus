@@ -1,6 +1,6 @@
 {
   "name": "@sessile/dom",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "type": "module",
   "license": "MPL-2.0",
   "description": "Framework-agnostic headless DOM surface controller for Sessile.",

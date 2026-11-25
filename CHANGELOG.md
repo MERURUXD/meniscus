@@ -2,11 +2,13 @@
 
 All notable changes to the published `@sessile/*` packages (`@sessile/core`, `@sessile/dom`, `@sessile/presets`, `@sessile/react`) are documented in this file.
 
-## [Unreleased]
+## [0.3.0] - 2026-11-25
 
 ### Added
 
 - **Adaptive Backdrop Legibility (`@sessile/core`, `@sessile/dom`)**: The host fixes the foreground (text color, optional polarity, tier `clear` / `regular` / `legible` or an explicit WCAG contrast) and the glass yields. `@sessile/core` adds the goal solver (`resolveLegibilityGoal`), risk mapping (`computeBackdropRisk`), the allocation-free material response (`resolveLegibilityParams`, `createLegibilityParams`), an area-weighted telemetry accumulator and grid measurement (`createTelemetryAccumulator`, `measureTelemetryGrid`; telemetry carries luminance and channel-extreme tails so host `brightness` / `contrast` are bounded on colored backdrops, with the dark tail in `srgbLuma`), an attack/hold/release smoother (`createAsymmetricSmoother`), and `tryParseCssRgba` (returns `null` for colors it cannot resolve). `@sessile/dom` adds `GlassSurfaceControllerOptions.legibility`, `setLegibility`, `setBackdropTelemetry` and `getLegibilityParams`, the `BackdropProbe` plugin contract, `createRegionProbe` and the CORS-respecting `measureImageTelemetry`. On Chromium a luminance / table / arithmetic stage (composed on an alpha-flattened copy, then re-masked) between `refractSmooth` and the self-mask compresses the backdrop per pixel, always meeting the ceiling while risk moves only the knee. Safari and Firefox get a film plus a separate `brightness` / `contrast` correction stage after the host's veil optics (`LegibilityParams.fallbackVeil`, `BuildBackdropFilterCssParams.correction`). Edge Optics compensation scales alphas only. Updates never re-encode the Stored-PNG map or resize layers.
+- **Color & Contrast Helpers (`@sessile/core`)**: Exported `srgbToLinear`, `linearToSrgb`, `relativeLuminance`, `srgbLuma` and `contrastRatio`, plus the `LEGIBILITY_*` policy, smoothing and stage constants and `TELEMETRY_STRIDE` (6 floats per grid cell: `lumaHigh, lumaLow, channelHigh, channelLow, chroma, detail`).
+- **Backdrop Filter Correction Stage (`@sessile/dom`)**: `buildBackdropFilterCss` accepts an optional `correction` brightness/contrast pair, emitted after `veil` as its own filter functions because CSS clamps between them.
 
 ### Fixed
 

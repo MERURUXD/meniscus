@@ -12,7 +12,7 @@ Sessile enables real, interactive HTML elements to morph continuously as physica
 - **Route B3 Self-Masked Backdrop Refraction**: Unclipped SVG refraction sibling self-masked to shape alpha to prevent Chromium rectangular `backdrop-filter` bounding-box leaks.
 - **Zero-Leak Marching Squares Contour & Area-Preserving Springs**: High-precision contour extraction paired with interruptible analytical springs and 2D incompressible squash-and-stretch motion.
 - **WebGL2 + 2D Edge Optics**: Perimeter-only transparent overlay rendering outside shadows, outer hairlines, and directional or optional physical 3D rim specular highlights with `0px` seam alignment.
-- **Adaptive Backdrop Legibility**: The host fixes the foreground (text color and a `clear` / `regular` / `legible` tier, i.e. WCAG 3 / 4.5 / 7); the glass yields. On Chromium a luminance-keyed multiplicative film inside the Route B3 filter compresses the backdrop per pixel while keeping hue, so one pane over bright, dark and saturated cover art still meets the target. Elsewhere it maps to `backdrop-filter` brightness/contrast plus a film. Risk from host-injected telemetry or a `BackdropProbe` drives film, blur, displacement attenuation and edge alphas through an attack/hold/release smoother. None of these updates re-encodes the displacement map.
+- **Adaptive Backdrop Legibility**: The host fixes the foreground (text color and a `clear` / `regular` / `legible` tier, i.e. WCAG 3 / 4.5 / 7); the glass yields. On Chromium a luminance-keyed multiplicative film inside the Route B3 filter compresses the backdrop per pixel while keeping hue, so one pane over bright, dark and saturated cover art still meets the target. Elsewhere a film plus a separate `backdrop-filter` brightness/contrast stage runs after the host's own optics, solved on telemetry that carries channel extremes so host `saturate` / `brightness` / `contrast` stay bounded on colored backdrops. Risk from host-injected telemetry or a `BackdropProbe` drives film, blur, displacement attenuation and edge alphas through an attack/hold/release smoother. None of these updates re-encodes the displacement map.
 
   ```ts
   const probe = createRegionProbe({ background: pageTelemetry })
@@ -27,11 +27,11 @@ Sessile enables real, interactive HTML elements to morph continuously as physica
 
 | Package | Description |
 | --- | --- |
-| `@sessile/core` | Zero-dependency pure TypeScript kernel: N-primitive SDF field, Snell 1D LUT & 9-slice tile cache, optics parser/interpolator, area-preserving spring physics, stored-PNG displacement map builder, Marching Squares contour extractor, and WebGL2/2D edge renderer. |
-| `@sessile/dom` | Framework-agnostic headless DOM surface controller managing the 3-layer hybrid architecture, switchable 9-slice / bounded full-map Route B3 SVG filter, capability detection, `ResizeObserver`, and `requestAnimationFrame` frame sync. |
+| `@sessile/core` | Zero-dependency pure TypeScript kernel: N-primitive SDF field, Snell 1D LUT & 9-slice tile cache, optics parser/interpolator, area-preserving spring physics, stored-PNG displacement map builder, Marching Squares contour extractor, WebGL2/2D edge renderer, and the adaptive legibility solver with backdrop telemetry. |
+| `@sessile/dom` | Framework-agnostic headless DOM surface controller managing the 3-layer hybrid architecture, switchable 9-slice / bounded full-map Route B3 SVG filter, per-pixel legibility filter stage and backdrop probes, capability detection, `ResizeObserver`, and `requestAnimationFrame` frame sync. |
 | `@sessile/react` | Thin React bindings (`<GlassField>`, `<GlassPrimitive>`, `useGlassMorph`, `useElasticPress`). |
 | `@sessile/presets` | Optional interaction presets (morphing popover/menu, area-preserving segmented pill, velocity-stretched drag-and-merge) decoupled from the core material engine. |
-| `@sessile/playground` | Interactive online lab showcasing multi-primitive fusion, optics tuning, degradation comparison, and production presets. |
+| `@sessile/playground` | Interactive online lab showcasing multi-primitive fusion, optics tuning, degradation comparison, a colorful cover-wall legibility stress test, and production presets. |
 
 ## Status
 

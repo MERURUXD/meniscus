@@ -14,6 +14,7 @@ import {
   resolveLegibilityGoal,
   resolveLegibilityParams,
   type BackdropTelemetry,
+  type BackdropVeilOptics,
   type GlassFieldState,
   type LegibilityGoal,
   type LegibilityParams,
@@ -64,8 +65,15 @@ export class LegibilityDriver {
    * Updates the target risk for `field` placed at viewport offset (`originX`, `originY`).
    * Each active primitive is sampled separately and area-weighted, so the aggregate moves
    * continuously while N >= 2 primitives slide, merge or split; the AABB would count the gap.
+   * `optics` is the host's backdrop brightness/contrast, which the glass applies before the veil.
    */
-  sample(field: GlassFieldState, originX: number, originY: number, baseVeil: ArrayLike<number>): void {
+  sample(
+    field: GlassFieldState,
+    originX: number,
+    originY: number,
+    baseVeil: ArrayLike<number>,
+    optics?: BackdropVeilOptics,
+  ): void {
     let telemetry = this.injected
     if (!telemetry && this.probe) {
       const rects = this.rects
@@ -86,7 +94,7 @@ export class LegibilityDriver {
     }
 
     if (telemetry) {
-      const risk = computeBackdropRisk(telemetry, this.goal, baseVeil, this.targetRisk)
+      const risk = computeBackdropRisk(telemetry, this.goal, baseVeil, this.targetRisk, optics)
       this.target[0] = risk.luma
       this.target[1] = risk.chroma
       this.target[2] = risk.detail

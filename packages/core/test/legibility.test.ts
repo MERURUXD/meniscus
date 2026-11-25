@@ -232,6 +232,27 @@ test('composeVeilAffine reproduces the composed CSS brightness/contrast map', ()
   }
 })
 
+test('the fallback correction accounts for host brightness/contrast applied before it', () => {
+  const css = (o: { brightness: number; contrast: number; contrastFirst: boolean }, x: number): number =>
+    o.contrastFirst
+      ? o.brightness * (o.contrast * x + 0.5 * (1 - o.contrast))
+      : o.contrast * (o.brightness * x) + 0.5 * (1 - o.contrast)
+  const flat = (l: number): BackdropTelemetry => ({ lumaHigh: l, lumaLow: l, chroma: 0, detail: 0 })
+  for (const [foreground, raw] of [[WHITE, 0.3], [INK, 0.6]] as const) {
+    const goal = resolveLegibilityGoal({ foreground, tier: 'regular' })
+    const light = goal.polarity === 'light'
+    const optics = { brightness: light ? 2 : 0.5, contrast: 1, contrastFirst: false }
+    const params = createLegibilityParams()
+    const risk = computeBackdropRisk(flat(raw), goal, NO_VEIL, { luma: 0, chroma: 0, detail: 0 }, optics)
+    resolveLegibilityParams(goal, risk, NO_VEIL, params)
+    const shown = css(composeVeilAffine(optics, params.fallbackScale, params.fallbackOffset), raw)
+    assert.ok(
+      light ? shown <= params.backdropLimit + 1e-9 : shown >= params.backdropLimit - 1e-9,
+      `${goal.polarity}: host optics push ${raw} to ${css(optics, raw)}, corrected to ${shown}, limit ${params.backdropLimit}`,
+    )
+  }
+})
+
 test('backdrop risk is zero under the knee, saturates at white and tracks chroma and detail', () => {
   const goal = resolveLegibilityGoal({ foreground: WHITE, tier: 'regular' })
   const risk = { luma: 0, chroma: 0, detail: 0 }

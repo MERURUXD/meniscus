@@ -265,23 +265,46 @@ function backdropCeiling(goal: LegibilityGoal, veilRgba: ArrayLike<number>): num
   return light ? limit : 1 - limit
 }
 
-/** Maps backdrop telemetry to `[0, 1]` risk per channel for the given goal and base veil. */
+const IDENTITY_VEIL_OPTICS: BackdropVeilOptics = { brightness: 1, contrast: 1, contrastFirst: false }
+
+function veilAffineScale(optics: BackdropVeilOptics): number {
+  return Math.max(0, optics.brightness * optics.contrast)
+}
+
+function veilAffineOffset(optics: BackdropVeilOptics): number {
+  return optics.contrastFirst
+    ? 0.5 * optics.brightness * (1 - optics.contrast)
+    : 0.5 * (1 - optics.contrast)
+}
+
+/**
+ * Maps backdrop telemetry to `[0, 1]` risk per channel for the given goal and base veil.
+ * Telemetry describes the raw page, but the glass shows it after the host's `optics`, and the
+ * fallback correction is composed after those optics too. The affine is monotonic, so it maps
+ * the luminance percentiles exactly and scales chroma and gradients by its slope.
+ */
 export function computeBackdropRisk(
   telemetry: BackdropTelemetry,
   goal: LegibilityGoal,
   veilRgba: ArrayLike<number>,
   out: LegibilityRisk,
+  optics: BackdropVeilOptics = IDENTITY_VEIL_OPTICS,
 ): LegibilityRisk {
+  const s = veilAffineScale(optics)
+  const o = veilAffineOffset(optics)
   const ceiling = backdropCeiling(goal, veilRgba)
-  const tail = goal.polarity === 'light' ? telemetry.lumaHigh : 1 - telemetry.lumaLow
+  const tail =
+    goal.polarity === 'light'
+      ? clamp(s * telemetry.lumaHigh + o, 0, 1)
+      : 1 - clamp(s * telemetry.lumaLow + o, 0, 1)
   if (ceiling >= 1) {
     out.luma = 0
   } else {
     const knee = Math.max(0, ceiling) * goal.policy.knee
     out.luma = clamp((tail - knee) / Math.max(1e-6, 1 - knee), 0, 1)
   }
-  out.chroma = smoothstep(0.12, 0.45, telemetry.chroma)
-  out.detail = smoothstep(0.04, 0.22, telemetry.detail)
+  out.chroma = smoothstep(0.12, 0.45, s * telemetry.chroma)
+  out.detail = smoothstep(0.04, 0.22, s * telemetry.detail)
   return out
 }
 
@@ -619,12 +642,8 @@ export function composeVeilAffine(
   scale: number,
   offset: number,
 ): BackdropVeilOptics {
-  const s0 = base.brightness * base.contrast
-  const o0 = base.contrastFirst
-    ? 0.5 * base.brightness * (1 - base.contrast)
-    : 0.5 * (1 - base.contrast)
-  const s = Math.max(0, scale * s0)
-  const o = scale * o0 + offset
+  const s = Math.max(0, scale * veilAffineScale(base))
+  const o = scale * veilAffineOffset(base) + offset
   // contrast-first: x -> b * (c * x + 0.5 * (1 - c)), so b = s + 2o and c = s / b.
   const contrastFirstB = s + 2 * o
   // brightness-first: x -> c * (b * x) + 0.5 * (1 - c), so c = 1 - 2o and b = s / c.

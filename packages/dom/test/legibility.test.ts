@@ -321,6 +321,20 @@ test('fallback path maps risk to film plus affine brightness on the frosted veil
   assert.ok(busyAlpha > calmAlpha, 'film thickens the veil')
 })
 
+test('fallback risk is measured on the backdrop after the host brightness', () => {
+  const brightnessUnder = (brightness: number): number => {
+    const { controller, frames } = setup(SAFARI_ENV, SINGLE)
+    const veilOptics = { brightness, contrast: 1, contrastFirst: false }
+    controller.setBackdropTelemetry({ lumaHigh: 0.3, lumaLow: 0.3, chroma: 0, detail: 0 })
+    controller.render({ field: SINGLE, veilOptics })
+    frames.run(600)
+    const filter = controller.getElements().veil!.style.backdropFilter
+    return Number(/brightness\(([\d.]+)\)/.exec(filter)?.[1] ?? 1) / brightness
+  }
+  assert.equal(brightnessUnder(1), 1, 'raw 0.3 is already safe under the default dark veil')
+  assert.ok(brightnessUnder(2.5) < 0.98, 'host brightening pushes it over the limit, so the fallback corrects')
+})
+
 test('edge optics compensation raises alphas without touching the host material', () => {
   const { controller, frames, spy } = setup(CHROME_ENV, SINGLE)
   const base = DEFAULT_OPTICAL_MATERIALS.dark.frosted

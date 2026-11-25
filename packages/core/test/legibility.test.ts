@@ -225,6 +225,9 @@ test('the fallback stage holds the limit after host optics, including tails they
     [WHITE, 0.8, brighten(1, 1.8)],
     [INK, 0.6, brighten(0.5)],
     [INK, 0.1, brighten(1, 1.8)],
+    // Contrast clips white to 1 before brightness dims it to 0.4; one folded affine says 0.6.
+    [INK, 1, { brightness: 0.4, contrast: 2, contrastFirst: true }],
+    [WHITE, 0, { brightness: 2.5, contrast: 0.6, contrastFirst: false }],
   ] as const
   for (const [foreground, raw, optics] of cases) {
     const goal = resolveLegibilityGoal({ foreground, tier: 'regular' })

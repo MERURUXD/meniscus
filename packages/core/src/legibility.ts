@@ -275,17 +275,25 @@ function veilAffineScale(optics: BackdropVeilOptics): number {
   return Math.max(0, optics.brightness * optics.contrast)
 }
 
-function veilAffineOffset(optics: BackdropVeilOptics): number {
+/**
+ * Host optics as the CSS `backdrop-filter` path renders them: two filter functions in order, each
+ * clamped to `[0, 1]`. Folding them into one affine would miss the clip between them (contrast
+ * can saturate white before a dimming brightness), and only this path relies on the estimate;
+ * the per-pixel stage clamps absolute pixel values after the filter's own color matrix.
+ */
+function applyVeilOptics(optics: BackdropVeilOptics, x: number): number {
+  const b = Math.max(0, optics.brightness)
+  const c = Math.max(0, optics.contrast)
   return optics.contrastFirst
-    ? 0.5 * optics.brightness * (1 - optics.contrast)
-    : 0.5 * (1 - optics.contrast)
+    ? clamp(b * clamp(c * x + 0.5 * (1 - c), 0, 1), 0, 1)
+    : clamp(c * clamp(b * x, 0, 1) + 0.5 * (1 - c), 0, 1)
 }
 
 /**
  * Maps backdrop telemetry to `[0, 1]` risk per channel for the given goal and base veil.
  * Telemetry describes the raw page, but the glass shows it after the host's `optics`, and the
- * fallback correction is composed after those optics too. The affine is monotonic, so it maps
- * the luminance percentiles exactly and scales chroma and gradients by its slope.
+ * fallback correction runs after those optics too. Each clamped step is monotonic, so the
+ * luminance percentiles map exactly; chroma and gradients scale by at most the affine slope.
  */
 export function computeBackdropRisk(
   telemetry: BackdropTelemetry,
@@ -295,12 +303,11 @@ export function computeBackdropRisk(
   optics: BackdropVeilOptics = IDENTITY_VEIL_OPTICS,
 ): LegibilityRisk {
   const s = veilAffineScale(optics)
-  const o = veilAffineOffset(optics)
   const ceiling = backdropCeiling(goal, veilRgba)
   const tail =
     goal.polarity === 'light'
-      ? clamp(s * telemetry.lumaHigh + o, 0, 1)
-      : 1 - clamp(s * telemetry.lumaLow + o, 0, 1)
+      ? applyVeilOptics(optics, telemetry.lumaHigh)
+      : 1 - applyVeilOptics(optics, telemetry.lumaLow)
   if (ceiling >= 1) {
     out.luma = 0
   } else {

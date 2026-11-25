@@ -170,6 +170,16 @@ export interface GlassSurfaceControllerOptions {
   ResizeObserverCtor?: typeof ResizeObserver
   /** Adaptive backdrop legibility for a fixed foreground; see `setLegibility`. */
   legibility?: GlassLegibilityOptions | null
+  /**
+   * Where the backdrop sample and veil tint are painted (default `'layers'`).
+   * `'container'` writes `backdrop-filter` and `background` onto `container` itself, for a
+   * single resting surface clipped by its own border radius. Its opacity, filter or mask
+   * animations then keep sampling the page, whereas a child backdrop layer would treat such an
+   * animating container as its Backdrop Root and see nothing. No refract or veil layer is
+   * created, refraction bounds default to the container's border box (nothing is clip-pathed,
+   * so Route B3 is unnecessary), and `frame.opacity` fades only the overlay canvas.
+   */
+  backdropTarget?: 'layers' | 'container'
 }
 
 interface MutablePrimitive {
@@ -429,6 +439,13 @@ export class GlassSurfaceController {
   private readonly ownsOverlayCanvas: boolean
   private prevContainerPosition: string | null = null
   private prevContainerZIndex: string | null = null
+  /** Container painting the backdrop and veil itself (`backdropTarget: 'container'`). */
+  private readonly backdropHost: HTMLElement | null
+  private readonly hostCache: LayerStyleCache = {}
+  private readonly prevHostStyles: { backdropFilter: string; webkitBackdropFilter: string; background: string } | null
+  /** Container border offsets, read on resize so render never forces layout. */
+  private hostBorderLeft = 0
+  private hostBorderTop = 0
 
   private readonly overlayRenderer: IGlassOverlayRenderer | null
   private overlayCapabilities: RendererCapabilities
@@ -496,6 +513,15 @@ export class GlassSurfaceController {
 
     const elements = options.elements ?? {}
     const positioning = options.positioning ?? 'absolute'
+    const host = options.backdropTarget === 'container' ? this.container : null
+    this.backdropHost = host
+    this.prevHostStyles = host
+      ? {
+          backdropFilter: host.style.backdropFilter,
+          webkitBackdropFilter: host.style.getPropertyValue('-webkit-backdrop-filter'),
+          background: host.style.background,
+        }
+      : null
     this.positioning = positioning
     const zIndex = options.zIndex
     const hasCustomRefractSlot = 'refractBackdrop' in elements
@@ -507,7 +533,9 @@ export class GlassSurfaceController {
 
     let refractEl: HTMLElement | null = null
     let ownsRefract = false
-    if (hasCustomRefractSlot) {
+    if (host) {
+      // The container itself samples the backdrop.
+    } else if (hasCustomRefractSlot) {
       refractEl = elements.refractBackdrop ?? null
     } else if (this.container && this.doc) {
       refractEl = this.doc.createElement('div')
@@ -518,7 +546,9 @@ export class GlassSurfaceController {
 
     let veilEl: HTMLElement | null = null
     let ownsVeil = false
-    if (hasCustomVeilSlot) {
+    if (host) {
+      // The container itself carries the veil tint.
+    } else if (hasCustomVeilSlot) {
       veilEl = elements.veil ?? null
     } else if (this.container && this.doc) {
       veilEl = this.doc.createElement('div')
@@ -652,6 +682,7 @@ export class GlassSurfaceController {
         (size) => {
           if (this.disposed) return
           this.containerSize = size
+          this.readHostBorder()
           this.onResizeCallback?.(size)
         },
         {
@@ -661,6 +692,7 @@ export class GlassSurfaceController {
       )
     } else if (this.container) {
       this.containerSize = measureElementBorderBox(this.container)
+      this.readHostBorder()
     }
 
     if (options.legibility) {
@@ -671,6 +703,42 @@ export class GlassSurfaceController {
   private hideRefractBackdrop(): void {
     setVisibilityCached(this.refractBackdropEl, this.refractCache, 'hidden')
     setBackdropFilterCached(this.refractBackdropEl, this.refractCache, 'none')
+  }
+
+  private readHostBorder(): void {
+    if (!this.backdropHost) return
+    this.hostBorderLeft = this.backdropHost.clientLeft || 0
+    this.hostBorderTop = this.backdropHost.clientTop || 0
+  }
+
+  /** Container border box in the managed layers' (padding-box) coordinates. */
+  private hostBorderBox(): Rect | null {
+    const size = this.containerSize
+    if (!this.backdropHost || !size) return null
+    return { x: -this.hostBorderLeft, y: -this.hostBorderTop, width: size.width, height: size.height }
+  }
+
+  /** Writes the veil's backdrop filter and tint to whichever element owns them. */
+  private paintVeil(backdropFilter: string, background: string): void {
+    if (this.backdropHost) {
+      setBackdropFilterCached(this.backdropHost, this.hostCache, backdropFilter)
+      setBackgroundCached(this.backdropHost, this.hostCache, background)
+      return
+    }
+    if (!this.veilEl) return
+    setVeilBackdropFilterCached(this.veilEl, this.veilCache, backdropFilter)
+    setBackgroundCached(this.veilEl, this.veilCache, background)
+  }
+
+  private restoreHost(): void {
+    const host = this.backdropHost
+    const prev = this.prevHostStyles
+    if (!host || !prev) return
+    host.style.backdropFilter = prev.backdropFilter
+    host.style.setProperty('-webkit-backdrop-filter', prev.webkitBackdropFilter)
+    host.style.background = prev.background
+    this.hostCache.backdropFilter = undefined
+    this.hostCache.background = undefined
   }
 
   private ensureRefractFilterController(): RefractFilterController | null {
@@ -749,7 +817,8 @@ export class GlassSurfaceController {
 
     const contourPath = extractFieldContourPath(frame.field, { x: bounds.x, y: bounds.y })
     const opacityStr = `${opacity}`
-    const refractPath = this.effectiveMode === 'refract' && Boolean(contourPath && this.refractBackdropEl)
+    const refractTarget = this.backdropHost ?? this.refractBackdropEl
+    const refractPath = this.effectiveMode === 'refract' && Boolean(contourPath && refractTarget)
 
     const legibility =
       this.effectiveMode === 'solid' || !this.legibility
@@ -767,15 +836,8 @@ export class GlassSurfaceController {
 
     if (this.effectiveMode === 'solid') {
       this.hideRefractBackdrop()
-      if (this.veilEl) {
-        setVeilBackdropFilterCached(this.veilEl, this.veilCache, 'none')
-        setBackgroundCached(
-          this.veilEl,
-          this.veilCache,
-          frame.solidBackground ?? formatOpaqueSolidCss(material.tintRgba, theme),
-        )
-      }
-    } else if (this.effectiveMode === 'refract' && contourPath && this.refractBackdropEl) {
+      this.paintVeil('none', frame.solidBackground ?? formatOpaqueSolidCss(material.tintRgba, theme))
+    } else if (refractPath && refractTarget) {
       const filterController = this.ensureRefractFilterController()
       if (filterController && filterController.mounted) {
         const refCfg = frame.refraction
@@ -796,7 +858,7 @@ export class GlassSurfaceController {
         const caustics = refCfg?.caustics ?? this.baseRefraction?.caustics
         const nineSlice = refCfg?.nineSlice ?? this.baseRefraction?.nineSlice
 
-        let refractBounds = frame.refractBounds
+        let refractBounds = frame.refractBounds ?? this.hostBorderBox() ?? undefined
         if (!refractBounds) {
           const rawRefract = computeClampedRefractBounds(frame.field, bounds)
           const effScale = resolveEffectiveMapScale(
@@ -838,23 +900,20 @@ export class GlassSurfaceController {
         })
         filterController.updateLegibility(legibility)
 
-        // Route B3: keep `refractBackdrop` unclipped so Chromium avoids rectangular backdrop leaks
-        // while the SVG filter self-masks output alpha to the displaced glass interior.
         const urlRef = `url(#${this.filterId})`
-        setVisibilityCached(this.refractBackdropEl, this.refractCache, 'visible')
-        setTransformSizeCached(this.refractBackdropEl, this.refractCache, refractBounds)
-        setOpacityCached(this.refractBackdropEl, this.refractCache, opacityStr)
-        setBackdropFilterCached(this.refractBackdropEl, this.refractCache, urlRef)
-
-        if (this.veilEl) {
-          setVeilBackdropFilterCached(this.veilEl, this.veilCache, 'none')
-          setBackgroundCached(
-            this.veilEl,
-            this.veilCache,
-            legibility
-              ? (this.opaqueVeilOverride ?? formatRgbaCss(legibility.veilRgba))
-              : (frame.refractTintBackground ?? formatRgbaCss(material.tintRgba)),
-          )
+        const tint = legibility
+          ? (this.opaqueVeilOverride ?? formatRgbaCss(legibility.veilRgba))
+          : (frame.refractTintBackground ?? formatRgbaCss(material.tintRgba))
+        if (this.backdropHost) {
+          this.paintVeil(urlRef, tint)
+        } else {
+          // Route B3: keep `refractBackdrop` unclipped so Chromium avoids rectangular backdrop leaks
+          // while the SVG filter self-masks output alpha to the displaced glass interior.
+          setVisibilityCached(refractTarget, this.refractCache, 'visible')
+          setTransformSizeCached(refractTarget, this.refractCache, refractBounds)
+          setOpacityCached(refractTarget, this.refractCache, opacityStr)
+          setBackdropFilterCached(refractTarget, this.refractCache, urlRef)
+          this.paintVeil('none', tint)
         }
       } else {
         this.applyFrostedVeil(blurSigma, saturation, material, veilOptics, frame, legibility)
@@ -895,17 +954,15 @@ export class GlassSurfaceController {
     legibility: LegibilityParams | null,
   ): void {
     this.hideRefractBackdrop()
-    if (!this.veilEl) return
+    if (!this.veilEl && !this.backdropHost) return
     const bf = buildBackdropFilterCss({
       blurPx: blurSigma,
       saturation,
       veil: veilOptics,
       correction: legibility?.fallbackVeil,
     })
-    setVeilBackdropFilterCached(this.veilEl, this.veilCache, bf)
-    setBackgroundCached(
-      this.veilEl,
-      this.veilCache,
+    this.paintVeil(
+      bf,
       legibility
         ? (this.opaqueVeilOverride ?? formatRgbaCss(legibility.veilRgba))
         : (frame.frostedBackground ?? formatRgbaCss(material.tintRgba)),
@@ -1048,6 +1105,7 @@ export class GlassSurfaceController {
   /** Hides all surface layers and clears the overlay canvas without detaching DOM nodes. */
   clear(): void {
     this.lastRenderedFrame = null
+    this.restoreHost()
     this.hideRefractBackdrop()
     setVisibilityCached(this.veilEl, this.veilCache, 'hidden')
     setVeilBackdropFilterCached(this.veilEl, this.veilCache, 'none')

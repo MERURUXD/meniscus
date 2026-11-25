@@ -33,11 +33,11 @@ const MIN_ACTIVE_SIZE = 0.01
 const RISK_CHANNELS = 3
 /**
  * Smoothed risk closer than this to the committed value does not re-resolve the response.
- * Measured against `resolveLegibilityParams` across tiers and polarities: 0.02 of risk moves no
- * output by more than ~1.1/255 (table, film, hairline alpha) or 0.12px of blur, about one 8-bit
- * step on a translucent film over moving content. Without it a scrolling backdrop nudges the
- * risk every frame, and each nudge rewrites the filter (Chromium rebuilds it) and redraws the
- * edge overlay.
+ * Measured on `resolveLegibilityParams` across tiers and polarities, a 0.02 step of any risk
+ * channel moves the table by at most 1.14/255, the film by 0.9/255, the edge gains by 0.024
+ * and blur by 0.12px: about one 8-bit step, hidden by the moving content that caused it.
+ * Without it a scrolling backdrop nudges the risk every frame, and each nudge rewrites the
+ * filter (Chromium rebuilds it) and redraws the edge overlay.
  */
 const RISK_DEADBAND = 0.02
 

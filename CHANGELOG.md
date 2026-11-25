@@ -4,6 +4,10 @@ All notable changes to the published `@sessile/*` packages (`@sessile/core`, `@s
 
 ## [Unreleased]
 
+### Added
+
+- **Adaptive Backdrop Legibility (`@sessile/core`, `@sessile/dom`)**: The host fixes the foreground (text color, optional polarity, tier `clear` / `regular` / `legible` or an explicit WCAG contrast) and the glass yields. `@sessile/core` adds the goal solver (`resolveLegibilityGoal`), risk mapping (`computeBackdropRisk`), the allocation-free material response (`resolveLegibilityParams`, `createLegibilityParams`), an area-weighted telemetry accumulator and grid measurement (`createTelemetryAccumulator`, `measureTelemetryGrid`), an attack/hold/release smoother (`createAsymmetricSmoother`), and `composeVeilAffine`. `@sessile/dom` adds `GlassSurfaceControllerOptions.legibility`, `setLegibility`, `setBackdropTelemetry` and `getLegibilityParams`, the `BackdropProbe` plugin contract, `createRegionProbe` and the CORS-respecting `measureImageTelemetry`. On Chromium a three-node luminance / table / arithmetic stage between `refractSmooth` and the self-mask compresses the backdrop per pixel. Safari and Firefox get a film plus affine `brightness` / `contrast`. Edge Optics compensation scales alphas only. Updates never re-encode the Stored-PNG map or resize layers.
+
 ### Fixed
 
 - **Nine-Slice Joint Seams (`@sessile/dom`)**: Circles and capsules no longer show a cross or mid-line seam on the Route B3 refraction map. Corner tiles and edge strips used to abut where `span` or `rise` collapsed to `0`, and once the filter was rasterized at a non-integer device offset (fractional DPR, subpixel `transform`), the antialiased joint dropped map alpha and leaked unrefracted backdrop. All 9 pieces are now always emitted with a `2 * pad` overlap underlay, so subpixel-positioned capsules also stay on the nine-slice path instead of falling back to the full map.

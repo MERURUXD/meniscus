@@ -366,6 +366,13 @@ function deviationAt(
  * Both bounds are exact for neutral pixels and collapse to `L` under identity optics, so the
  * estimate stays continuous as the host's optics change. Chroma and gradients scale by the
  * affine slope.
+ *
+ * `saturation` is the host's `saturate()`, which runs first: `x' = luma + s * (x - luma)` per
+ * channel, then clipped. Desaturating never clips, keeps sRGB luma and (by Jensen) never raises
+ * encoded luminance, so only `s > 1` matters; there each clipped channel moves by at most
+ * `(s - 1)` times the channel spread, a bounded shift that widens the channel range and the
+ * luminance tails by the same amount. The legibility response only ever lowers saturation, so
+ * the host's value bounds the effective one.
  */
 export function computeBackdropRisk(
   telemetry: BackdropTelemetry,
@@ -373,13 +380,19 @@ export function computeBackdropRisk(
   veilRgba: ArrayLike<number>,
   out: LegibilityRisk,
   optics: BackdropVeilOptics = IDENTITY_VEIL_OPTICS,
+  saturation = 1,
 ): LegibilityRisk {
   const s = veilAffineScale(optics)
   const ceiling = backdropCeiling(goal, veilRgba)
-  const high = clamp(telemetry.lumaHigh, 0, 1)
-  const low = clamp(telemetry.lumaLow, 0, 1)
-  const channelHigh = clamp(Math.max(telemetry.channelHigh ?? high, high), 0, 1)
-  const channelLow = clamp(Math.min(telemetry.channelLow ?? low, low), 0, 1)
+  const rawHigh = clamp(telemetry.lumaHigh, 0, 1)
+  const rawLow = clamp(telemetry.lumaLow, 0, 1)
+  const rawChannelHigh = clamp(Math.max(telemetry.channelHigh ?? rawHigh, rawHigh), 0, 1)
+  const rawChannelLow = clamp(Math.min(telemetry.channelLow ?? rawLow, rawLow), 0, 1)
+  const shift = Math.max(0, saturation - 1) * (rawChannelHigh - rawChannelLow)
+  const high = rawHigh + shift
+  const low = rawLow - shift
+  const channelHigh = Math.min(1, rawChannelHigh + shift)
+  const channelLow = Math.max(0, rawChannelLow - shift)
   const tail =
     goal.polarity === 'light'
       ? Math.min(

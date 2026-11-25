@@ -339,6 +339,19 @@ test('fallback risk is measured on the backdrop after the host brightness', () =
   assert.ok(brightnessUnder(2.5) < 0.98, 'host brightening pushes it over the limit, so the fallback corrects')
 })
 
+test('fallback risk accounts for the host saturation that runs before the correction', () => {
+  const correctionUnder = (saturation: number): number => {
+    const { controller, frames } = setup(SAFARI_ENV, SINGLE)
+    controller.setBackdropTelemetry({ lumaHigh: 0.3, lumaLow: 0.25, channelHigh: 0.6, channelLow: 0.1, chroma: 0.5, detail: 0 })
+    controller.render({ field: SINGLE, material: { ...DEFAULT_OPTICAL_MATERIALS.dark.frosted, saturation } })
+    frames.run(600)
+    const filter = controller.getElements().veil!.style.backdropFilter
+    return Number(/brightness\(([\d.]+)\)/.exec(filter)?.[1] ?? 1)
+  }
+  assert.equal(correctionUnder(1), 1, 'unsaturated, the colored cell is already safe')
+  assert.ok(correctionUnder(6) < 0.9, 'oversaturation can clip channels brighter, so the fallback corrects')
+})
+
 test('edge optics compensation raises alphas without touching the host material', () => {
   const { controller, frames, spy } = setup(CHROME_ENV, SINGLE)
   const base = DEFAULT_OPTICAL_MATERIALS.dark.frosted

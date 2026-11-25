@@ -950,7 +950,7 @@ export class GlassSurfaceController {
         originX = box.left + this.container.clientLeft - this.container.scrollLeft
         originY = box.top + this.container.clientTop - this.container.scrollTop
       }
-      driver.sample(frame.field, originX, originY, baseVeil, frame.veilOptics)
+      driver.sample(frame.field, originX, originY, baseVeil, frame.veilOptics, material.saturation)
     }
     return driver.resolve(baseVeil)
   }

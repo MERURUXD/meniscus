@@ -248,6 +248,15 @@ test('the fallback stage holds the limit after host optics, including tails they
 })
 
 test('fallback correction holds per pixel on colored backdrops under arbitrary host optics', () => {
+  /** CSS `saturate()` per the Filter Effects matrix, clipped like every filter function. */
+  const saturate = (rgb: readonly number[], s: number): number[] => {
+    const [r, g, b] = rgb as [number, number, number]
+    return [
+      (0.213 + 0.787 * s) * r + (0.715 - 0.715 * s) * g + (0.072 - 0.072 * s) * b,
+      (0.213 - 0.213 * s) * r + (0.715 + 0.285 * s) * g + (0.072 - 0.072 * s) * b,
+      (0.213 - 0.213 * s) * r + (0.715 - 0.715 * s) * g + (0.072 + 0.928 * s) * b,
+    ].map(unit)
+  }
   // One pixel per telemetry, so its tails are exact; CSS clips per channel at every stage and the
   // text sits on the encoded luminance of the result.
   const encoded = (rgb: readonly number[]): number =>
@@ -258,28 +267,36 @@ test('fallback correction holds per pixel on colored backdrops under arbitrary h
     return seed / 2 ** 32
   }
   for (let n = 0; n < 4000; n++) {
-    const rgb = [rand(), rand(), rand()].map((v) => (n % 3 === 0 ? Math.round(v) : v))
-    const optics: VeilOptics = { brightness: rand() * 2.5, contrast: rand() * 2.5, contrastFirst: rand() < 0.5 }
+    let rgb = [rand(), rand(), rand()].map((v) => (n % 3 === 0 ? Math.round(v) : v))
+    let optics: VeilOptics = { brightness: rand() * 2.5, contrast: rand() * 2.5, contrastFirst: rand() < 0.5 }
+    let saturation = n % 4 === 0 ? 1 : n % 50 === 1 ? 20 : rand() * 4
+    if (n === 0) {
+      // Host saturation alone clips the blue channel of a pale blue.
+      rgb = [0.55, 0.55, 1]
+      optics = { brightness: 1, contrast: 1, contrastFirst: false }
+      saturation = 20
+    }
     const L = encoded(rgb)
     const t: BackdropTelemetry = {
       lumaHigh: L,
       lumaLow: srgbLuma(rgb[0]!, rgb[1]!, rgb[2]!),
       channelHigh: Math.max(...rgb),
       channelLow: Math.min(...rgb),
-      chroma: 0,
+      chroma: Math.max(...rgb) - Math.min(...rgb),
       detail: 0,
     }
     for (const foreground of [WHITE, INK]) {
       const goal = resolveLegibilityGoal({ foreground, tier: n % 2 ? 'regular' : 'legible' })
       const params = createLegibilityParams()
-      const risk = computeBackdropRisk(t, goal, NO_VEIL, { luma: 0, chroma: 0, detail: 0 }, optics)
+      const risk = computeBackdropRisk(t, goal, NO_VEIL, { luma: 0, chroma: 0, detail: 0 }, optics, saturation)
       resolveLegibilityParams(goal, risk, NO_VEIL, params)
-      const shown = encoded(rgb.map((v) => cssOptics(params.fallbackVeil, cssOptics(optics, v))))
+      const saturated = saturate(rgb, saturation * params.saturationScale)
+      const shown = encoded(saturated.map((v) => cssOptics(params.fallbackVeil, cssOptics(optics, v))))
       const ok =
         goal.polarity === 'light'
           ? shown <= params.backdropLimit + LEGIBILITY_LIMIT_MARGIN
           : shown >= params.backdropLimit - LEGIBILITY_LIMIT_MARGIN
-      assert.ok(ok, `${goal.polarity}: ${rgb} ${JSON.stringify(optics)} shows ${shown}, limit ${params.backdropLimit}`)
+      assert.ok(ok, `${goal.polarity}: ${rgb} sat ${saturation} ${JSON.stringify(optics)} shows ${shown}, limit ${params.backdropLimit}`)
     }
   }
 })

@@ -15,6 +15,7 @@
 import {
   DEFAULT_OPTICAL_MATERIALS,
   clamp,
+  compensateLegibilityEdges,
   computeFieldBounds,
   createGlassOverlayRenderer,
   extractFieldContourPath,
@@ -875,7 +876,7 @@ export class GlassSurfaceController {
         dpr,
         theme,
         field: shifted,
-        material: legibility ? this.compensateEdges(material, legibility) : material,
+        material: legibility ? compensateLegibilityEdges(material, legibility, this.edgeMaterial) : material,
         opacity,
         blurBumpPx,
       })
@@ -954,25 +955,6 @@ export class GlassSurfaceController {
       driver.sample(frame.field, originX, originY, baseVeil, frame.veilOptics, material.saturation)
     }
     return baseVeil
-  }
-
-  /** Edge Optics compensation scales alphas only: blur radii and offsets feed surface bounds. */
-  private compensateEdges(material: OpticalMaterial, params: LegibilityParams): OpticalMaterial {
-    const edge = Object.assign(this.edgeMaterial, material)
-    // Object.assign never clears optional keys a previous material set and this one omits.
-    edge.borderWidth = material.borderWidth
-    edge.borderRgba = material.borderRgba
-    edge.rimBottomRatio = material.rimBottomRatio
-    edge.bevelProfile = material.bevelProfile
-    edge.lightAngle = material.lightAngle
-    edge.lightElevation = material.lightElevation
-    edge.rimShade = material.rimShade
-    edge.hairlineSideAlpha = clamp(material.hairlineSideAlpha * params.hairlineScale, 0, 1)
-    edge.hairlineCornerAlpha = clamp(material.hairlineCornerAlpha * params.hairlineScale, 0, 1)
-    edge.hairlineFlatAlpha = clamp(material.hairlineFlatAlpha * params.hairlineScale, 0, 1)
-    edge.rimOpacity = clamp(material.rimOpacity * params.hairlineScale, 0, 1)
-    edge.shadowAlpha = clamp(material.shadowAlpha * params.shadowScale, 0, 1)
-    return edge
   }
 
   /**

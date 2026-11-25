@@ -14,6 +14,7 @@
  * SPDX-License-Identifier: MPL-2.0
  */
 
+import type { OpticalMaterial } from './contracts.ts'
 import type { BackdropVeilOptics } from './optics.ts'
 import { clamp, lerp, smoothstep } from './physics.ts'
 
@@ -432,6 +433,33 @@ export function createLegibilityParams(): LegibilityParams {
     backdropLimit: 1,
     feasible: true,
   }
+}
+
+/**
+ * Writes `material` with the edge response applied into `out` and returns it. Only alphas scale:
+ * blur radii and offsets feed surface bounds, so moving them would resize the overlay mid-flight.
+ * Static surfaces and morph overlays both draw through this, so one response yields one edge.
+ */
+export function compensateLegibilityEdges(
+  material: OpticalMaterial,
+  params: Pick<LegibilityParams, 'hairlineScale' | 'shadowScale'>,
+  out: OpticalMaterial,
+): OpticalMaterial {
+  Object.assign(out, material)
+  // Object.assign never clears optional keys a previous material set and this one omits.
+  out.borderWidth = material.borderWidth
+  out.borderRgba = material.borderRgba
+  out.rimBottomRatio = material.rimBottomRatio
+  out.bevelProfile = material.bevelProfile
+  out.lightAngle = material.lightAngle
+  out.lightElevation = material.lightElevation
+  out.rimShade = material.rimShade
+  out.hairlineSideAlpha = clamp(material.hairlineSideAlpha * params.hairlineScale, 0, 1)
+  out.hairlineCornerAlpha = clamp(material.hairlineCornerAlpha * params.hairlineScale, 0, 1)
+  out.hairlineFlatAlpha = clamp(material.hairlineFlatAlpha * params.hairlineScale, 0, 1)
+  out.rimOpacity = clamp(material.rimOpacity * params.hairlineScale, 0, 1)
+  out.shadowAlpha = clamp(material.shadowAlpha * params.shadowScale, 0, 1)
+  return out
 }
 
 /**

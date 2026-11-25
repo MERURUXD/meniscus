@@ -605,10 +605,14 @@ export function createAsymmetricSmoother(
   }
 }
 
+const VEIL_FACTOR_EPS = 1e-4
+
 /**
  * Composes the fallback affine (`scale * x + offset`) after the base `brightness`/`contrast`
- * veil optics, re-expressed as one contrast-first pair so the CSS `backdrop-filter` path keeps
- * a single brightness and contrast token.
+ * veil optics, re-expressed as one brightness/contrast pair so the CSS `backdrop-filter` path
+ * keeps a single token of each. CSS rejects negative coefficients, and each order can express
+ * only part of the affine plane (contrast-first needs `s + 2o > 0`, brightness-first needs
+ * `o < 0.5`), so the base's order is kept when representable and the other is used otherwise.
  */
 export function composeVeilAffine(
   base: BackdropVeilOptics,
@@ -619,9 +623,18 @@ export function composeVeilAffine(
   const o0 = base.contrastFirst
     ? 0.5 * base.brightness * (1 - base.contrast)
     : 0.5 * (1 - base.contrast)
-  const s = scale * s0
+  const s = Math.max(0, scale * s0)
   const o = scale * o0 + offset
-  // contrast-first form: x -> b * (c * x + 0.5 * (1 - c)), i.e. s = b * c and o = 0.5 * (b - s).
-  const brightness = Math.max(1e-4, s + 2 * o)
+  // contrast-first: x -> b * (c * x + 0.5 * (1 - c)), so b = s + 2o and c = s / b.
+  const contrastFirstB = s + 2 * o
+  // brightness-first: x -> c * (b * x) + 0.5 * (1 - c), so c = 1 - 2o and b = s / c.
+  const brightnessFirstC = 1 - 2 * o
+  const canContrastFirst = contrastFirstB > VEIL_FACTOR_EPS
+  const canBrightnessFirst = brightnessFirstC > VEIL_FACTOR_EPS
+  if (canBrightnessFirst && (!base.contrastFirst || !canContrastFirst)) {
+    return { brightness: s / brightnessFirstC, contrast: brightnessFirstC, contrastFirst: false }
+  }
+  // With s >= 0 at least one order is representable; the clamp only guards non-finite input.
+  const brightness = Math.max(VEIL_FACTOR_EPS, contrastFirstB)
   return { brightness, contrast: s / brightness, contrastFirst: true }
 }

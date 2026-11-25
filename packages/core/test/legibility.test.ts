@@ -215,10 +215,15 @@ test('composeVeilAffine reproduces the composed CSS brightness/contrast map', ()
     { brightness: 1, contrast: 1, contrastFirst: false },
     { brightness: 1.1, contrast: 0.8, contrastFirst: false },
     { brightness: 0.9, contrast: 1.2, contrastFirst: true },
+    // s + 2o <= 0: only the brightness-first order can express this base.
+    { brightness: 0.4, contrast: 2, contrastFirst: false },
+    // o >= 0.5: only the contrast-first order can express this base.
+    { brightness: 1.5, contrast: 0.2, contrastFirst: true },
   ]
   for (const base of bases) {
-    for (const [scale, offset] of [[1, 0], [0.45, 0], [0.6, 0.4]] as const) {
+    for (const [scale, offset] of [[1, 0], [0.45, 0], [0.6, 0.4], [0.5, -0.3]] as const) {
       const composed = composeVeilAffine(base, scale, offset)
+      assert.ok(composed.brightness >= 0 && composed.contrast >= 0, 'CSS accepts both coefficients')
       for (const x of [0, 0.25, 0.5, 1]) {
         const expected = scale * css(base, x) + offset
         assert.ok(Math.abs(css(composed, x) - expected) < 1e-9, `base=${JSON.stringify(base)} x=${x}`)

@@ -15,7 +15,6 @@
 import {
   DEFAULT_OPTICAL_MATERIALS,
   clamp,
-  composeVeilAffine,
   computeFieldBounds,
   createGlassOverlayRenderer,
   extractFieldContourPath,
@@ -900,9 +899,8 @@ export class GlassSurfaceController {
     const bf = buildBackdropFilterCss({
       blurPx: blurSigma,
       saturation,
-      veil: legibility
-        ? composeVeilAffine(veilOptics, legibility.fallbackScale, legibility.fallbackOffset)
-        : veilOptics,
+      veil: veilOptics,
+      correction: legibility?.fallbackVeil,
     })
     setVeilBackdropFilterCached(this.veilEl, this.veilCache, bf)
     setBackgroundCached(

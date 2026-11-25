@@ -189,9 +189,13 @@ export interface LegibilityParams {
   saturationScale: number
   hairlineScale: number
   shadowScale: number
-  /** Affine `out = scale * x + offset` on the encoded backdrop for paths without per-pixel filters. */
-  fallbackScale: number
-  fallbackOffset: number
+  /**
+   * Whole-backdrop correction for paths without the per-pixel filter. Apply it as its own
+   * `brightness`/`contrast` stage after the host's veil optics: CSS clamps between filter
+   * functions and the risk is solved on that clamped output, so folding it into the host pair
+   * would let an over-brightened backdrop escape the ceiling.
+   */
+  readonly fallbackVeil: BackdropVeilOptics
   /** Encoded-luminance limit the backdrop is compressed toward after the film. */
   backdropLimit: number
   /** `false` when the veil tint alone already violates the goal. */
@@ -321,8 +325,7 @@ export function createLegibilityParams(): LegibilityParams {
     saturationScale: 1,
     hairlineScale: 1,
     shadowScale: 1,
-    fallbackScale: 1,
-    fallbackOffset: 0,
+    fallbackVeil: { brightness: 1, contrast: 1, contrastFirst: false },
     backdropLimit: 1,
     feasible: true,
   }
@@ -405,10 +408,22 @@ export function resolveLegibilityParams(
   const baseKnee = clamp(baseCeiling, 0, 1) * policy.knee
   const tail = baseKnee + risk.luma * (1 - baseKnee)
   const scale = ceiling >= 1 || tail <= ceiling ? 1 : ceiling / tail
-  const offset = light ? 0 : 1 - scale
-
-  changed = assign(out, 'fallbackScale', scale) || changed
-  changed = assign(out, 'fallbackOffset', offset) || changed
+  // Light text: x -> scale * x. Dark text: x -> scale * x + 1 - scale, written contrast-first as
+  // b * (c * x + 0.5 * (1 - c)) with b = 2 - scale; the contrast step stays inside [0, 1] and
+  // b times its maximum is exactly 1, so neither stage clamps.
+  const fallback = out.fallbackVeil
+  const brightness = light ? scale : 2 - scale
+  const contrast = light ? 1 : scale / brightness
+  if (
+    fallback.contrastFirst === light ||
+    Math.abs(fallback.brightness - brightness) > 1e-4 ||
+    Math.abs(fallback.contrast - contrast) > 1e-4
+  ) {
+    fallback.brightness = brightness
+    fallback.contrast = contrast
+    fallback.contrastFirst = !light
+    changed = true
+  }
   changed = assign(out, 'blurBoostPx', policy.blurBoostPx * risk.detail) || changed
   changed = assign(out, 'refractionScale', lerp(1, policy.refractionFloor, risk.detail)) || changed
   changed = assign(out, 'saturationScale', lerp(1, policy.saturationFloor, risk.chroma)) || changed
@@ -419,8 +434,6 @@ export function resolveLegibilityParams(
 }
 
 type ScalarParam =
-  | 'fallbackScale'
-  | 'fallbackOffset'
   | 'blurBoostPx'
   | 'refractionScale'
   | 'saturationScale'
@@ -626,34 +639,4 @@ export function createAsymmetricSmoother(
       holdLeft.fill(holdMs)
     },
   }
-}
-
-const VEIL_FACTOR_EPS = 1e-4
-
-/**
- * Composes the fallback affine (`scale * x + offset`) after the base `brightness`/`contrast`
- * veil optics, re-expressed as one brightness/contrast pair so the CSS `backdrop-filter` path
- * keeps a single token of each. CSS rejects negative coefficients, and each order can express
- * only part of the affine plane (contrast-first needs `s + 2o > 0`, brightness-first needs
- * `o < 0.5`), so the base's order is kept when representable and the other is used otherwise.
- */
-export function composeVeilAffine(
-  base: BackdropVeilOptics,
-  scale: number,
-  offset: number,
-): BackdropVeilOptics {
-  const s = Math.max(0, scale * veilAffineScale(base))
-  const o = scale * veilAffineOffset(base) + offset
-  // contrast-first: x -> b * (c * x + 0.5 * (1 - c)), so b = s + 2o and c = s / b.
-  const contrastFirstB = s + 2 * o
-  // brightness-first: x -> c * (b * x) + 0.5 * (1 - c), so c = 1 - 2o and b = s / c.
-  const brightnessFirstC = 1 - 2 * o
-  const canContrastFirst = contrastFirstB > VEIL_FACTOR_EPS
-  const canBrightnessFirst = brightnessFirstC > VEIL_FACTOR_EPS
-  if (canBrightnessFirst && (!base.contrastFirst || !canContrastFirst)) {
-    return { brightness: s / brightnessFirstC, contrast: brightnessFirstC, contrastFirst: false }
-  }
-  // With s >= 0 at least one order is representable; the clamp only guards non-finite input.
-  const brightness = Math.max(VEIL_FACTOR_EPS, contrastFirstB)
-  return { brightness, contrast: s / brightness, contrastFirst: true }
 }

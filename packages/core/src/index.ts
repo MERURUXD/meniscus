@@ -148,7 +148,6 @@ export {
   LEGIBILITY_STAGES,
   LEGIBILITY_TABLE_SIZE,
   TELEMETRY_STRIDE,
-  composeVeilAffine,
   computeBackdropRisk,
   contrastRatio,
   createAsymmetricSmoother,

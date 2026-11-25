@@ -329,7 +329,9 @@ test('fallback risk is measured on the backdrop after the host brightness', () =
     controller.render({ field: SINGLE, veilOptics })
     frames.run(600)
     const filter = controller.getElements().veil!.style.backdropFilter
-    return Number(/brightness\(([\d.]+)\)/.exec(filter)?.[1] ?? 1) / brightness
+    const tokens = [...filter.matchAll(/brightness\(([\d.]+)\)/g)].map((m) => Number(m[1]))
+    assert.equal(tokens[0], brightness === 1 ? undefined : brightness, 'host stage is kept as is')
+    return tokens.length > 1 ? tokens[1]! : brightness === 1 ? (tokens[0] ?? 1) : 1
   }
   assert.equal(brightnessUnder(1), 1, 'raw 0.3 is already safe under the default dark veil')
   assert.ok(brightnessUnder(2.5) < 0.98, 'host brightening pushes it over the limit, so the fallback corrects')

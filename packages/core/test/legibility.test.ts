@@ -13,7 +13,6 @@ import test from 'node:test'
 import {
   LEGIBILITY_POLICIES,
   LEGIBILITY_STAGES,
-  composeVeilAffine,
   computeBackdropRisk,
   contrastRatio,
   createAsymmetricSmoother,
@@ -36,6 +35,14 @@ const LIGHT_VEIL = [0.99, 0.99, 0.99, 0.2]
 const NO_VEIL = [1, 1, 1, 0]
 const FULL_RISK = { luma: 1, chroma: 1, detail: 1 }
 const NO_RISK = { luma: 0, chroma: 0, detail: 0 }
+
+type VeilOptics = { brightness: number; contrast: number; contrastFirst: boolean }
+const unit = (v: number): number => Math.min(1, Math.max(0, v))
+/** CSS `brightness()` / `contrast()` in the given order, clamped after each function as browsers do. */
+const cssOptics = (o: VeilOptics, x: number): number =>
+  o.contrastFirst
+    ? unit(o.brightness * unit(o.contrast * x + 0.5 * (1 - o.contrast)))
+    : unit(o.contrast * unit(o.brightness * x) + 0.5 * (1 - o.contrast))
 
 const q8 = (v: number): number => Math.round(Math.min(1, Math.max(0, v)) * 255) / 255
 
@@ -162,8 +169,8 @@ test('pixels already safe pass through untouched and compressed pixels keep thei
 test('a veil that already guarantees contrast leaves the per-pixel stage at identity', () => {
   const params = solve('clear', WHITE, DARK_VEIL)
   assert.ok(params.table.every((m) => m === 1))
-  assert.equal(params.fallbackScale, 1)
-  assert.equal(params.fallbackOffset, 0)
+  assert.equal(params.fallbackVeil.brightness, 1)
+  assert.equal(params.fallbackVeil.contrast, 1)
 })
 
 test('table revision only advances when the multiplier moves by half an 8-bit step', () => {
@@ -196,59 +203,40 @@ test('material response is identity at zero risk and reaches the tier floors at 
   assert.ok(busy.veilRgba[0]! < DARK_VEIL[0]!, 'film darkens toward the safe extreme for light text')
 })
 
-test('fallback affine maps the estimated tail onto the backdrop limit', () => {
+test('fallback stage maps the estimated tail onto the backdrop limit without clamping inside', () => {
   const light = solve('regular', WHITE, NO_VEIL)
-  assert.equal(light.fallbackOffset, 0)
-  assert.ok(light.fallbackScale * 1 <= light.backdropLimit + 1e-6, 'white maps under the ceiling')
+  assert.ok(cssOptics(light.fallbackVeil, 1) <= light.backdropLimit + 1e-6, 'white maps under the ceiling')
+  assert.ok(cssOptics(light.fallbackVeil, 1) > 0.3, 'compression is bounded, not a blackout')
 
   const dark = solve('regular', INK, [0, 0, 0, 0])
-  assert.ok(dark.fallbackOffset >= dark.backdropLimit - 1e-6, 'black lifts over the floor')
-  assert.ok(Math.abs(dark.fallbackScale + dark.fallbackOffset - 1) < 1e-9, 'white stays white')
+  const veil = dark.fallbackVeil
+  assert.ok(cssOptics(veil, 0) >= dark.backdropLimit - 1e-6, 'black lifts over the floor')
+  assert.ok(Math.abs(cssOptics(veil, 1) - 1) < 1e-9, 'white stays white')
+  assert.ok(veil.contrastFirst && veil.brightness * (0.5 + 0.5 * veil.contrast) <= 1 + 1e-9, 'no stage clamps')
 })
 
-test('composeVeilAffine reproduces the composed CSS brightness/contrast map', () => {
-  const css = (o: { brightness: number; contrast: number; contrastFirst: boolean }, x: number): number =>
-    o.contrastFirst
-      ? o.brightness * (o.contrast * x + 0.5 * (1 - o.contrast))
-      : o.contrast * (o.brightness * x) + 0.5 * (1 - o.contrast)
-  const bases = [
-    { brightness: 1, contrast: 1, contrastFirst: false },
-    { brightness: 1.1, contrast: 0.8, contrastFirst: false },
-    { brightness: 0.9, contrast: 1.2, contrastFirst: true },
-    // s + 2o <= 0: only the brightness-first order can express this base.
-    { brightness: 0.4, contrast: 2, contrastFirst: false },
-    // o >= 0.5: only the contrast-first order can express this base.
-    { brightness: 1.5, contrast: 0.2, contrastFirst: true },
-  ]
-  for (const base of bases) {
-    for (const [scale, offset] of [[1, 0], [0.45, 0], [0.6, 0.4], [0.5, -0.3]] as const) {
-      const composed = composeVeilAffine(base, scale, offset)
-      assert.ok(composed.brightness >= 0 && composed.contrast >= 0, 'CSS accepts both coefficients')
-      for (const x of [0, 0.25, 0.5, 1]) {
-        const expected = scale * css(base, x) + offset
-        assert.ok(Math.abs(css(composed, x) - expected) < 1e-9, `base=${JSON.stringify(base)} x=${x}`)
-      }
-    }
-  }
-})
-
-test('the fallback correction accounts for host brightness/contrast applied before it', () => {
-  const css = (o: { brightness: number; contrast: number; contrastFirst: boolean }, x: number): number =>
-    o.contrastFirst
-      ? o.brightness * (o.contrast * x + 0.5 * (1 - o.contrast))
-      : o.contrast * (o.brightness * x) + 0.5 * (1 - o.contrast)
+test('the fallback stage holds the limit after host optics, including tails they clip', () => {
   const flat = (l: number): BackdropTelemetry => ({ lumaHigh: l, lumaLow: l, chroma: 0, detail: 0 })
-  for (const [foreground, raw] of [[WHITE, 0.3], [INK, 0.6]] as const) {
+  const brighten = (brightness: number, contrast = 1): VeilOptics => ({ brightness, contrast, contrastFirst: false })
+  const cases = [
+    [WHITE, 0.3, brighten(2)],
+    // Host optics clip white; the correction must act on the clipped value, not the raw affine.
+    [WHITE, 1, brighten(2)],
+    [WHITE, 0.8, brighten(1, 1.8)],
+    [INK, 0.6, brighten(0.5)],
+    [INK, 0.1, brighten(1, 1.8)],
+  ] as const
+  for (const [foreground, raw, optics] of cases) {
     const goal = resolveLegibilityGoal({ foreground, tier: 'regular' })
     const light = goal.polarity === 'light'
-    const optics = { brightness: light ? 2 : 0.5, contrast: 1, contrastFirst: false }
     const params = createLegibilityParams()
     const risk = computeBackdropRisk(flat(raw), goal, NO_VEIL, { luma: 0, chroma: 0, detail: 0 }, optics)
     resolveLegibilityParams(goal, risk, NO_VEIL, params)
-    const shown = css(composeVeilAffine(optics, params.fallbackScale, params.fallbackOffset), raw)
+    const hosted = cssOptics(optics, raw)
+    const shown = cssOptics(params.fallbackVeil, hosted)
     assert.ok(
       light ? shown <= params.backdropLimit + 1e-9 : shown >= params.backdropLimit - 1e-9,
-      `${goal.polarity}: host optics push ${raw} to ${css(optics, raw)}, corrected to ${shown}, limit ${params.backdropLimit}`,
+      `${goal.polarity}: host optics map ${raw} to ${hosted}, corrected to ${shown}, limit ${params.backdropLimit}`,
     )
   }
 })

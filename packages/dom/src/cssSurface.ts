@@ -52,6 +52,11 @@ export interface BuildBackdropFilterCssParams {
   blurPx: number
   saturation?: number
   veil?: BackdropVeilOptics
+  /**
+   * A second brightness/contrast stage after `veil`, kept separate because CSS clamps between
+   * filter functions (e.g. `LegibilityParams.fallbackVeil`).
+   */
+  correction?: BackdropVeilOptics
 }
 
 const DEFAULT_MORPH_ATTRIBUTE = 'data-sessile-morphing'
@@ -384,6 +389,7 @@ export function buildBackdropFilterCss({
   blurPx,
   saturation,
   veil,
+  correction,
 }: BuildBackdropFilterCssParams): string {
   const parts: string[] = []
 
@@ -399,24 +405,27 @@ export function buildBackdropFilterCss({
     parts.push(`saturate(${Number(Math.max(0, saturation).toFixed(3))})`)
   }
 
-  if (veil) {
-    const hasBrightness = Number.isFinite(veil.brightness) && Math.abs(veil.brightness - 1) > 1e-4
-    const hasContrast = Number.isFinite(veil.contrast) && Math.abs(veil.contrast - 1) > 1e-4
-    const bToken = hasBrightness
-      ? `brightness(${Number(Math.max(0, veil.brightness).toFixed(4))})`
-      : null
-    const cToken = hasContrast
-      ? `contrast(${Number(Math.max(0, veil.contrast).toFixed(4))})`
-      : null
-
-    if (veil.contrastFirst) {
-      if (cToken) parts.push(cToken)
-      if (bToken) parts.push(bToken)
-    } else {
-      if (bToken) parts.push(bToken)
-      if (cToken) parts.push(cToken)
-    }
-  }
+  if (veil) pushVeilTokens(parts, veil)
+  if (correction) pushVeilTokens(parts, correction)
 
   return parts.length > 0 ? parts.join(' ') : 'none'
+}
+
+function pushVeilTokens(parts: string[], veil: BackdropVeilOptics): void {
+  const hasBrightness = Number.isFinite(veil.brightness) && Math.abs(veil.brightness - 1) > 1e-4
+  const hasContrast = Number.isFinite(veil.contrast) && Math.abs(veil.contrast - 1) > 1e-4
+  const bToken = hasBrightness
+    ? `brightness(${Number(Math.max(0, veil.brightness).toFixed(4))})`
+    : null
+  const cToken = hasContrast
+    ? `contrast(${Number(Math.max(0, veil.contrast).toFixed(4))})`
+    : null
+
+  if (veil.contrastFirst) {
+    if (cToken) parts.push(cToken)
+    if (bToken) parts.push(bToken)
+  } else {
+    if (bToken) parts.push(bToken)
+    if (cToken) parts.push(cToken)
+  }
 }

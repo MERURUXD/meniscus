@@ -498,6 +498,40 @@ test('a snapped first telemetry sample reaches the layers before the loop sleeps
   assert.ok(Math.abs(controller.getLegibilityParams()!.veilRgba[3]! - DEFAULT_OPTICAL_MATERIALS.dark.crisp.tintRgba[3]) < 0.02)
 })
 
+test('a slowly changing backdrop redraws in perceptible steps and settles on the exact response', () => {
+  const settledOn = (telemetry: BackdropTelemetry) => {
+    const { controller, frames } = setup(CHROME_ENV, SINGLE)
+    controller.setBackdropTelemetry(telemetry)
+    frames.run(600)
+    return controller.getLegibilityParams()!
+  }
+  const { controller, frames, spy } = setup(CHROME_ENV, SINGLE)
+  controller.setBackdropTelemetry(CALM)
+  frames.run(600)
+  const before = spy.materials.length
+  const steps = 300
+  let last = CALM
+  for (let i = 1; i <= steps; i++) {
+    // A backdrop scrolling under the glass: telemetry drifts a little every frame.
+    last = { ...CALM, lumaHigh: CALM.lumaHigh + (0.8 * i) / steps, lumaLow: CALM.lumaLow + (0.4 * i) / steps, detail: CALM.detail + (0.3 * i) / steps }
+    controller.setBackdropTelemetry(last)
+    frames.run(1)
+  }
+  const redraws = spy.materials.length - before
+  assert.ok(redraws > 0, 'the drift is followed')
+  assert.ok(redraws < steps / 4, `drift redraws in steps, not every frame (${redraws} of ${steps})`)
+
+  frames.run(600)
+  const exact = settledOn(last)
+  const params = controller.getLegibilityParams()!
+  const maxGap = (a: ArrayLike<number>, b: ArrayLike<number>) =>
+    Math.max(...Array.from(a, (v, i) => Math.abs(v - b[i]!)))
+  // The table itself only republishes past half an 8-bit step, so a path can rest within that.
+  assert.ok(maxGap(params.table, exact.table) <= 0.5 / 255, 'settling commits the target, not a deadband short of it')
+  assert.ok(maxGap(params.veilRgba, exact.veilRgba) < 1e-3)
+  assert.ok(Math.abs(params.blurBoostPx - exact.blurBoostPx) < 1e-3)
+})
+
 function rect(x: number, y: number, width: number, height: number): DOMRect {
   return { x, y, width, height, left: x, top: y, right: x + width, bottom: y + height } as DOMRect
 }

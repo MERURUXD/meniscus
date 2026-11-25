@@ -31,6 +31,15 @@ export interface GlassLegibilityOptions extends LegibilityTarget {
 
 const MIN_ACTIVE_SIZE = 0.01
 const RISK_CHANNELS = 3
+/**
+ * Smoothed risk closer than this to the committed value does not re-resolve the response.
+ * Measured against `resolveLegibilityParams` across tiers and polarities: 0.02 of risk moves no
+ * output by more than ~1.1/255 (table, film, hairline alpha) or 0.12px of blur, about one 8-bit
+ * step on a translucent film over moving content. Without it a scrolling backdrop nudges the
+ * risk every frame, and each nudge rewrites the filter (Chromium rebuilds it) and redraws the
+ * edge overlay.
+ */
+const RISK_DEADBAND = 0.02
 
 export class LegibilityDriver {
   readonly params: LegibilityParams = createLegibilityParams()
@@ -38,7 +47,8 @@ export class LegibilityDriver {
   private readonly goal: LegibilityGoal
   private readonly smoother = createAsymmetricSmoother(RISK_CHANNELS, LEGIBILITY_SMOOTHING)
   private readonly target = new Float32Array(RISK_CHANNELS)
-  private readonly previous = new Float32Array(RISK_CHANNELS)
+  /** The risk the published params were resolved from. */
+  private readonly committed = new Float32Array(RISK_CHANNELS)
   private readonly targetRisk: LegibilityRisk = { luma: 0, chroma: 0, detail: 0 }
   private readonly smoothedRisk: LegibilityRisk = { luma: 0, chroma: 0, detail: 0 }
   private readonly accumulator = createTelemetryAccumulator()
@@ -61,7 +71,7 @@ export class LegibilityDriver {
     this.goal = resolveLegibilityGoal(options)
     this.probe = options.probe ?? null
     this.smoother.reset(this.goal.policy.assumedRisk)
-    this.previous.set(this.smoother.values)
+    this.committed.set(this.smoother.values)
   }
 
   setTelemetry(telemetry: BackdropTelemetry | null): void {
@@ -119,23 +129,28 @@ export class LegibilityDriver {
   }
 
   /**
-   * Advances smoothing by `dtMs`; returns whether the smoothed risk changed since the previous
-   * advance. Comparing against that value rather than the pre-step one also reports the snap
-   * `sample` applies outside the loop, which would otherwise never reach the layers.
+   * Advances smoothing by `dtMs`; returns whether the layers need the response re-resolved.
+   * Comparing against the committed risk rather than the pre-step value also reports the snap
+   * `sample` applies outside the loop.
    */
   advance(dtMs: number): boolean {
-    const values = this.smoother.values
     this.settled = this.smoother.step(this.target, dtMs)
-    let changed = false
+    return this.pendingCommit()
+  }
+
+  /** Small moves wait in the deadband; settling commits the exact target so nothing rests short. */
+  private pendingCommit(): boolean {
+    const values = this.smoother.values
+    let distance = 0
     for (let i = 0; i < RISK_CHANNELS; i++) {
-      if (values[i] !== this.previous[i]) changed = true
+      distance = Math.max(distance, Math.abs(values[i]! - this.committed[i]!))
     }
-    this.previous.set(values)
-    return changed
+    return distance > 0 && (distance >= RISK_DEADBAND || this.settled)
   }
 
   resolve(baseVeil: ArrayLike<number>): LegibilityParams {
-    const values = this.smoother.values
+    if (this.pendingCommit()) this.committed.set(this.smoother.values)
+    const values = this.committed
     this.smoothedRisk.luma = values[0]!
     this.smoothedRisk.chroma = values[1]!
     this.smoothedRisk.detail = values[2]!

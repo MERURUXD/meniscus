@@ -754,7 +754,7 @@ export class GlassSurfaceController {
     const legibility =
       this.effectiveMode === 'solid' || !this.legibility
         ? null
-        : this.resolveLegibility(this.legibility, frame, material, refractPath)
+        : this.legibility.resolve(this.sampleLegibility(this.legibility, frame, material, refractPath))
     const blurSigma = activeBlur + (legibility?.blurBoostPx ?? 0)
     const saturation = material.saturation * (legibility?.saturationScale ?? 1)
 
@@ -913,16 +913,17 @@ export class GlassSurfaceController {
   }
 
   /**
-   * Resolves this frame's material response, sampling telemetry first unless the call comes from
-   * the smoothing loop. Host renders measure layout right before calling `render`, so the probe
-   * reads here precede every style write and stay clean.
+   * Resolves this frame's base veil and samples telemetry into the driver unless the call comes
+   * from the smoothing loop. Host renders measure layout right before calling `render`, so the
+   * probe reads here precede every style write and stay clean. Resolving the response is left to
+   * `render`: the driver commits risk only when the response actually reaches the layers.
    */
-  private resolveLegibility(
+  private sampleLegibility(
     driver: LegibilityDriver,
     frame: GlassSurfaceFrame,
     material: OpticalMaterial,
     refractPath: boolean,
-  ): LegibilityParams {
+  ): Float32Array {
     const override = refractPath ? frame.refractTintBackground : frame.frostedBackground
     const baseVeil = this.baseVeilRgba
     this.opaqueVeilOverride = null
@@ -952,7 +953,7 @@ export class GlassSurfaceController {
       }
       driver.sample(frame.field, originX, originY, baseVeil, frame.veilOptics, material.saturation)
     }
-    return driver.resolve(baseVeil)
+    return baseVeil
   }
 
   /** Edge Optics compensation scales alphas only: blur radii and offsets feed surface bounds. */
@@ -1016,7 +1017,7 @@ export class GlassSurfaceController {
       frame.material ??
       this.defaultMaterial ??
       DEFAULT_OPTICAL_MATERIALS[frame.theme ?? this.activeTheme].frosted
-    this.resolveLegibility(this.legibility, frame, material, this.effectiveMode === 'refract')
+    this.sampleLegibility(this.legibility, frame, material, this.effectiveMode === 'refract')
     this.wakeLegibility()
   }
 
@@ -1027,9 +1028,12 @@ export class GlassSurfaceController {
         const driver = this.legibility
         const frame = this.lastRenderedFrame
         if (this.disposed || !driver || !frame) return false
-        // A host render since the last tick already applied the newest smoothed values; only
-        // re-render a static surface, and without re-reading layout through the probe.
-        if (driver.advance(dtSec * 1000) && !this.renderedSinceTick) {
+        // A host that renders every frame commits through its own `render`; only re-render a
+        // static surface, and without re-reading layout through the probe. A commit deferred to
+        // such a render keeps the loop alive one more tick in case that render never comes.
+        const pending = driver.advance(dtSec * 1000)
+        const deferred = pending && this.renderedSinceTick
+        if (pending && !deferred) {
           this.samplingEnabled = false
           try {
             this.render(frame)
@@ -1038,7 +1042,7 @@ export class GlassSurfaceController {
           }
         }
         this.renderedSinceTick = false
-        return !driver.settled
+        return !driver.settled || deferred
       },
       { scheduler: this.loopScheduler },
     )

@@ -10,7 +10,7 @@ import test from 'node:test'
 import { DEFAULT_OPTICAL_MATERIALS, type GlassFieldState, type IGlassOverlayRenderer } from '@sessile/core'
 import { createRefractFilterController } from '../src/refractFilter.ts'
 import { GlassSurfaceController } from '../src/surfaceController.ts'
-import { MockDocument, type MockElement } from './mockDom.ts'
+import { MockDocument, MockResizeObserver, type MockElement } from './mockDom.ts'
 
 const CHROME_ENV = {
   userAgent:
@@ -44,7 +44,7 @@ function overlaySpy() {
 
 const LENS = { bezel: 18, strength: 1.3, dispersion: 4, scaleMultiplier: 2.7, profile: 'squircle', ior: 1.5 } as const
 
-function setup(env: typeof CHROME_ENV, legible = false) {
+function setup(env: typeof CHROME_ENV, legible = false, prepare?: (container: MockElement) => void) {
   const doc = new MockDocument()
   const container = doc.createElement('div') as unknown as MockElement
   const content = doc.createElement('span') as unknown as MockElement
@@ -53,7 +53,8 @@ function setup(env: typeof CHROME_ENV, legible = false) {
   container.setBoundingClientRect({ x: 10, y: 20, width: WIDTH, height: HEIGHT })
   container.clientLeft = BORDER
   container.clientTop = BORDER
-  container.style.background = 'red'
+  container.style.backgroundColor = 'red'
+  prepare?.(container)
   const spy = overlaySpy()
   const controller = new GlassSurfaceController({
     container: container as unknown as HTMLElement,
@@ -65,6 +66,7 @@ function setup(env: typeof CHROME_ENV, legible = false) {
     backdropTarget: 'container',
     overlayRenderer: spy.renderer,
     legibility: legible ? { foreground: [1, 1, 1], tier: 'legible' } : null,
+    ResizeObserverCtor: MockResizeObserver as unknown as typeof ResizeObserver,
   })
   // Border box in padding-box coordinates, the frame a resting single-rect host renders.
   const box = { x: -BORDER, y: -BORDER, width: WIDTH, height: HEIGHT }
@@ -73,7 +75,7 @@ function setup(env: typeof CHROME_ENV, legible = false) {
     primitives: [{ center: { x: box.x + WIDTH / 2, y: box.y + HEIGHT / 2 }, size: { width: WIDTH, height: HEIGHT }, radius: 30 }],
   }
   const material = DEFAULT_OPTICAL_MATERIALS.dark.frosted
-  const render = () => controller.render({ field, bounds: box, material, refraction: LENS })
+  const render = (opacity = 1) => controller.render({ field, bounds: box, material, refraction: LENS, opacity })
   return { doc, container, content, controller, spy, render }
 }
 
@@ -168,11 +170,52 @@ test('clear and dispose hand the container its own inline styles back', () => {
   const { container, controller, render } = setup(CHROME_ENV)
   render()
   controller.clear()
-  assert.equal(container.style.background, 'red')
+  assert.equal(container.style.backgroundColor, 'red')
   assert.equal(container.style.backdropFilter, '')
   render()
-  assert.notEqual(container.style.background, 'red')
+  assert.notEqual(container.style.backgroundColor, 'red')
   controller.dispose()
-  assert.equal(container.style.background, 'red')
+  assert.equal(container.style.backgroundColor, 'red')
   assert.equal(container.style.backdropFilter, '')
+})
+
+test('restoring the container keeps background longhands and their priority', () => {
+  const { container, controller, render } = setup(CHROME_ENV, false, (el) => {
+    el.style.setProperty('background-color', 'blue', 'important')
+  })
+  render()
+  assert.match(container.style.background, /^rgba\(/)
+  controller.dispose()
+  assert.equal(container.style.getPropertyValue('background-color'), 'blue')
+  assert.equal(container.style.getPropertyPriority('background-color'), 'important')
+  assert.equal(container.style.background, '')
+})
+
+test('fading the overlay out keeps the container glass painted', () => {
+  const { container, controller, render } = setup(CHROME_ENV)
+  render(0)
+  assert.equal(container.style.backdropFilter, 'url(#host-lens)')
+  assert.match(container.style.background, /^rgba\(/)
+  assert.equal(controller.getElements().overlayCanvas!.style.visibility, 'hidden')
+  render(1)
+  assert.equal(controller.getElements().overlayCanvas!.style.visibility, 'visible')
+  controller.dispose()
+})
+
+test('container mode tracks its border box across resizes by default', () => {
+  MockResizeObserver.records = []
+  const { doc, controller } = setup(CHROME_ENV)
+  MockResizeObserver.records.at(-1)!.trigger([
+    { target: doc.body, borderBoxSize: [{ inlineSize: 400, blockSize: 60 }] } as unknown as ResizeObserverEntry,
+  ])
+  // Full map (no nine-slice) so the encoded image spans the whole refraction box.
+  controller.render({
+    field: { blendK: 0, primitives: [{ center: { x: 199, y: 29 }, size: { width: 400, height: 60 }, radius: 30 }] },
+    bounds: { x: -BORDER, y: -BORDER, width: 400, height: HEIGHT },
+    material: DEFAULT_OPTICAL_MATERIALS.dark.frosted,
+    refraction: { ...LENS, nineSlice: false },
+  })
+  const [map] = doc.body.querySelectorAll('feImage')
+  assert.ok(Number(map!.getAttribute('width')) >= 400, 'the map covers the resized border box')
+  controller.dispose()
 })

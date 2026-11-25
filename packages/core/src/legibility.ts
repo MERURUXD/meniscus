@@ -87,7 +87,14 @@ export const LEGIBILITY_POLICIES = {
  * Attack is fast so text never sits on an unsafe backdrop for more than a few frames; hold and
  * release bridge the calm gutters between cards so scrolling across a grid does not strobe.
  */
-export const LEGIBILITY_SMOOTHING = { attackMs: 90, holdMs: 240, releaseMs: 700 } as const
+export const LEGIBILITY_SMOOTHING = {
+  attackMs: 90,
+  holdMs: 240,
+  releaseMs: 700,
+  // The final snap moves film alpha by at most `filmMax * epsilon` (~0.001), invisible, while
+  // letting the frame loop sleep a couple of seconds earlier than a 1e-3 tail would.
+  epsilon: 0.004,
+} as const
 
 /** Samples in each per-pixel multiplier table (`feFunc* type="table"`). */
 export const LEGIBILITY_TABLE_SIZE = 33

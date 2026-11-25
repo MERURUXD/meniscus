@@ -131,6 +131,7 @@ export {
   parseCssFilterOptics,
   parseCssGlassSurface,
   parseCssRgba,
+  tryParseCssRgba,
   resolveOpticalMaterial,
   type BackdropVeilOptics,
   type CircularBevelTable,

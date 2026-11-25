@@ -393,6 +393,10 @@ test('a veil override the film cannot be composited onto is kept verbatim', () =
   controller.setBackdropTelemetry(BRIGHT)
   controller.render({ field: SINGLE, refractTintBackground: 'linear-gradient(red, blue)' })
   assert.equal(controller.getElements().veil!.style.background, 'linear-gradient(red, blue)')
+  for (const unresolved of ['rgb(var(--tint) / 0.5)', 'color(srgb 50% 20% 10% / 0.5)']) {
+    controller.render({ field: SINGLE, refractTintBackground: unresolved })
+    assert.equal(controller.getElements().veil!.style.background, unresolved, 'syntax the parser cannot resolve stays verbatim')
+  }
   controller.render({ field: SINGLE, refractTintBackground: 'rgba(10, 20, 30, 0.5)' })
   assert.match(controller.getElements().veil!.style.background, /^rgba\(/)
   assert.notEqual(controller.getElements().veil!.style.background, 'rgba(10, 20, 30, 0.5)', 'film is composited on')

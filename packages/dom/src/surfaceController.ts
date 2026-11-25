@@ -19,7 +19,7 @@ import {
   computeFieldBounds,
   createGlassOverlayRenderer,
   extractFieldContourPath,
-  parseCssRgba,
+  tryParseCssRgba,
   type BackdropTelemetry,
   type BackdropVeilOptics,
   type GlassFieldState,
@@ -133,9 +133,9 @@ export interface GlassSurfaceFrame {
   dpr?: number
   solidBackground?: string
   /**
-   * Veil background overrides. While legibility is active, a plain `rgb()` / `rgba()` /
-   * `color(srgb)` value gets the film composited onto it; anything else (hex, gradients, `var()`)
-   * is kept verbatim without film, and the contrast bound falls back to `material.tintRgba`.
+   * Veil background overrides. While legibility is active, an `rgb()` / `rgba()` /
+   * `color(srgb)` value with literal channels gets the film composited onto it; anything else
+   * (hex, gradients, `var()`, percentage `color(srgb)` channels) is kept verbatim without film, and the contrast bound falls back to `material.tintRgba`.
    */
   frostedBackground?: string
   refractTintBackground?: string
@@ -256,9 +256,6 @@ function setBackdropFilterCached(
 
 /** A backdrop-filter that changes nothing but keeps the veil's filtered compositing state. */
 const VEIL_IDENTITY_BACKDROP_FILTER = 'blur(0px)'
-
-/** Veil override syntaxes `parseCssRgba` understands; anything else cannot carry the film. */
-const PLAIN_COLOR = /^\s*(?:rgba?\(|color\(\s*srgb\s|transparent\s*$)/i
 
 /**
  * Chromium (seen in 156) loses a composited element's `clip-path: path()` mask when its
@@ -933,8 +930,9 @@ export class GlassSurfaceController {
     this.opaqueVeilOverride = null
     if (override !== undefined && override !== this.parsedVeilSource) {
       this.parsedVeilSource = override
-      this.parsedVeilValid = PLAIN_COLOR.test(override)
-      this.parsedVeilRgba.set(this.parsedVeilValid ? parseCssRgba(override) : material.tintRgba)
+      const parsed = tryParseCssRgba(override)
+      this.parsedVeilValid = parsed !== null
+      this.parsedVeilRgba.set(parsed ?? material.tintRgba)
     }
     if (override === undefined) {
       baseVeil.set(material.tintRgba)

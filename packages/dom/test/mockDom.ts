@@ -107,6 +107,10 @@ export class MockElement {
 
   width = 0
   height = 0
+  clientLeft = 0
+  clientTop = 0
+  scrollLeft = 0
+  scrollTop = 0
   private boundingRect: { x: number; y: number; width: number; height: number } = {
     x: 0,
     y: 0,

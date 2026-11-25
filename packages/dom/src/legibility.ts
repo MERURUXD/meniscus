@@ -42,7 +42,8 @@ export class LegibilityDriver {
   private readonly smoothedRisk: LegibilityRisk = { luma: 0, chroma: 0, detail: 0 }
   private readonly accumulator = createTelemetryAccumulator()
   private readonly sampled: BackdropTelemetry = { lumaHigh: 0, lumaLow: 0, chroma: 0, detail: 0 }
-  private readonly rect: Rect = { x: 0, y: 0, width: 0, height: 0 }
+  private readonly rectPool: Rect[] = []
+  private readonly rects: Rect[] = []
   private injected: BackdropTelemetry | null = null
   private primed = false
   /** `true` once the smoothed risk has reached its target; the frame loop may then sleep. */
@@ -66,19 +67,21 @@ export class LegibilityDriver {
   sample(field: GlassFieldState, originX: number, originY: number, baseVeil: ArrayLike<number>): void {
     let telemetry = this.injected
     if (!telemetry && this.probe) {
-      const acc = this.accumulator
-      const rect = this.rect
-      acc.reset()
+      const rects = this.rects
+      rects.length = 0
       for (let i = 0; i < field.primitives.length; i++) {
         const p = field.primitives[i]!
         if (p.size.width <= MIN_ACTIVE_SIZE || p.size.height <= MIN_ACTIVE_SIZE) continue
+        const rect = (this.rectPool[rects.length] ??= { x: 0, y: 0, width: 0, height: 0 })
         rect.x = originX + p.center.x - p.size.width * 0.5
         rect.y = originY + p.center.y - p.size.height * 0.5
         rect.width = p.size.width
         rect.height = p.size.height
-        this.probe.sample(rect, acc)
+        rects.push(rect)
       }
-      if (acc.resolve(this.sampled)) telemetry = this.sampled
+      this.accumulator.reset()
+      this.probe.sample(rects, this.accumulator)
+      if (this.accumulator.resolve(this.sampled)) telemetry = this.sampled
     }
 
     if (telemetry) {
@@ -90,7 +93,7 @@ export class LegibilityDriver {
       this.target.fill(this.goal.policy.assumedRisk)
     }
     this.settled = false
-    if (!this.primed) {
+    if (telemetry && !this.primed) {
       // The first real sample snaps instead of easing from the assumed risk, so a calm page
       // does not open with a film that then takes a full release to fade.
       this.smoother.reset(this.target)

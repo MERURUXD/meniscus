@@ -85,18 +85,21 @@ export interface RefractFilterController {
 }
 
 interface LegibilityNodes {
+  /** Attached in graph order: opaque, luminance, gain, composite, mask. */
+  chain: Element[]
   luminance: Element
-  gain: Element
   funcs: Element[]
   composite: Element
   polarity: LegibilityParams['polarity'] | null
   tableRevision: number
 }
 
-// Rec. 709 weights replicated into RGB; alpha is pinned to 1 so the multiplier image stays
-// opaque and the arithmetic composite never fabricates alpha where the refracted input is clear.
+// Rec. 709 weights replicated into RGB with alpha pinned to 1.
 const LUMINANCE_MATRIX =
   '0.2126 0.7152 0.0722 0 0  0.2126 0.7152 0.0722 0 0  0.2126 0.7152 0.0722 0 0  0 0 0 0 1'
+// `feComposite arithmetic` runs on premultiplied color, so the dark-text `+ (1 - M)` term would
+// lift partially transparent fringe pixels toward white; compose on an opaque copy, re-mask after.
+const OPAQUE_MATRIX = '1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 0 1'
 
 interface NormalizedConfig {
   bezel: number
@@ -669,8 +672,13 @@ export function createRefractFilterController(
 
   const ensureLegibilityNodes = (): LegibilityNodes => {
     if (legibilityNodes) return legibilityNodes
+    const opaque = createSvgEl('feColorMatrix')
+    opaque.setAttribute('in', 'refractSmooth')
+    opaque.setAttribute('type', 'matrix')
+    opaque.setAttribute('values', OPAQUE_MATRIX)
+    opaque.setAttribute('result', 'legibleOpaque')
     const luminance = createSvgEl('feColorMatrix')
-    luminance.setAttribute('in', 'refractSmooth')
+    luminance.setAttribute('in', 'legibleOpaque')
     luminance.setAttribute('type', 'matrix')
     luminance.setAttribute('values', LUMINANCE_MATRIX)
     luminance.setAttribute('result', 'legibleLuminance')
@@ -684,11 +692,23 @@ export function createRefractFilterController(
       return fn
     })
     const composite = createSvgEl('feComposite')
-    composite.setAttribute('in', 'refractSmooth')
+    composite.setAttribute('in', 'legibleOpaque')
     composite.setAttribute('in2', 'legibleGain')
     composite.setAttribute('operator', 'arithmetic')
-    composite.setAttribute('result', 'legible')
-    legibilityNodes = { luminance, gain, funcs, composite, polarity: null, tableRevision: -1 }
+    composite.setAttribute('result', 'legibleOpaqueOut')
+    const mask = createSvgEl('feComposite')
+    mask.setAttribute('in', 'legibleOpaqueOut')
+    mask.setAttribute('in2', 'refractSmooth')
+    mask.setAttribute('operator', 'in')
+    mask.setAttribute('result', 'legible')
+    legibilityNodes = {
+      chain: [opaque, luminance, gain, composite, mask],
+      luminance,
+      funcs,
+      composite,
+      polarity: null,
+      tableRevision: -1,
+    }
     return legibilityNodes
   }
 
@@ -696,18 +716,14 @@ export function createRefractFilterController(
     if (disposed) return
     if (!params) {
       if (legibilityNodes?.composite.parentNode) {
-        filterEl.removeChild(legibilityNodes.luminance)
-        filterEl.removeChild(legibilityNodes.gain)
-        filterEl.removeChild(legibilityNodes.composite)
+        for (const node of legibilityNodes.chain) filterEl.removeChild(node)
         glassOnlyEl.setAttribute('in', 'refractSmooth')
       }
       return
     }
     const nodes = ensureLegibilityNodes()
     if (!nodes.composite.parentNode) {
-      filterEl.insertBefore(nodes.luminance, glassOnlyEl)
-      filterEl.insertBefore(nodes.gain, glassOnlyEl)
-      filterEl.insertBefore(nodes.composite, glassOnlyEl)
+      for (const node of nodes.chain) filterEl.insertBefore(node, glassOnlyEl)
       glassOnlyEl.setAttribute('in', 'legible')
     }
     if (nodes.polarity !== params.polarity) {

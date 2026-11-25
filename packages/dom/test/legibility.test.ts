@@ -65,7 +65,7 @@ function filterOf(doc: MockDocument): MockElement {
 
 function glassOnly(filter: MockElement): MockElement {
   return filter.childNodes.find(
-    (n) => n.tagName === 'feComposite' && n.attributes.get('operator') === 'in',
+    (n) => n.tagName === 'feComposite' && n.attributes.get('in2') === 'map',
   )!
 }
 
@@ -147,9 +147,21 @@ test('the legibility stage sits between the refracted backdrop and the self-mask
   filter.updateLegibility(params)
   const order = el.childNodes.map((n) => n.attributes.get('result') ?? n.tagName)
   const smooth = order.indexOf('refractSmooth')
-  assert.deepEqual(order.slice(smooth + 1, smooth + 4), ['legibleLuminance', 'legibleGain', 'legible'])
+  assert.deepEqual(order.slice(smooth + 1, smooth + 6), [
+    'legibleOpaque',
+    'legibleLuminance',
+    'legibleGain',
+    'legibleOpaqueOut',
+    'legible',
+  ])
   assert.equal(glassOnly(el).attributes.get('in'), 'legible')
-  const [luminance, gain, composite] = el.childNodes.slice(smooth + 1, smooth + 4)
+  const [, luminance, gain, composite, mask] = el.childNodes.slice(smooth + 1, smooth + 6)
+  assert.equal(composite!.attributes.get('in'), 'legibleOpaque', 'arithmetic runs on an opaque copy')
+  assert.deepEqual(
+    [mask!.attributes.get('operator'), mask!.attributes.get('in2')],
+    ['in', 'refractSmooth'],
+    'original alpha is restored after the arithmetic',
+  )
   assert.equal(luminance!.attributes.get('color-interpolation-filters'), 'linearRGB')
   assert.deepEqual(
     ['k1', 'k2', 'k3', 'k4'].map((k) => composite!.attributes.get(k)),
@@ -272,12 +284,12 @@ test('region probe maps grid cells, fills uncovered area with the background and
 
   const acc = createTelemetryAccumulator()
   const out: BackdropTelemetry = { lumaHigh: 0, lumaLow: 0, chroma: 0, detail: 0 }
-  probe.sample(rect(50, 0, 50, 50), acc)
+  probe.sample([rect(50, 0, 50, 50)], acc)
   acc.resolve(out)
   assert.ok(Math.abs(out.lumaHigh - 1) < 1e-6 && Math.abs(out.chroma - 0.9) < 1e-6, 'right cell only')
 
   acc.reset()
-  probe.sample(rect(100, 0, 50, 50), acc)
+  probe.sample([rect(100, 0, 50, 50)], acc)
   acc.resolve(out)
   assert.ok(Math.abs(out.lumaHigh - CALM.lumaHigh) < 1e-6, 'uncovered area reads as background')
 
@@ -326,6 +338,76 @@ test('edge optics compensation raises alphas without touching the host material'
     glassOnly(filterOf((controller as unknown as { doc: MockDocument }).doc)).attributes.get('in'),
     'refractSmooth',
   )
+})
+
+test('the controller samples the probe at the primitive viewport rect, including container scroll', () => {
+  const doc = new MockDocument()
+  const container = doc.createElement('div') as unknown as MockElement
+  doc.body.appendChild(container)
+  container.setBoundingClientRect({ x: 100, y: 40, width: 600, height: 400 })
+  container.scrollTop = 200
+  const frames = createScheduler()
+  const probe = createRegionProbe({ eventTarget: null, background: CALM })
+  // SINGLE spans x 120..280, y 96..144 in container space; scrolled, that is viewport y -64..-16.
+  const bright = { getBoundingClientRect: () => rect(220, -64, 160, 48) } as unknown as Element
+  const decoy = { getBoundingClientRect: () => rect(220, 136, 160, 48) } as unknown as Element
+  probe.set(bright, BRIGHT)
+  probe.set(decoy, CALM)
+  let samples = 0
+  const counted = { ...probe, sample: (rects: Parameters<typeof probe.sample>[0], acc: Parameters<typeof probe.sample>[1]) => {
+    samples += 1
+    probe.sample(rects, acc)
+  } }
+  const controller = new GlassSurfaceController({
+    container: container as unknown as HTMLElement,
+    document: doc as unknown as Document,
+    env: CHROME_ENV,
+    theme: 'dark',
+    mode: 'refract',
+    overlayRenderer: createMaterialSpy().renderer,
+    scheduler: frames.scheduler,
+    legibility: { foreground: WHITE, tier: 'legible', probe: counted },
+  })
+  controller.render({ field: SINGLE })
+  const sampledByRender = samples
+  frames.run(120)
+  const params = controller.getLegibilityParams()!
+  assert.ok(params.refractionScale < 0.8, `bright cover under the glass raises detail risk, got ${params.refractionScale}`)
+  assert.ok(params.veilRgba[3]! > DEFAULT_OPTICAL_MATERIALS.dark.frosted.tintRgba[3] + 0.05)
+  assert.equal(samples, sampledByRender, 'smoothing ticks never re-read layout through the probe')
+})
+
+test('edge material drops optional keys the current material omits', () => {
+  const { controller, frames, spy } = setup(CHROME_ENV, SINGLE)
+  controller.setBackdropTelemetry(BRIGHT)
+  controller.render({ field: SINGLE, material: { ...DEFAULT_OPTICAL_MATERIALS.dark.frosted, borderWidth: 2, lightAngle: 30 } })
+  controller.render({ field: SINGLE, material: DEFAULT_OPTICAL_MATERIALS.dark.frosted })
+  frames.run(5)
+  const last = spy.materials.at(-1)!
+  assert.equal(last.borderWidth, undefined)
+  assert.equal(last.lightAngle, undefined)
+})
+
+test('a veil override the film cannot be composited onto is kept verbatim', () => {
+  const { controller } = setup(CHROME_ENV, SINGLE)
+  controller.setBackdropTelemetry(BRIGHT)
+  controller.render({ field: SINGLE, refractTintBackground: 'linear-gradient(red, blue)' })
+  assert.equal(controller.getElements().veil!.style.background, 'linear-gradient(red, blue)')
+  controller.render({ field: SINGLE, refractTintBackground: 'rgba(10, 20, 30, 0.5)' })
+  assert.match(controller.getElements().veil!.style.background, /^rgba\(/)
+  assert.notEqual(controller.getElements().veil!.style.background, 'rgba(10, 20, 30, 0.5)', 'film is composited on')
+})
+
+test('the first real telemetry snaps the smoother even after empty probe samples', () => {
+  const probe = createRegionProbe({ eventTarget: null })
+  const driver = new LegibilityDriver({ foreground: WHITE, tier: 'legible', probe })
+  const veil = DEFAULT_OPTICAL_MATERIALS.dark.crisp.tintRgba
+  driver.sample(SINGLE, 0, 0, veil)
+  driver.advance(16)
+  probe.set({ getBoundingClientRect: () => rect(0, 0, 1000, 1000) } as unknown as Element, CALM)
+  driver.sample(SINGLE, 0, 0, veil)
+  driver.advance(16)
+  assert.ok(Math.abs(driver.resolve(veil).veilRgba[3]! - veil[3]) < 1e-6, 'no film left over from the assumed risk')
 })
 
 function rect(x: number, y: number, width: number, height: number): DOMRect {

@@ -7,7 +7,7 @@ All notable changes to the published `@sessile/*` packages (`@sessile/core`, `@s
 ### Added
 
 - **Container Backdrop (`@sessile/dom`)**: `GlassSurfaceControllerOptions.backdropTarget: 'container'` paints the backdrop sample and veil tint (legibility film and correction included) on the container itself and creates only the overlay canvas. It is meant for a single resting surface clipped by its own border radius: the host's opacity, filter or mask animations keep sampling the page, where a child backdrop layer would treat the animating host as its Backdrop Root. Refraction bounds default to the container's border box, and `clear` / `dispose` restore the container's own inline styles.
-- **2D-Only Overlay (`@sessile/core`)**: `createGlassOverlayRenderer({ webgl: false })` skips WebGL2 so pages with many resting surfaces stay under the browser's live WebGL context cap.
+- **Shared Overlay Context (`@sessile/core`)**: `createGlassOverlayRenderer({ context: 'shared' })` draws every shared overlay with one page-wide WebGL2 context on an `OffscreenCanvas` and hands each frame to its canvas through `bitmaprenderer`, inside the same `render()` call. Pages with dozens of surfaces stay under the browser's live WebGL context cap (Chromium evicts the oldest past about 16) while resting and morphing surfaces keep the same shader. The context is created on first mount and released with the last host; without `OffscreenCanvas`, WebGL2 or `bitmaprenderer` hosts draw with 2D Canvas, and while the context is lost frames go through a 2D scratch surface. `context: '2d'` skips WebGL2 entirely.
 
 ## [0.3.0] - 2026-11-25
 

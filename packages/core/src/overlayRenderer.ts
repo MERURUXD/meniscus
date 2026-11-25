@@ -383,25 +383,6 @@ function probeWebGL2OverlaySupport(
   }
 }
 
-interface OverlayUniforms {
-  uViewport: WebGLUniformLocation | null
-  uDpr: WebGLUniformLocation | null
-  uPrimitiveCount: WebGLUniformLocation | null
-  uPrimitives: WebGLUniformLocation | null
-  uRadii: WebGLUniformLocation | null
-  uBlendK: WebGLUniformLocation | null
-  uRimOpacity: WebGLUniformLocation | null
-  uStyleMix: WebGLUniformLocation | null
-  uOpacity: WebGLUniformLocation | null
-  uRimParams: WebGLUniformLocation | null
-  uHairline: WebGLUniformLocation | null
-  uShadow: WebGLUniformLocation | null
-  uBorderColor: WebGLUniformLocation | null
-  uBorderParams: WebGLUniformLocation | null
-  uPhysicalLight: WebGLUniformLocation | null
-  uPhysicalParams: WebGLUniformLocation | null
-}
-
 function compileShader(gl: WebGL2RenderingContext, type: number, source: string): WebGLShader {
   const shader = gl.createShader(type)
   if (!shader) {
@@ -726,20 +707,175 @@ function renderFallback2d(ctx: CanvasRenderingContext2D, frame: OverlayRenderFra
   }
 }
 
+interface OverlayProgram {
+  /** Clears the bound drawing buffer, then draws `frame`; returns `false` when nothing is visible. */
+  draw(frame: OverlayRenderFrame, width: number, height: number): boolean
+  destroy(): void
+}
+
+const UNIFORM_NAMES = [
+  'uViewport',
+  'uDpr',
+  'uPrimitiveCount',
+  'uPrimitives',
+  'uRadii',
+  'uBlendK',
+  'uRimOpacity',
+  'uStyleMix',
+  'uOpacity',
+  'uRimParams',
+  'uHairline',
+  'uShadow',
+  'uBorderColor',
+  'uBorderParams',
+  'uPhysicalLight',
+  'uPhysicalParams',
+] as const
+
+type OverlayUniforms = Record<(typeof UNIFORM_NAMES)[number], WebGLUniformLocation | null>
+
+/** Links the edge program on `gl`; throws when the driver rejects the shaders. */
+function createOverlayProgram(gl: WebGL2RenderingContext): OverlayProgram {
+  const vao = gl.createVertexArray()
+  let program: WebGLProgram
+  try {
+    program = linkProgram(gl, OVERLAY_VERTEX_SHADER, OVERLAY_FRAGMENT_SHADER)
+  } catch (err) {
+    if (vao) gl.deleteVertexArray(vao)
+    throw err
+  }
+  const uniforms = {} as OverlayUniforms
+  for (const name of UNIFORM_NAMES) uniforms[name] = gl.getUniformLocation(program, name)
+
+  // Upload buffers live with the program so every frame reuses them.
+  const primitiveVecData = new Float32Array(MAX_GPU_PRIMITIVES * 4)
+  const primitiveRadiiData = new Float32Array(MAX_GPU_PRIMITIVES)
+
+  return {
+    draw(frame, width, height) {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null)
+      gl.viewport(0, 0, width, height)
+      gl.clearColor(0, 0, 0, 0)
+      gl.clear(gl.COLOR_BUFFER_BIT)
+      if (frame.opacity <= 0.001) return false
+
+      const { field, material } = frame
+      const primitives = field.primitives
+      let activeCount = 0
+      for (let i = 0; i < primitives.length; i++) {
+        const p = primitives[i]
+        if (p.size.width > 0.01 && p.size.height > 0.01) {
+          const vecOffset = activeCount * 4
+          primitiveVecData[vecOffset] = p.center.x
+          primitiveVecData[vecOffset + 1] = p.center.y
+          primitiveVecData[vecOffset + 2] = p.size.width * 0.5
+          primitiveVecData[vecOffset + 3] = p.size.height * 0.5
+          primitiveRadiiData[activeCount] = p.radius
+          activeCount++
+          if (activeCount >= MAX_GPU_PRIMITIVES) break
+        }
+      }
+      if (activeCount === 0) return false
+
+      gl.useProgram(program)
+      gl.bindVertexArray(vao)
+      gl.disable(gl.BLEND)
+      gl.disable(gl.DEPTH_TEST)
+
+      gl.uniform2f(uniforms.uViewport, Math.max(1, frame.viewport.width), Math.max(1, frame.viewport.height))
+      gl.uniform1f(uniforms.uDpr, Math.max(1, frame.dpr))
+      gl.uniform1i(uniforms.uPrimitiveCount, activeCount)
+      gl.uniform4fv(uniforms.uPrimitives, primitiveVecData)
+      gl.uniform1fv(uniforms.uRadii, primitiveRadiiData)
+      gl.uniform1f(uniforms.uBlendK, field.blendK)
+      gl.uniform1f(uniforms.uRimOpacity, field.rimOpacity ?? 1)
+      gl.uniform1f(uniforms.uStyleMix, field.styleMix ?? 0)
+      gl.uniform1f(uniforms.uOpacity, frame.opacity)
+
+      gl.uniform4f(uniforms.uRimParams, material.rimOpacity, material.rimWidth, material.rimTail, material.rimFocus)
+      gl.uniform4f(
+        uniforms.uHairline,
+        material.hairlineWidth,
+        material.hairlineSideAlpha,
+        material.hairlineCornerAlpha,
+        material.hairlineFlatAlpha,
+      )
+      gl.uniform3f(uniforms.uShadow, material.shadowBlur, material.shadowOffsetY, material.shadowAlpha)
+      const borderRgba = material.borderRgba ?? [1, 1, 1, 0]
+      gl.uniform4f(uniforms.uBorderColor, borderRgba[0], borderRgba[1], borderRgba[2], borderRgba[3])
+      gl.uniform2f(uniforms.uBorderParams, material.borderWidth ?? 0, material.rimBottomRatio ?? 0.72)
+
+      const isPhysicalRim = material.rimMode === 'physical'
+      const angleRad = ((material.lightAngle ?? -45) * Math.PI) / 180
+      const elevRad = (Math.max(1, Math.min(89, material.lightElevation ?? 22)) * Math.PI) / 180
+      const cosElev = Math.cos(elevRad)
+      gl.uniform4f(
+        uniforms.uPhysicalLight,
+        Math.sin(angleRad) * cosElev,
+        -Math.cos(angleRad) * cosElev,
+        Math.sin(elevRad),
+        isPhysicalRim ? 1 : 0,
+      )
+      const profileCode =
+        material.bevelProfile === 'circle'
+          ? 1
+          : material.bevelProfile === 'parabolic'
+            ? 2
+            : material.bevelProfile === 'lip'
+              ? 3
+              : 0
+      gl.uniform4f(
+        uniforms.uPhysicalParams,
+        Math.max(1, material.bevel),
+        Math.min(1, Math.max(0, material.rimOpacity * 2)),
+        Math.min(1, Math.max(0, material.rimShade ?? 0.32)),
+        profileCode,
+      )
+
+      gl.drawArrays(gl.TRIANGLES, 0, 3)
+      gl.bindVertexArray(null)
+      return true
+    },
+    destroy() {
+      if (vao) gl.deleteVertexArray(vao)
+      gl.deleteProgram(program)
+    },
+  }
+}
+
+function deviceSize(frame: OverlayRenderFrame): { width: number; height: number } {
+  const dpr = Math.max(1, frame.dpr)
+  return {
+    width: Math.max(1, Math.round(frame.viewport.width * dpr)),
+    height: Math.max(1, Math.round(frame.viewport.height * dpr)),
+  }
+}
+
 export interface GlassOverlayRendererOptions {
   /**
-   * Set `false` to draw with 2D Canvas only. Browsers cap live WebGL contexts (about 16 in
-   * Chromium) and evict the oldest past that, so a page with many resting surfaces should
-   * keep WebGL2 for the few that animate.
+   * Where the edge is drawn.
+   * - `'dedicated'` (default): a WebGL2 context on the overlay canvas itself.
+   * - `'shared'`: one WebGL2 context per page draws every shared overlay, and each frame is
+   *   copied into its canvas's 2D context as an `ImageBitmap`. Browsers cap live WebGL contexts (about 16 in Chromium) and
+   *   evict the oldest past that, so pages with many surfaces use this for all of them, morphing
+   *   overlays included, and every surface keeps the same shader.
+   * - `'2d'`: 2D Canvas only.
+   *
+   * `'dedicated'` and `'shared'` fall back to 2D Canvas when WebGL2 (or, for `'shared'`,
+   * `OffscreenCanvas`) is unavailable or the context is lost.
    */
-  webgl?: boolean
+  context?: 'dedicated' | 'shared' | '2d'
 }
 
 /** Creates an optical edge overlay renderer supporting up to MAX_GPU_PRIMITIVES (16) with WebGL2 and automatic 2D Canvas fallback. */
 export function createGlassOverlayRenderer(
   options: GlassOverlayRendererOptions = {},
 ): IGlassOverlayRenderer {
-  const allowWebGL = options.webgl !== false
+  const context = options.context ?? 'dedicated'
+  return context === 'shared' ? createSharedOverlayRenderer() : createCanvasOverlayRenderer(context === 'dedicated')
+}
+
+function createCanvasOverlayRenderer(allowWebGL: boolean): IGlassOverlayRenderer {
   let capabilities: RendererCapabilities = {
     webgl2: false,
     floatFbo: false,
@@ -751,52 +887,18 @@ export function createGlassOverlayRenderer(
   let gl: WebGL2RenderingContext | null = null
   let fallback2d: CanvasRenderingContext2D | null = null
   let contextLost = false
-
-  let vao: WebGLVertexArrayObject | null = null
-  let program: WebGLProgram | null = null
-  let uniforms: OverlayUniforms | null = null
-
-  // Pre-allocated upload buffers inside closure for zero per-frame GC allocation.
-  const primitiveVecData = new Float32Array(MAX_GPU_PRIMITIVES * 4)
-  const primitiveRadiiData = new Float32Array(MAX_GPU_PRIMITIVES)
+  let program: OverlayProgram | null = null
 
   function destroyGlResources(): void {
-    if (!gl) return
-    if (vao) {
-      gl.deleteVertexArray(vao)
-      vao = null
-    }
-    if (program) {
-      gl.deleteProgram(program)
-      program = null
-    }
-    uniforms = null
+    program?.destroy()
+    program = null
   }
 
   function initGlResources(): boolean {
     if (!gl) return false
     destroyGlResources()
     try {
-      vao = gl.createVertexArray()
-      program = linkProgram(gl, OVERLAY_VERTEX_SHADER, OVERLAY_FRAGMENT_SHADER)
-      uniforms = {
-        uViewport: gl.getUniformLocation(program, 'uViewport'),
-        uDpr: gl.getUniformLocation(program, 'uDpr'),
-        uPrimitiveCount: gl.getUniformLocation(program, 'uPrimitiveCount'),
-        uPrimitives: gl.getUniformLocation(program, 'uPrimitives'),
-        uRadii: gl.getUniformLocation(program, 'uRadii'),
-        uBlendK: gl.getUniformLocation(program, 'uBlendK'),
-        uRimOpacity: gl.getUniformLocation(program, 'uRimOpacity'),
-        uStyleMix: gl.getUniformLocation(program, 'uStyleMix'),
-        uOpacity: gl.getUniformLocation(program, 'uOpacity'),
-        uRimParams: gl.getUniformLocation(program, 'uRimParams'),
-        uHairline: gl.getUniformLocation(program, 'uHairline'),
-        uShadow: gl.getUniformLocation(program, 'uShadow'),
-        uBorderColor: gl.getUniformLocation(program, 'uBorderColor'),
-        uBorderParams: gl.getUniformLocation(program, 'uBorderParams'),
-        uPhysicalLight: gl.getUniformLocation(program, 'uPhysicalLight'),
-        uPhysicalParams: gl.getUniformLocation(program, 'uPhysicalParams'),
-      }
+      program = createOverlayProgram(gl)
       return true
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'WebGL2 overlay shader initialization failed.'
@@ -805,7 +907,6 @@ export function createGlassOverlayRenderer(
         webgl2: false,
         fallbackNotice: msg,
       }
-      destroyGlResources()
       return false
     }
   }
@@ -898,104 +999,14 @@ export function createGlassOverlayRenderer(
     render(frame: OverlayRenderFrame): void {
       if (!canvas) return
 
-      const dpr = Math.max(1, frame.dpr)
-      const targetW = Math.max(1, Math.round(frame.viewport.width * dpr))
-      const targetH = Math.max(1, Math.round(frame.viewport.height * dpr))
-      if (canvas.width !== targetW || canvas.height !== targetH) {
-        canvas.width = targetW
-        canvas.height = targetH
+      const target = deviceSize(frame)
+      if (canvas.width !== target.width || canvas.height !== target.height) {
+        canvas.width = target.width
+        canvas.height = target.height
       }
 
-      if (gl && !contextLost && capabilities.webgl2 && program && uniforms && vao) {
-        if (frame.opacity <= 0.001) {
-          this.clear()
-          return
-        }
-
-        const { field, material } = frame
-        const primitives = field.primitives
-        let activeCount = 0
-        for (let i = 0; i < primitives.length; i++) {
-          const p = primitives[i]
-          if (p.size.width > 0.01 && p.size.height > 0.01) {
-            const vecOffset = activeCount * 4
-            primitiveVecData[vecOffset] = p.center.x
-            primitiveVecData[vecOffset + 1] = p.center.y
-            primitiveVecData[vecOffset + 2] = p.size.width * 0.5
-            primitiveVecData[vecOffset + 3] = p.size.height * 0.5
-            primitiveRadiiData[activeCount] = p.radius
-            activeCount++
-            if (activeCount >= MAX_GPU_PRIMITIVES) break
-          }
-        }
-
-        if (activeCount === 0) {
-          this.clear()
-          return
-        }
-
-        gl.bindFramebuffer(gl.FRAMEBUFFER, null)
-        gl.viewport(0, 0, canvas.width, canvas.height)
-        gl.clearColor(0, 0, 0, 0)
-        gl.clear(gl.COLOR_BUFFER_BIT)
-
-        gl.useProgram(program)
-        gl.bindVertexArray(vao)
-        gl.disable(gl.BLEND)
-        gl.disable(gl.DEPTH_TEST)
-
-        gl.uniform2f(uniforms.uViewport, Math.max(1, frame.viewport.width), Math.max(1, frame.viewport.height))
-        gl.uniform1f(uniforms.uDpr, dpr)
-        gl.uniform1i(uniforms.uPrimitiveCount, activeCount)
-        gl.uniform4fv(uniforms.uPrimitives, primitiveVecData)
-        gl.uniform1fv(uniforms.uRadii, primitiveRadiiData)
-        gl.uniform1f(uniforms.uBlendK, field.blendK)
-        gl.uniform1f(uniforms.uRimOpacity, field.rimOpacity ?? 1)
-        gl.uniform1f(uniforms.uStyleMix, field.styleMix ?? 0)
-        gl.uniform1f(uniforms.uOpacity, frame.opacity)
-
-        gl.uniform4f(uniforms.uRimParams, material.rimOpacity, material.rimWidth, material.rimTail, material.rimFocus)
-        gl.uniform4f(
-          uniforms.uHairline,
-          material.hairlineWidth,
-          material.hairlineSideAlpha,
-          material.hairlineCornerAlpha,
-          material.hairlineFlatAlpha,
-        )
-        gl.uniform3f(uniforms.uShadow, material.shadowBlur, material.shadowOffsetY, material.shadowAlpha)
-        const borderRgba = material.borderRgba ?? [1, 1, 1, 0]
-        gl.uniform4f(uniforms.uBorderColor, borderRgba[0], borderRgba[1], borderRgba[2], borderRgba[3])
-        gl.uniform2f(uniforms.uBorderParams, material.borderWidth ?? 0, material.rimBottomRatio ?? 0.72)
-
-        const isPhysicalRim = material.rimMode === 'physical'
-        const angleRad = ((material.lightAngle ?? -45) * Math.PI) / 180
-        const elevRad = (Math.max(1, Math.min(89, material.lightElevation ?? 22)) * Math.PI) / 180
-        const cosElev = Math.cos(elevRad)
-        gl.uniform4f(
-          uniforms.uPhysicalLight,
-          Math.sin(angleRad) * cosElev,
-          -Math.cos(angleRad) * cosElev,
-          Math.sin(elevRad),
-          isPhysicalRim ? 1 : 0,
-        )
-        const profileCode =
-          material.bevelProfile === 'circle'
-            ? 1
-            : material.bevelProfile === 'parabolic'
-              ? 2
-              : material.bevelProfile === 'lip'
-                ? 3
-                : 0
-        gl.uniform4f(
-          uniforms.uPhysicalParams,
-          Math.max(1, material.bevel),
-          Math.min(1, Math.max(0, material.rimOpacity * 2)),
-          Math.min(1, Math.max(0, material.rimShade ?? 0.32)),
-          profileCode,
-        )
-
-        gl.drawArrays(gl.TRIANGLES, 0, 3)
-        gl.bindVertexArray(null)
+      if (gl && !contextLost && capabilities.webgl2 && program) {
+        program.draw(frame, canvas.width, canvas.height)
         return
       }
 
@@ -1027,6 +1038,165 @@ export function createGlassOverlayRenderer(
       gl = null
       fallback2d = null
       contextLost = false
+    },
+  }
+}
+
+interface SharedOverlayContext {
+  /**
+   * Only ever grows. Reallocating a drawing buffer costs about 1ms in Chromium, so hosts of
+   * different sizes draw into its bottom-left corner instead of resizing it in turn.
+   */
+  readonly surface: OffscreenCanvas
+  readonly gl: WebGL2RenderingContext
+  /** `null` while the context is lost; hosts then draw with their own 2D context. */
+  program: OverlayProgram | null
+  users: number
+  readonly floatFbo: boolean
+  readonly maxTextureSize: number
+}
+
+let sharedContext: SharedOverlayContext | null = null
+
+function loseContext(gl: WebGL2RenderingContext): void {
+  ;(gl.getExtension('WEBGL_lose_context') as { loseContext?: () => void } | null)?.loseContext?.()
+}
+
+/** Returns the page-wide context, creating it on first use; `null` when it cannot draw. */
+function acquireSharedContext(): SharedOverlayContext | null {
+  if (sharedContext) {
+    sharedContext.users++
+    return sharedContext
+  }
+  if (typeof OffscreenCanvas !== 'function') return null
+  const surface = new OffscreenCanvas(1, 1)
+  const gl = surface.getContext('webgl2', WEBGL2_CONTEXT_ATTRS) as WebGL2RenderingContext | null
+  if (!gl || gl.isContextLost()) return null
+  let program: OverlayProgram
+  try {
+    program = createOverlayProgram(gl)
+  } catch {
+    loseContext(gl)
+    return null
+  }
+  const shared: SharedOverlayContext = {
+    surface,
+    gl,
+    program,
+    users: 1,
+    floatFbo: Boolean(gl.getExtension('EXT_color_buffer_float')),
+    maxTextureSize: Number(gl.getParameter(gl.MAX_TEXTURE_SIZE)) || 4096,
+  }
+  surface.addEventListener('webglcontextlost', (event) => {
+    event.preventDefault()
+    shared.program = null
+  })
+  surface.addEventListener('webglcontextrestored', () => {
+    try {
+      shared.program = createOverlayProgram(gl)
+    } catch {
+      // Hosts stay on their 2D path.
+    }
+  })
+  sharedContext = shared
+  return shared
+}
+
+function releaseSharedContext(shared: SharedOverlayContext): void {
+  if (--shared.users > 0) return
+  shared.program?.destroy()
+  loseContext(shared.gl)
+  if (sharedContext === shared) sharedContext = null
+}
+
+/**
+ * Hosts keep a 2D context and copy their region out of the shared surface as an `ImageBitmap`.
+ * `bitmaprenderer` would need a bitmap of exactly the host's size, which means resizing the
+ * surface per host; copying a GPU bitmap into a 2D canvas does not stall.
+ */
+function createSharedOverlayRenderer(): IGlassOverlayRenderer {
+  let shared: SharedOverlayContext | null = null
+  let host: HTMLCanvasElement | null = null
+  let ctx: CanvasRenderingContext2D | null = null
+
+  function release(): void {
+    if (shared) releaseSharedContext(shared)
+    shared = null
+    host = null
+    ctx = null
+  }
+
+  function currentCapabilities(): RendererCapabilities {
+    if (shared?.program) {
+      return { webgl2: true, floatFbo: shared.floatFbo, maxTextureSize: shared.maxTextureSize }
+    }
+    return {
+      webgl2: false,
+      floatFbo: false,
+      maxTextureSize: 0,
+      fallbackNotice: !ctx
+        ? host
+          ? 'Neither WebGL2 nor 2D Canvas context is available.'
+          : 'Overlay renderer not yet mounted.'
+        : shared
+          ? 'Shared WebGL2 overlay context lost; using 2D Canvas overlay fallback.'
+          : 'Shared WebGL2 overlay context unavailable; using 2D Canvas overlay fallback.',
+    }
+  }
+
+  return {
+    get capabilities(): RendererCapabilities {
+      return currentCapabilities()
+    },
+
+    mount(targetCanvas: HTMLCanvasElement): RendererCapabilities {
+      release()
+      host = targetCanvas
+      ctx = targetCanvas.getContext('2d')
+      if (ctx) shared = acquireSharedContext()
+      return currentCapabilities()
+    },
+
+    render(frame: OverlayRenderFrame): void {
+      if (!host || !ctx) return
+
+      const { width, height } = deviceSize(frame)
+      if (host.width !== width || host.height !== height) {
+        host.width = width
+        host.height = height
+      }
+
+      const program = shared?.program
+      if (!shared || !program) {
+        renderFallback2d(ctx, frame)
+        return
+      }
+
+      const surface = shared.surface
+      if (surface.width < width || surface.height < height) {
+        surface.width = Math.max(surface.width, width)
+        surface.height = Math.max(surface.height, height)
+      }
+      // Drawing and copying happen inside this call, so the edge never lags the clip and filter
+      // the caller updates in the same frame.
+      const drew = program.draw(frame, width, height)
+      ctx.setTransform(1, 0, 0, 1, 0, 0)
+      ctx.clearRect(0, 0, width, height)
+      if (!drew) return
+      const bitmap = surface.transferToImageBitmap()
+      // The draw sits at the GL origin, the bottom-left of the bitmap.
+      ctx.drawImage(bitmap, 0, shared.gl.drawingBufferHeight - height, width, height, 0, 0, width, height)
+      bitmap.close()
+    },
+
+    clear(): void {
+      if (!host || !ctx) return
+      ctx.setTransform(1, 0, 0, 1, 0, 0)
+      ctx.clearRect(0, 0, host.width, host.height)
+    },
+
+    dispose(): void {
+      release()
     },
   }
 }

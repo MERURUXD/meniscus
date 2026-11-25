@@ -287,6 +287,7 @@ export function App(): ReactElement {
               activePreset={activePreset}
               svgRefractionSupported={capabilities.svgBackdropRefraction}
               gapReadoutRef={compareGapReadoutRef}
+              wireframeSupported={isSplitView || activeLab === 'drag-merge'}
               headerSlot={sheetSwitcher}
               onUpdateConfig={updateOpticsConfig}
               onApplyPreset={applyPreset}

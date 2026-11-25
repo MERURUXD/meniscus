@@ -118,6 +118,8 @@ export interface GlobalMaterialPanelProps {
   activePreset: OpticsPresetId | null
   svgRefractionSupported: boolean
   gapReadoutRef: RefObject<HTMLElement | null>
+  /** Only scenes that draw an SDF overlay expose the toggle. */
+  wireframeSupported: boolean
   headerSlot?: ReactNode
   onUpdateConfig: <K extends keyof OpticsLabConfig>(key: K, value: OpticsLabConfig[K]) => void
   onApplyPreset: (presetId: OpticsPresetId) => void
@@ -131,6 +133,7 @@ export function GlobalMaterialPanel({
   activePreset,
   svgRefractionSupported,
   gapReadoutRef,
+  wireframeSupported,
   headerSlot,
   onUpdateConfig,
   onApplyPreset,
@@ -373,12 +376,14 @@ export function GlobalMaterialPanel({
       </section>
 
       <ControlSection title={op.sectionStage}>
-        <SwitchControl
-          id="optics-wireframe"
-          label={op.wireframeButton}
-          checked={config.showWireframe}
-          onChange={(checked) => onUpdateConfig('showWireframe', checked)}
-        />
+        {wireframeSupported ? (
+          <SwitchControl
+            id="optics-wireframe"
+            label={op.wireframeButton}
+            checked={config.showWireframe}
+            onChange={(checked) => onUpdateConfig('showWireframe', checked)}
+          />
+        ) : null}
         {isSplit ? (
           <SwitchControl
             id="optics-oscillate"

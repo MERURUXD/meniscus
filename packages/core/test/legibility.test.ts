@@ -101,8 +101,8 @@ test('resolveLegibilityGoal infers polarity and converts the WCAG bound to encod
   assert.equal(forced.contrast, 2)
 })
 
-test('at full luminance risk every tier keeps its contrast over any backdrop color', () => {
-  const cases = [
+test('every tier keeps its contrast over any backdrop color at any risk, neutral or tinted veil', () => {
+  const neutral = [
     { fg: WHITE, veil: DARK_VEIL },
     { fg: WHITE, veil: LIGHT_VEIL },
     { fg: WHITE, veil: NO_VEIL },
@@ -110,27 +110,40 @@ test('at full luminance risk every tier keeps its contrast over any backdrop col
     { fg: INK, veil: [0, 0, 0, 0] },
     { fg: INK, veil: [0.207, 0.207, 0.22, 0.3] },
   ]
+  const tinted = [[0, 0, 1], [1, 0, 0], [1, 0.9, 0], [0.2, 0.8, 0.6]].flatMap((rgb) =>
+    [0.3, 0.6].flatMap((a) => [WHITE, INK].map((fg) => ({ fg, veil: [...rgb, a] }))),
+  )
+  let tintedFeasible = 0
   for (const tier of ['clear', 'regular', 'legible'] as const) {
-    for (const { fg, veil } of cases) {
-      const params = solve(tier, fg, veil)
-      assert.ok(params.feasible)
-      const lf = relativeLuminance(fg[0]!, fg[1]!, fg[2]!)
-      for (const c of colorGrid(20)) {
-        const ratio = contrastRatio(perceivedLuminance(params, c), lf)
-        assert.ok(
-          ratio >= LEGIBILITY_POLICIES[tier].contrast,
-          `${tier} fg=${fg} veil=${veil} backdrop=${c.map((v) => v.toFixed(2))} gave ${ratio.toFixed(3)}`,
-        )
+    for (const risk of [NO_RISK, FULL_RISK]) {
+      for (const { fg, veil } of [...neutral, ...tinted]) {
+        const params = solve(tier, fg, veil, risk)
+        if (neutral.some((n) => n.veil === veil)) {
+          assert.ok(params.feasible, `neutral veil ${veil} is feasible`)
+        } else if (!params.feasible) {
+          continue
+        } else {
+          tintedFeasible += 1
+        }
+        const lf = relativeLuminance(fg[0]!, fg[1]!, fg[2]!)
+        for (const c of colorGrid(16)) {
+          const ratio = contrastRatio(perceivedLuminance(params, c), lf)
+          assert.ok(
+            ratio >= LEGIBILITY_POLICIES[tier].contrast,
+            `${tier} risk=${risk.luma} fg=${fg} veil=${veil} backdrop=${c.map((v) => v.toFixed(2))} gave ${ratio.toFixed(3)}`,
+          )
+        }
       }
     }
   }
+  assert.ok(tintedFeasible > 40, `most tinted cases stay feasible, got ${tintedFeasible}`)
 })
 
-test('legible keeps the guarantee even before any telemetry raises risk', () => {
-  const params = solve('legible', WHITE, NO_VEIL, NO_RISK)
-  for (const c of [[1, 0, 0], [1, 0, 1], [1, 1, 0], [0, 1, 1], [1, 1, 1]]) {
-    assert.ok(contrastRatio(perceivedLuminance(params, c), 1) >= 7, `backdrop ${c}`)
-  }
+test('feasibility reports when the veil alone already violates the goal', () => {
+  assert.equal(solve('regular', WHITE, [1, 1, 1, 1]).feasible, false)
+  assert.equal(solve('regular', WHITE, [0.1, 0.1, 0.1, 1]).feasible, true)
+  assert.equal(solve('regular', WHITE, [1, 1, 1, 0.9]).feasible, false)
+  assert.equal(solve('legible', INK, [1, 0, 0, 0.6]).feasible, false, 'a red veil caps dark-text contrast')
 })
 
 test('pixels already safe pass through untouched and compressed pixels keep their hue', () => {

@@ -24,9 +24,12 @@ export type ForegroundPolarity = 'light' | 'dark'
 export interface LegibilityPolicy {
   /** WCAG 2 contrast ratio the foreground keeps against the composited glass. */
   contrast: number
-  /** Per-pixel compression strength at zero luminance risk; ramps to `1` at full risk. */
-  compressionFloor: number
-  /** Fraction of the safe limit where the soft knee starts bending, in `(0, 1)`. */
+  /**
+   * Fraction of the safe limit where the soft knee starts bending at full luminance risk, in
+   * `(0, LEGIBILITY_CALM_KNEE)`. A calm backdrop keeps a harder shoulder that spares mid-tones;
+   * the ceiling itself always holds, because aggregate telemetry cannot see a small bright
+   * patch (a speech balloon) that still sits under the text.
+   */
   knee: number
   /** Uniform film alpha added on the veil at full risk. */
   filmMax: number
@@ -47,7 +50,6 @@ export interface LegibilityPolicy {
 export const LEGIBILITY_POLICIES = {
   clear: {
     contrast: 3,
-    compressionFloor: 0.5,
     knee: 0.72,
     filmMax: 0.06,
     saturationFloor: 0.88,
@@ -59,7 +61,6 @@ export const LEGIBILITY_POLICIES = {
   },
   regular: {
     contrast: 4.5,
-    compressionFloor: 0.85,
     knee: 0.7,
     filmMax: 0.14,
     saturationFloor: 0.72,
@@ -71,7 +72,6 @@ export const LEGIBILITY_POLICIES = {
   },
   legible: {
     contrast: 7,
-    compressionFloor: 1,
     knee: 0.65,
     filmMax: 0.26,
     saturationFloor: 0.55,
@@ -95,6 +95,9 @@ export const LEGIBILITY_SMOOTHING = {
   // letting the frame loop sleep a couple of seconds earlier than a 1e-3 tail would.
   epsilon: 0.004,
 } as const
+
+/** Knee fraction used at zero luminance risk. */
+export const LEGIBILITY_CALM_KNEE = 0.9
 
 /** Samples in each per-pixel multiplier table (`feFunc* type="table"`). */
 export const LEGIBILITY_TABLE_SIZE = 33
@@ -244,14 +247,22 @@ export function resolveLegibilityGoal(target: LegibilityTarget): LegibilityGoal 
  */
 function backdropCeiling(goal: LegibilityGoal, veilRgba: ArrayLike<number>): number {
   const a = clamp(veilRgba[3] ?? 0, 0, 1)
-  if (a >= 0.999) return 1
-  const veil = linearToSrgb(relativeLuminance(veilRgba[0]!, veilRgba[1]!, veilRgba[2]!))
-  if (goal.polarity === 'light') {
-    const p = goal.perceivedLimit - LEGIBILITY_LIMIT_MARGIN
-    return (p - a * veil) / (1 - a)
+  const r = clamp(veilRgba[0] ?? 0, 0, 1)
+  const g = clamp(veilRgba[1] ?? 0, 0, 1)
+  const b = clamp(veilRgba[2] ?? 0, 0, 1)
+  // Bound the veil by its extreme channel: blending happens per channel, so a saturated tint
+  // over a complementary backdrop composites far darker (or brighter) than its luminance implies.
+  const light = goal.polarity === 'light'
+  const veil = light ? Math.max(r, g, b) : Math.min(r, g, b)
+  const p = light
+    ? goal.perceivedLimit - LEGIBILITY_LIMIT_MARGIN
+    : goal.perceivedLimit + LEGIBILITY_LIMIT_MARGIN
+  if (a >= 0.999) {
+    const ok = light ? veil <= p : veil >= p
+    return ok ? 1 : -1
   }
-  const p = goal.perceivedLimit + LEGIBILITY_LIMIT_MARGIN
-  return 1 - (p - a * veil) / (1 - a)
+  const limit = (p - a * veil) / (1 - a)
+  return light ? limit : 1 - limit
 }
 
 /** Maps backdrop telemetry to `[0, 1]` risk per channel for the given goal and base veil. */
@@ -306,10 +317,9 @@ function softCeiling(u: number, knee: number, ceiling: number): number {
   return knee + (ceiling - knee) * ((s * t) / (1 + (s - 1) * t))
 }
 
-function multiplierAt(u: number, knee: number, ceiling: number, strength: number): number {
+function multiplierAt(u: number, knee: number, ceiling: number): number {
   if (ceiling >= 1 || u <= knee) return 1
-  const full = ceiling > 0 ? softCeiling(u, knee, ceiling) / u : 0
-  return 1 - strength * (1 - full)
+  return ceiling > 0 ? softCeiling(u, knee, ceiling) / u : 0
 }
 
 /**
@@ -347,8 +357,7 @@ export function resolveLegibilityParams(
   out.feasible = rawCeiling > 0
   const ceiling = clamp(rawCeiling, 0, 1)
   out.backdropLimit = light ? ceiling : 1 - ceiling
-  const knee = ceiling * policy.knee
-  const strength = lerp(policy.compressionFloor, 1, risk.luma)
+  const knee = ceiling * lerp(LEGIBILITY_CALM_KNEE, policy.knee, risk.luma)
 
   // The table is only republished when some entry moves by half an 8-bit step, so a slowly
   // releasing smoother does not rewrite filter attributes every frame.
@@ -357,11 +366,11 @@ export function resolveLegibilityParams(
   let tableChanged = false
   for (let i = 0; i <= last && !tableChanged; i++) {
     const u = light ? i / last : 1 - i / last
-    tableChanged = Math.abs(table[i]! - multiplierAt(u, knee, ceiling, strength)) > 0.5 / 255
+    tableChanged = Math.abs(table[i]! - multiplierAt(u, knee, ceiling)) > 0.5 / 255
   }
   if (tableChanged) {
     for (let i = 0; i <= last; i++) {
-      table[i] = multiplierAt(light ? i / last : 1 - i / last, knee, ceiling, strength)
+      table[i] = multiplierAt(light ? i / last : 1 - i / last, knee, ceiling)
     }
     out.tableRevision += 1
     changed = true
@@ -372,8 +381,7 @@ export function resolveLegibilityParams(
   const baseCeiling = backdropCeiling(goal, baseVeilRgba)
   const baseKnee = clamp(baseCeiling, 0, 1) * policy.knee
   const tail = baseKnee + risk.luma * (1 - baseKnee)
-  const fullScale = ceiling >= 1 || tail <= ceiling ? 1 : ceiling / tail
-  const scale = 1 - strength * (1 - fullScale)
+  const scale = ceiling >= 1 || tail <= ceiling ? 1 : ceiling / tail
   const offset = light ? 0 : 1 - scale
 
   changed = assign(out, 'fallbackScale', scale) || changed

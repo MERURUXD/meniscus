@@ -796,3 +796,25 @@ test('overlayRenderer: physical 3D rim mode uploads light/bevel uniforms and sha
 
   renderer.dispose()
 })
+
+test('overlayRenderer: webgl false draws with 2D Canvas without ever requesting WebGL2', () => {
+  const mock = createMockWebGL2()
+  const mock2d = createMock2d()
+  const requested: string[] = []
+  const canvas = {
+    width: 0,
+    height: 0,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    getContext: (kind: string) => {
+      requested.push(kind)
+      return kind === 'webgl2' ? mock.gl : kind === '2d' ? mock2d.ctx : null
+    },
+  } as unknown as HTMLCanvasElement
+
+  const renderer = createGlassOverlayRenderer({ webgl: false })
+  const caps = renderer.mount(canvas)
+  assert.equal(caps.webgl2, false)
+  assert.deepEqual(requested, ['2d'])
+  renderer.dispose()
+})

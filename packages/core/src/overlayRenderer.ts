@@ -726,8 +726,20 @@ function renderFallback2d(ctx: CanvasRenderingContext2D, frame: OverlayRenderFra
   }
 }
 
+export interface GlassOverlayRendererOptions {
+  /**
+   * Set `false` to draw with 2D Canvas only. Browsers cap live WebGL contexts (about 16 in
+   * Chromium) and evict the oldest past that, so a page with many resting surfaces should
+   * keep WebGL2 for the few that animate.
+   */
+  webgl?: boolean
+}
+
 /** Creates an optical edge overlay renderer supporting up to MAX_GPU_PRIMITIVES (16) with WebGL2 and automatic 2D Canvas fallback. */
-export function createGlassOverlayRenderer(): IGlassOverlayRenderer {
+export function createGlassOverlayRenderer(
+  options: GlassOverlayRendererOptions = {},
+): IGlassOverlayRenderer {
+  const allowWebGL = options.webgl !== false
   let capabilities: RendererCapabilities = {
     webgl2: false,
     floatFbo: false,
@@ -840,7 +852,9 @@ export function createGlassOverlayRenderer(): IGlassOverlayRenderer {
 
       // Probe shader compilation on an offscreen canvas first so a failing WebGL2 context
       // never locks targetCanvas out of acquiring a 2D fallback context per the HTML Canvas spec.
-      const probe = probeWebGL2OverlaySupport(targetCanvas)
+      const probe = allowWebGL
+        ? probeWebGL2OverlaySupport(targetCanvas)
+        : { supported: false, reason: '2D Canvas overlay requested.' }
       const glCtx = probe.supported
         ? canvas.getContext('webgl2', WEBGL2_CONTEXT_ATTRS)
         : null

@@ -112,7 +112,6 @@ interface NineSliceNodes {
   br: NineSlicePiece
   merge: Element
   attached: Element[]
-  activeMask: number
   prevTileKey: string
   prevGeomKey: string
 }
@@ -219,10 +218,6 @@ export function resolveEffectiveMapScale(
     }
   }
   return scale
-}
-
-function isNearInt(v: number): boolean {
-  return Math.abs(v - Math.round(v)) < 1e-3
 }
 
 interface AlignedFullMap {
@@ -490,7 +485,6 @@ export function createRefractFilterController(
       br: createTilePiece('ns-br'),
       merge,
       attached: [],
-      activeMask: -1,
       prevTileKey: '',
       prevGeomKey: '',
     }
@@ -514,7 +508,6 @@ export function createRefractFilterController(
     if (currentMapMode === 'full') return
     if (nineSliceNodes) {
       detachNineSliceNodes(nineSliceNodes)
-      nineSliceNodes.activeMask = -1
     }
     if (feImageEl.parentNode !== filterEl) {
       filterEl.insertBefore(feImageEl, bgBlurEl)
@@ -525,22 +518,17 @@ export function createRefractFilterController(
     currentMapMode = 'full'
   }
 
-  const activateNineSliceMode = (mask: number): NineSliceNodes => {
+  const activateNineSliceMode = (): NineSliceNodes => {
     const ns = ensureNineSliceNodes()
-    if (currentMapMode !== 'nine-slice') {
-      if (feImageEl.parentNode) {
-        feImageEl.parentNode.removeChild(feImageEl)
-      }
-      currentMapMode = 'nine-slice'
-      ns.activeMask = -1
-      ns.prevTileKey = ''
-      ns.prevGeomKey = ''
-    }
-    if (ns.activeMask === mask) {
+    if (currentMapMode === 'nine-slice') {
       return ns
     }
-
-    detachNineSliceNodes(ns)
+    if (feImageEl.parentNode) {
+      feImageEl.parentNode.removeChild(feImageEl)
+    }
+    currentMapMode = 'nine-slice'
+    ns.prevTileKey = ''
+    ns.prevGeomKey = ''
 
     const appendPiece = (piece: NineSlicePiece): void => {
       filterEl.insertBefore(piece.element, bgBlurEl)
@@ -549,15 +537,11 @@ export function createRefractFilterController(
     }
 
     // Painter's order: plateau center -> edge strips -> corners so corners cover the strip overlap.
-    if ((mask & 1) !== 0) appendPiece(ns.center)
-    if ((mask & 2) !== 0) {
-      appendPiece(ns.top)
-      appendPiece(ns.bottom)
-    }
-    if ((mask & 4) !== 0) {
-      appendPiece(ns.left)
-      appendPiece(ns.right)
-    }
+    appendPiece(ns.center)
+    appendPiece(ns.top)
+    appendPiece(ns.bottom)
+    appendPiece(ns.left)
+    appendPiece(ns.right)
     appendPiece(ns.tl)
     appendPiece(ns.tr)
     appendPiece(ns.bl)
@@ -565,7 +549,6 @@ export function createRefractFilterController(
 
     filterEl.insertBefore(ns.merge, bgBlurEl)
     ns.attached.push(ns.merge)
-    ns.activeMask = mask
     return ns
   }
 
@@ -734,12 +717,8 @@ export function createRefractFilterController(
         const slice = Math.min(Math.ceil(Math.max(rad, effBezel)), minHalf)
         const span = rectW - 2 * slice
         const rise = rectH - 2 * slice
-        const canNineSlice =
-          slice >= 2 &&
-          (span > 1e-3 || isNearInt(rectX + slice)) &&
-          (rise > 1e-3 || isNearInt(rectY + slice))
 
-        if (canNineSlice) {
+        if (slice >= 2) {
           const tiles = resolveRefractTiles({
             radius: rad,
             bezel: effBezel,
@@ -749,15 +728,9 @@ export function createRefractFilterController(
             thicknessRatio: strength,
             caustics,
           })
-          const hasHStrips = span > 1e-3
-          const hasVStrips = rise > 1e-3
-          const hasCenter = hasHStrips && hasVStrips
-          const mask = (hasCenter ? 1 : 0) | (hasHStrips ? 2 : 0) | (hasVStrips ? 4 : 0)
-          const ns = activateNineSliceMode(mask)
+          const ns = activateNineSliceMode()
 
           if (tiles.key !== ns.prevTileKey) {
-            // Sync all 8 tile URLs even if strip pieces are omitted in the current mask
-            // so a subsequent resize enabling them already has valid tile hrefs.
             ns.tl.element.setAttribute('href', tiles.tl)
             ns.tr.element.setAttribute('href', tiles.tr)
             ns.bl.element.setAttribute('href', tiles.bl)
@@ -771,39 +744,38 @@ export function createRefractFilterController(
 
           const geomKey =
             `${formatSvgCoord(rectX)}:${formatSvgCoord(rectY)}:` +
-            `${formatSvgCoord(rectW)}:${formatSvgCoord(rectH)}:` +
-            `${formatSvgCoord(slice)}:${mask}`
+            `${formatSvgCoord(rectW)}:${formatSvgCoord(rectH)}:${formatSvgCoord(slice)}`
           if (geomKey !== ns.prevGeomKey) {
+            // Every joint must sit on top of an opaque underlay: once the filter is rasterized
+            // at a non-integer device offset, abutting feImage edges are antialiased to partial
+            // alpha and the `in2="map"` mask lets unrefracted backdrop leak through the seam.
+            // Strips and center are therefore always emitted (at least `2 * pad` wide) even when
+            // `span`/`rise` collapse to 0 (circles, capsules): along a quadrant boundary the lens
+            // field equals the straight-edge strip profile, and the LUT is ~0 at the plateau.
             const pad = Math.min(1, slice * 0.25)
-            if (hasCenter) {
-              setElementRect(
-                ns.center.element,
-                rectX + slice - pad,
-                rectY + slice - pad,
-                span + 2 * pad,
-                rise + 2 * pad,
-              )
-            }
-            if (hasHStrips) {
-              setElementRect(ns.top.element, rectX + slice - pad, rectY, span + 2 * pad, slice)
-              setElementRect(
-                ns.bottom.element,
-                rectX + slice - pad,
-                rectY + rectH - slice,
-                span + 2 * pad,
-                slice,
-              )
-            }
-            if (hasVStrips) {
-              setElementRect(ns.left.element, rectX, rectY + slice - pad, slice, rise + 2 * pad)
-              setElementRect(
-                ns.right.element,
-                rectX + rectW - slice,
-                rectY + slice - pad,
-                slice,
-                rise + 2 * pad,
-              )
-            }
+            setElementRect(
+              ns.center.element,
+              rectX + slice - pad,
+              rectY + slice - pad,
+              span + 2 * pad,
+              rise + 2 * pad,
+            )
+            setElementRect(ns.top.element, rectX + slice - pad, rectY, span + 2 * pad, slice)
+            setElementRect(
+              ns.bottom.element,
+              rectX + slice - pad,
+              rectY + rectH - slice,
+              span + 2 * pad,
+              slice,
+            )
+            setElementRect(ns.left.element, rectX, rectY + slice - pad, slice, rise + 2 * pad)
+            setElementRect(
+              ns.right.element,
+              rectX + rectW - slice,
+              rectY + slice - pad,
+              slice,
+              rise + 2 * pad,
+            )
             setElementRect(ns.tl.element, rectX, rectY, slice, slice)
             setElementRect(ns.tr.element, rectX + rectW - slice, rectY, slice, slice)
             setElementRect(ns.bl.element, rectX, rectY + rectH - slice, slice, slice)

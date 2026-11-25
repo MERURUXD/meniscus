@@ -446,7 +446,29 @@ test('createRefractFilterController uses nine-slice fast path on N=1 cards, skip
   ].map((node) => node.setAttributeCalls.length)
   assert.deepEqual(totalWritesAfterRepeat, totalWritesBeforeRepeat)
 
-  // Integer-aligned horizontal capsule omits center/left/right and uses 6 pieces.
+  const pieceByResult = (result: string): MockElement =>
+    [...filterEl.querySelectorAll('feFlood'), ...filterEl.querySelectorAll('feImage')].find(
+      (n) => n.getAttribute('result') === result,
+    )!
+  const rectOf = (result: string): string[] => {
+    const n = pieceByResult(result)
+    return ['x', 'y', 'width', 'height'].map((k) => n.getAttribute(k)!)
+  }
+  const assertFullNineSlice = (): void => {
+    assert.equal(filterEl.querySelectorAll('feFlood').length, 1)
+    assert.equal(filterEl.querySelectorAll('feImage').length, 8)
+    assert.deepEqual(
+      filterEl
+        .querySelectorAll('feMerge')
+        .find((n) => n.getAttribute('result') === 'map')!
+        .querySelectorAll('feMergeNode')
+        .map((n) => n.getAttribute('in')),
+      ['ns-center', 'ns-top', 'ns-bottom', 'ns-left', 'ns-right', 'ns-tl', 'ns-tr', 'ns-bl', 'ns-br'],
+    )
+  }
+
+  // Horizontal capsule (`rise == 0`): the top/bottom strip joint and the left/right cap joints
+  // must be underlaid by a `2 * pad` center row and vertical strips, never left abutting.
   controller.updateFrame({
     bounds: { x: 0, y: 0, width: 412, height: 56 },
     field: {
@@ -458,18 +480,12 @@ test('createRefractFilterController uses nine-slice fast path on N=1 cards, skip
     brightness: 1.0,
     contrast: 1.0,
   })
-  assert.equal(filterEl.querySelectorAll('feFlood').length, 0)
-  assert.equal(filterEl.querySelectorAll('feImage').length, 6)
-  assert.deepEqual(
-    filterEl
-      .querySelectorAll('feMerge')
-      .find((n) => n.getAttribute('result') === 'map')!
-      .querySelectorAll('feMergeNode')
-      .map((n) => n.getAttribute('in')),
-    ['ns-top', 'ns-bottom', 'ns-tl', 'ns-tr', 'ns-bl', 'ns-br'],
-  )
+  assertFullNineSlice()
+  assert.deepEqual(rectOf('ns-center'), ['27', '27', '358', '2'])
+  assert.deepEqual(rectOf('ns-left'), ['6', '27', '22', '2'])
+  assert.deepEqual(rectOf('ns-right'), ['384', '27', '22', '2'])
 
-  // Subpixel-positioned capsule falls back to full-map Stored-PNG to prevent Skia seam artifacts.
+  // Subpixel-positioned capsules stay on the nine-slice path: seams no longer depend on alignment.
   controller.updateFrame({
     bounds: { x: 0, y: 0, width: 412, height: 56 },
     field: {
@@ -481,9 +497,30 @@ test('createRefractFilterController uses nine-slice fast path on N=1 cards, skip
     brightness: 1.0,
     contrast: 1.0,
   })
-  assert.equal(filterEl.querySelectorAll('feFlood').length, 0)
-  assert.equal(filterEl.querySelectorAll('feImage').length, 1)
-  assert.equal(filterEl.querySelectorAll('feImage')[0]!.getAttribute('result'), 'map')
+  assertFullNineSlice()
+  assert.deepEqual(rectOf('ns-center'), ['27', '27.250', '358', '2'])
+
+  // Circle (`span == rise == 0`): the four corners meet at the center, so all four quadrant
+  // joints are underlaid by `2 * pad` strips and a center patch (the old cross-seam regression).
+  controller.updateFrame({
+    bounds: { x: 0, y: 0, width: 60, height: 60 },
+    field: {
+      blendK: 16,
+      primitives: [{ center: { x: 30, y: 30 }, size: { width: 44, height: 44 }, radius: 22 }],
+    },
+    blurSigma: 6,
+    saturate: 1.4,
+    brightness: 1.0,
+    contrast: 1.0,
+  })
+  assertFullNineSlice()
+  assert.deepEqual(rectOf('ns-center'), ['29', '29', '2', '2'])
+  assert.deepEqual(rectOf('ns-top'), ['29', '8', '2', '22'])
+  assert.deepEqual(rectOf('ns-bottom'), ['29', '30', '2', '22'])
+  assert.deepEqual(rectOf('ns-left'), ['8', '29', '22', '2'])
+  assert.deepEqual(rectOf('ns-right'), ['30', '29', '22', '2'])
+  assert.deepEqual(rectOf('ns-tl'), ['8', '8', '22', '22'])
+  assert.deepEqual(rectOf('ns-br'), ['30', '30', '22', '22'])
 
   // Return to N=1 nine-slice, then switch N=1 -> N=2 -> N=1 without leaking nodes or shifting scale.
   controller.updateFrame({

@@ -2,6 +2,12 @@
 
 All notable changes to the published `@sessile/*` packages (`@sessile/core`, `@sessile/dom`, `@sessile/presets`, `@sessile/react`) are documented in this file.
 
+## [Unreleased]
+
+### Fixed
+
+- **Nine-Slice Joint Seams (`@sessile/dom`)**: Circles and capsules no longer show a cross or mid-line seam on the Route B3 refraction map. Corner tiles and edge strips used to abut where `span` or `rise` collapsed to `0`, and once the filter was rasterized at a non-integer device offset (fractional DPR, subpixel `transform`), the antialiased joint dropped map alpha and leaked unrefracted backdrop. All 9 pieces are now always emitted with a `2 * pad` overlap underlay, so subpixel-positioned capsules also stay on the nine-slice path instead of falling back to the full map.
+
 ## [0.2.0] - 2026-11-24
 
 ### Breaking Changes

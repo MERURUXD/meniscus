@@ -131,7 +131,19 @@ function setup(env: typeof CHROME_ENV, field: GlassFieldState) {
   return { doc, controller, frames, spy }
 }
 
-test('the legibility stage sits between the refracted backdrop and the self-mask', () => {
+/** Filter results read by more than one primitive; Chromium re-evaluates each such read. */
+function fanOut(filter: MockElement): Record<string, number> {
+  const reads: Record<string, number> = {}
+  for (const node of filter.childNodes) {
+    for (const attr of ['in', 'in2']) {
+      const name = node.attributes.get(attr)
+      if (name) reads[name] = (reads[name] ?? 0) + 1
+    }
+  }
+  return reads
+}
+
+test('the legibility stage compresses the backdrop before displacement', () => {
   const doc = new MockDocument()
   const filter = createRefractFilterController({ id: 'leg', document: doc as unknown as Document })
   filter.mount()
@@ -146,22 +158,14 @@ test('the legibility stage sits between the refracted backdrop and the self-mask
 
   filter.updateLegibility(params)
   const order = el.childNodes.map((n) => n.attributes.get('result') ?? n.tagName)
-  const smooth = order.indexOf('refractSmooth')
-  assert.deepEqual(order.slice(smooth + 1, smooth + 6), [
-    'legibleOpaque',
-    'legibleLuminance',
-    'legibleGain',
-    'legibleOpaqueOut',
-    'legible',
-  ])
-  assert.equal(glassOnly(el).attributes.get('in'), 'legible')
-  const [, luminance, gain, composite, mask] = el.childNodes.slice(smooth + 1, smooth + 6)
-  assert.equal(composite!.attributes.get('in'), 'legibleOpaque', 'arithmetic runs on an opaque copy')
-  assert.deepEqual(
-    [mask!.attributes.get('operator'), mask!.attributes.get('in2')],
-    ['in', 'refractSmooth'],
-    'original alpha is restored after the arithmetic',
-  )
+  const optics = order.indexOf('bgOptics')
+  assert.deepEqual(order.slice(optics + 1, optics + 4), ['legibleLuminance', 'legibleGain', 'legible'])
+  const displacement = descendants(el, 'feDisplacementMap')
+  assert.deepEqual(displacement.map((n) => n.attributes.get('in')), ['legible'], 'the lens refracts the compressed backdrop')
+  assert.equal(glassOnly(el).attributes.get('in'), 'refractSmooth')
+  assert.equal(fanOut(el)['refractSmooth'], 1, 'the displacement chain runs once')
+  const [luminance, gain, composite] = el.childNodes.slice(optics + 1, optics + 4)
+  assert.deepEqual([composite!.attributes.get('in'), composite!.attributes.get('in2')], ['bgOptics', 'legibleGain'])
   assert.equal(luminance!.attributes.get('color-interpolation-filters'), 'linearRGB')
   assert.deepEqual(
     ['k1', 'k2', 'k3', 'k4'].map((k) => composite!.attributes.get(k)),
@@ -178,9 +182,12 @@ test('the legibility stage sits between the refracted backdrop and the self-mask
 
   filter.updateConfig({ dispersion: 3 })
   const afterDispersion = el.childNodes.map((n) => n.attributes.get('result') ?? n.tagName)
-  assert.ok(afterDispersion.indexOf('lens-B') < afterDispersion.indexOf('refractSmooth'))
-  assert.ok(afterDispersion.indexOf('refractSmooth') < afterDispersion.indexOf('legibleLuminance'))
-  assert.equal(glassOnly(el).attributes.get('in'), 'legible', 'dispersion rebuild keeps the stage wired')
+  assert.ok(afterDispersion.indexOf('legible') < afterDispersion.indexOf('input-R'))
+  const channelInputs = ['input-R', 'input-G', 'input-B'].map(
+    (r) => el.childNodes.find((n) => n.attributes.get('result') === r)!.attributes.get('in'),
+  )
+  assert.deepEqual(channelInputs, ['legible', 'legible', 'legible'], 'dispersion rebuild keeps the stage wired')
+  assert.equal(fanOut(el)['refractSmooth'], 1)
 
   resolveLegibilityParams(
     resolveLegibilityGoal({ foreground: [0.05, 0.05, 0.05], tier: 'regular' }),
@@ -197,7 +204,12 @@ test('the legibility stage sits between the refracted backdrop and the self-mask
 
   filter.updateLegibility(null)
   assert.equal(descendants(el, 'feComponentTransfer').length, 3, 'only dispersion transfers remain')
-  assert.equal(glassOnly(el).attributes.get('in'), 'refractSmooth')
+  assert.ok(
+    ['input-R', 'input-G', 'input-B'].every(
+      (r) => el.childNodes.find((n) => n.attributes.get('result') === r)!.attributes.get('in') === 'bgOptics',
+    ),
+    'detaching rewires the lens to the plain backdrop',
+  )
 })
 
 for (const [name, field] of [
@@ -365,10 +377,8 @@ test('edge optics compensation raises alphas without touching the host material'
 
   controller.setLegibility(null)
   assert.equal(spy.materials.at(-1)!.hairlineSideAlpha, base.hairlineSideAlpha)
-  assert.equal(
-    glassOnly(filterOf((controller as unknown as { doc: MockDocument }).doc)).attributes.get('in'),
-    'refractSmooth',
-  )
+  const reads = fanOut(filterOf((controller as unknown as { doc: MockDocument }).doc))
+  assert.equal(reads['legible'], undefined, 'nothing reads the detached stage')
 })
 
 test('the controller samples the probe at the primitive viewport rect, including container scroll', () => {

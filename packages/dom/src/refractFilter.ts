@@ -77,15 +77,15 @@ export interface RefractFilterController {
   updateConfig(config: Partial<RefractFilterConfig>): void
   updateFrame(frame: RefractFilterFrame): void
   /**
-   * Attaches (or with `null` detaches) the per-pixel legibility stage between the refracted
-   * backdrop and the self-mask. Only node attributes change, so updates never re-encode the map.
+   * Attaches (or with `null` detaches) the per-pixel legibility stage between the backdrop optics
+   * and the displacement. Only node attributes change, so updates never re-encode the map.
    */
   updateLegibility(params: LegibilityParams | null): void
   dispose(): void
 }
 
 interface LegibilityNodes {
-  /** Attached in graph order: opaque, luminance, gain, composite, mask. */
+  /** Attached in graph order: luminance, gain, composite. */
   chain: Element[]
   luminance: Element
   funcs: Element[]
@@ -99,9 +99,6 @@ interface LegibilityNodes {
 // Rec. 709 weights replicated into RGB with alpha pinned to 1.
 const LUMINANCE_MATRIX =
   '0.2126 0.7152 0.0722 0 0  0.2126 0.7152 0.0722 0 0  0.2126 0.7152 0.0722 0 0  0 0 0 0 1'
-// `feComposite arithmetic` runs on premultiplied color, so the dark-text `+ (1 - M)` term would
-// lift partially transparent fringe pixels toward white; compose on an opaque copy, re-mask after.
-const OPAQUE_MATRIX = '1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 0 1'
 
 interface NormalizedConfig {
   bezel: number
@@ -464,6 +461,9 @@ export function createRefractFilterController(
 
   let stageNodes: Element[] = []
   let dispNodes: DisplacementNodeBinding[] = []
+  /** Stage nodes reading the pre-displacement backdrop; they switch to `legible` while it is attached. */
+  let sourceReaders: Element[] = []
+  let displacementSource: 'bgOptics' | 'legible' = 'bgOptics'
   let currentDispersive: boolean | null = null
   let currentMapMode: 'full' | 'nine-slice' = 'full'
   let nineSliceNodes: NineSliceNodes | null = null
@@ -592,6 +592,7 @@ export function createRefractFilterController(
     }
     stageNodes = []
     dispNodes = []
+    sourceReaders = []
 
     const appendStageNode = (node: Element): void => {
       filterEl.insertBefore(node, refractSmoothEl)
@@ -603,8 +604,9 @@ export function createRefractFilterController(
       for (let i = 0; i < channels.length; i++) {
         const ch = channels[i]!
         const transferEl = createSvgEl('feComponentTransfer')
-        transferEl.setAttribute('in', 'bgOptics')
+        transferEl.setAttribute('in', displacementSource)
         transferEl.setAttribute('result', `input-${ch}`)
+        sourceReaders.push(transferEl)
 
         const funcR = createSvgEl('feFuncR')
         funcR.setAttribute('type', 'linear')
@@ -655,7 +657,8 @@ export function createRefractFilterController(
       appendStageNode(compRgb)
     } else {
       const dispEl = createSvgEl('feDisplacementMap')
-      dispEl.setAttribute('in', 'bgOptics')
+      dispEl.setAttribute('in', displacementSource)
+      sourceReaders.push(dispEl)
       dispEl.setAttribute('in2', 'map')
       dispEl.setAttribute('xChannelSelector', 'R')
       dispEl.setAttribute('yChannelSelector', 'G')
@@ -672,15 +675,25 @@ export function createRefractFilterController(
 
   rebuildDisplacementStage(config.dispersion > 0)
 
+  const setDisplacementSource = (source: typeof displacementSource): void => {
+    displacementSource = source
+    for (const node of sourceReaders) node.setAttribute('in', source)
+  }
+
+  /*
+   * The stage compresses the backdrop before it is displaced, not the refracted result. Chromium
+   * evaluates every reference to a filter result separately, so a stage reading `refractSmooth`
+   * (the luminance branch plus the composite) re-runs the whole displacement chain per read and
+   * halved the frame rate of a page of glass. Here the fan-out sits on `bgOptics` (blur + matrix).
+   * Per-pixel tone mapping commutes with displacement; with dispersion each channel is compressed
+   * at its own source pixel, a sub-bezel difference on an already blurred backdrop. The blurred
+   * backdrop is opaque (`edgeMode="duplicate"`), so the premultiplied arithmetic needs no opaque
+   * copy and re-mask; the glass edge alpha comes from the displacement as before.
+   */
   const ensureLegibilityNodes = (): LegibilityNodes => {
     if (legibilityNodes) return legibilityNodes
-    const opaque = createSvgEl('feColorMatrix')
-    opaque.setAttribute('in', 'refractSmooth')
-    opaque.setAttribute('type', 'matrix')
-    opaque.setAttribute('values', OPAQUE_MATRIX)
-    opaque.setAttribute('result', 'legibleOpaque')
     const luminance = createSvgEl('feColorMatrix')
-    luminance.setAttribute('in', 'legibleOpaque')
+    luminance.setAttribute('in', 'bgOptics')
     luminance.setAttribute('type', 'matrix')
     luminance.setAttribute('values', LUMINANCE_MATRIX)
     luminance.setAttribute('result', 'legibleLuminance')
@@ -694,17 +707,12 @@ export function createRefractFilterController(
       return fn
     })
     const composite = createSvgEl('feComposite')
-    composite.setAttribute('in', 'legibleOpaque')
+    composite.setAttribute('in', 'bgOptics')
     composite.setAttribute('in2', 'legibleGain')
     composite.setAttribute('operator', 'arithmetic')
-    composite.setAttribute('result', 'legibleOpaqueOut')
-    const mask = createSvgEl('feComposite')
-    mask.setAttribute('in', 'legibleOpaqueOut')
-    mask.setAttribute('in2', 'refractSmooth')
-    mask.setAttribute('operator', 'in')
-    mask.setAttribute('result', 'legible')
+    composite.setAttribute('result', 'legible')
     legibilityNodes = {
-      chain: [opaque, luminance, gain, composite, mask],
+      chain: [luminance, gain, composite],
       luminance,
       funcs,
       composite,
@@ -720,14 +728,14 @@ export function createRefractFilterController(
     if (!params) {
       if (legibilityNodes?.composite.parentNode) {
         for (const node of legibilityNodes.chain) filterEl.removeChild(node)
-        glassOnlyEl.setAttribute('in', 'refractSmooth')
+        setDisplacementSource('bgOptics')
       }
       return
     }
     const nodes = ensureLegibilityNodes()
     if (!nodes.composite.parentNode) {
-      for (const node of nodes.chain) filterEl.insertBefore(node, glassOnlyEl)
-      glassOnlyEl.setAttribute('in', 'legible')
+      for (const node of nodes.chain) filterEl.insertBefore(node, stageNodes[0] ?? refractSmoothEl)
+      setDisplacementSource('legible')
     }
     if (nodes.polarity !== params.polarity) {
       const stage = LEGIBILITY_STAGES[params.polarity]

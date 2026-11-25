@@ -749,7 +749,7 @@
   background: var(--ground);
 }
 
-@media (min-width: 1024px) {
+@media (min-width: 901px) {
   .bench[data-inspector='open'] .pg-stage-split {
     padding-right: 348px;
   }

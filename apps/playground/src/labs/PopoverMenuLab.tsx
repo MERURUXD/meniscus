@@ -72,7 +72,8 @@ function computeAnchoredTriggerRect(
   const width = 136
   const height = 42
   const topY = Math.max(84, Math.round(h * 0.24))
-  const rightSafeOffset = inspectorOpen && w >= 1024 ? 360 : 36
+  // Above the 900px stacking breakpoint in app.css the inspector floats over the stage.
+  const rightSafeOffset = inspectorOpen && w > 900 ? 360 : 36
 
   switch (placement) {
     case 'overAnchorEnd':

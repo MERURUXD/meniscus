@@ -12,6 +12,7 @@ All notable changes to the published `@sessile/*` packages (`@sessile/core`, `@s
 ### Fixed
 
 - **Subpixel-Stable Edge Lines (`@sessile/core`)**: The WebGL2 overlay's outer hairline, uniform inner border and glass edge now use box-filtered pixel coverage. Lines thinner than a pixel used to keep a smoothstep around their centre, so their total alpha swung by up to 1.7x as the shape moved by a fraction of a pixel: thin edges shimmered while morphing and jumped where a morph handed off to a resting surface at a different subpixel offset.
+- **Popover Opening Lands on Open (`@sessile/presets`)**: The opening springs were still ringing at `openDurationSec`, so the last opening frame sat about 1.3px of corner radius (on a 360px panel) and a fraction of morph, dip and blur short of the resting `open` state, and the hand-off to a resting surface stepped. Their residuals now fade out from `POPOVER_MORPH_DEFAULTS.openLandingStart` (normalized `0.7`), so `evaluatePopoverMotion('opening', 1)` equals the `open` state and the geometry matches exactly.
 
 ## [0.3.0] - 2026-11-25
 

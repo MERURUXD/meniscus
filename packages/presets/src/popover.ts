@@ -206,6 +206,8 @@ export interface PopoverMorphController {
 /** Default timing, geometry, and spring constants for morphing popovers and menus. */
 export const POPOVER_MORPH_DEFAULTS = {
   openDurationSec: 0.45,
+  /** Normalized time at which the opening springs start landing on the resting `open` state. */
+  openLandingStart: 0.7,
   closeDurationSec: 0.5,
   pointCloseDurationSec: 0.2,
   reducedMotionDurationSec: 0.15,
@@ -538,26 +540,37 @@ export function evaluatePopoverMotion(
       }
     }
 
-    const morphProgress = evaluateSpring(elapsedSec, POPOVER_MORPH_DEFAULTS.springs.open)
+    // The springs still ring at `openDurationSec` (corners about 1.3px short on a 360px panel),
+    // so their residuals fade out over the tail: the last opening frame is the `open` state and
+    // the hand-off to the resting surface has no step.
+    const landing = 1 - smoothstep(POPOVER_MORPH_DEFAULTS.openLandingStart, 1, u)
+    const morphProgress = lerp(1, evaluateSpring(elapsedSec, POPOVER_MORPH_DEFAULTS.springs.open), landing)
     const cornerDelay = POPOVER_MORPH_DEFAULTS.cornerDelaySec
     const cornerProgress =
       elapsedSec <= cornerDelay
         ? 1
-        : 1 - evaluateSpring(elapsedSec - cornerDelay, POPOVER_MORPH_DEFAULTS.springs.corners)
+        : lerp(
+            0,
+            1 - evaluateSpring(elapsedSec - cornerDelay, POPOVER_MORPH_DEFAULTS.springs.corners),
+            landing,
+          )
     const platterDipEnvelope = hasControlSource
-      ? riseAndFall(
-          elapsedSec,
-          POPOVER_MORPH_DEFAULTS.openDipPeakSec,
-          POPOVER_MORPH_DEFAULTS.openDipSharpness,
+      ? lerp(
+          0,
+          riseAndFall(elapsedSec, POPOVER_MORPH_DEFAULTS.openDipPeakSec, POPOVER_MORPH_DEFAULTS.openDipSharpness),
+          landing,
         )
       : 0
-    const blurBumpPx =
+    const blurBumpPx = lerp(
+      0,
       POPOVER_MORPH_DEFAULTS.openBlurBumpAmpPx *
-      riseAndFall(
-        elapsedSec,
-        POPOVER_MORPH_DEFAULTS.openBlurBumpPeakSec,
-        POPOVER_MORPH_DEFAULTS.openBlurBumpSharpness,
-      )
+        riseAndFall(
+          elapsedSec,
+          POPOVER_MORPH_DEFAULTS.openBlurBumpPeakSec,
+          POPOVER_MORPH_DEFAULTS.openBlurBumpSharpness,
+        ),
+      landing,
+    )
     const settled = clamp(morphProgress, 0, 1)
     const glyphT = clamp(settled / POPOVER_MORPH_DEFAULTS.openSettledGlyphEnd, 0, 1)
     const normalContentBlurPx = Math.hypot(

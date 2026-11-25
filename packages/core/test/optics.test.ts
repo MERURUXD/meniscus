@@ -18,6 +18,7 @@ import {
   parseCssFilterOptics,
   parseCssGlassSurface,
   parseCssRgba,
+  tryParseCssRgba,
   resolveOpticalMaterial,
 } from '../src/optics.ts'
 
@@ -74,6 +75,21 @@ test('parseCssRgba supports rgb, rgba, space-slash syntax, color(srgb), and keyw
   assert.deepEqual(parseCssRgba('rgb(255 0 127.5 / 50%)'), [1, 0, 0.5, 0.5])
   assert.deepEqual(parseCssRgba('color(srgb 0.25 0.5 0.75 / 0.8)'), [0.25, 0.5, 0.75, 0.8])
   assert.deepEqual(parseCssRgba('color(srgb 1 0 0)'), [1, 0, 0, 1])
+})
+
+test('tryParseCssRgba converts computed oklab() and oklch() to sRGB', () => {
+  const near = (actual: number[] | null, expected: number[]) => {
+    assert.ok(actual, 'parsed')
+    expected.forEach((v, i) => approx(actual![i]!, v, 1 / 255))
+  }
+  // Chromium's computed value for Tailwind `text-[#f4f4f5]/90`.
+  near(tryParseCssRgba('oklab(0.967428 0.000417888 -0.00125271 / 0.9)'), [244 / 255, 244 / 255, 245 / 255, 0.9])
+  near(tryParseCssRgba('oklch(0.627955 0.257683 29.2339)'), [1, 0, 0, 1])
+  near(tryParseCssRgba('oklab(100% 0 0 / 50%)'), [1, 1, 1, 0.5])
+  near(tryParseCssRgba('oklch(0 none none)'), [0, 0, 0, 1])
+  // Out-of-gamut channels clip instead of leaving [0, 1].
+  const vivid = tryParseCssRgba('oklch(0.9 0.4 145)')!
+  assert.ok(vivid.every((v) => v >= 0 && v <= 1))
 })
 
 test('parseCssFilterOptics and interpolateVeilOptics preserve exact 1D affine transforms', () => {

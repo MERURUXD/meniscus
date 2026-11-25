@@ -186,7 +186,10 @@ export function buildContourAlphaDataUrl(
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgDoc)}`
 }
 
-/** Parses a browser-computed `rgb(...)`, `rgba(...)`, or `color(srgb ...)` string into normalized `[0..1]` RGBA. */
+/**
+ * Parses a browser-computed `rgb(...)`, `rgba(...)`, `color(srgb ...)`, `oklab(...)` or
+ * `oklch(...)` string into normalized `[0..1]` sRGB RGBA.
+ */
 export function parseCssRgba(color: string): [number, number, number, number] {
   return tryParseCssRgba(color) ?? [0, 0, 0, 0]
 }
@@ -195,6 +198,9 @@ export function parseCssRgba(color: string): [number, number, number, number] {
  * Like `parseCssRgba`, but returns `null` instead of transparent black for anything it cannot
  * resolve (`var()`, percentage `color(srgb ...)` channels, other color spaces), so callers can
  * tell a real transparent color from an unsupported one.
+ *
+ * Browsers serialize `color-mix()` and alpha-modified theme colors (Tailwind's `text-white/90`)
+ * as `oklab()` / `oklch()`, so a host reading computed styles meets these routinely.
  */
 export function tryParseCssRgba(color: string): [number, number, number, number] | null {
   const trimmed = color.trim().toLowerCase()
@@ -213,6 +219,37 @@ export function tryParseCssRgba(color: string): [number, number, number, number]
     const a = aRaw !== undefined ? (aRaw.endsWith('%') ? parseFloat(aRaw) / 100 : Number(aRaw)) : 1
     if (Number.isFinite(r) && Number.isFinite(g) && Number.isFinite(b) && Number.isFinite(a)) {
       return [r, g, b, clamp(a, 0, 1)]
+    }
+  }
+
+  const okMatch = trimmed.match(/^ok(lab|lch)\(\s*([^)]+)\s*\)$/)
+  if (okMatch) {
+    const [channels, alphaRaw] = okMatch[2]!.split('/')
+    const parts = channels!.trim().split(/\s+/)
+    if (parts.length === 3) {
+      const polar = okMatch[1] === 'lch'
+      // Percent references: L 100% = 1, a/b/C 100% = 0.4 (CSS Color 4).
+      const num = (token: string, percentScale: number) =>
+        token === 'none' ? 0 : token.endsWith('%') ? (parseFloat(token) / 100) * percentScale : parseFloat(token)
+      const l = num(parts[0]!, 1)
+      let a = num(parts[1]!, 0.4)
+      let b = num(parts[2]!, 0.4)
+      if (polar) {
+        const hue = ((parts[2] === 'none' ? 0 : parseFloat(parts[2]!)) * Math.PI) / 180
+        b = a * Math.sin(hue)
+        a = a * Math.cos(hue)
+      }
+      const alphaToken = alphaRaw?.trim()
+      const alpha =
+        alphaToken === undefined || alphaToken === 'none'
+          ? 1
+          : alphaToken.endsWith('%')
+            ? parseFloat(alphaToken) / 100
+            : parseFloat(alphaToken)
+      if ([l, a, b, alpha].every(Number.isFinite)) {
+        const [r, g, bl] = oklabToSrgb(l, a, b)
+        return [r, g, bl, clamp(alpha, 0, 1)]
+      }
     }
   }
 
@@ -239,6 +276,22 @@ export function tryParseCssRgba(color: string): [number, number, number, number]
   }
 
   return null
+}
+
+/** OKLab to gamma-encoded sRGB (Björn Ottosson's matrices); out-of-gamut channels are clipped. */
+function oklabToSrgb(l: number, a: number, b: number): [number, number, number] {
+  const lc = (l + 0.3963377774 * a + 0.2158037573 * b) ** 3
+  const mc = (l - 0.1055613458 * a - 0.0638541728 * b) ** 3
+  const sc = (l - 0.0894841775 * a - 1.291485548 * b) ** 3
+  const encode = (linear: number) => {
+    const x = clamp(linear, 0, 1)
+    return x <= 0.0031308 ? 12.92 * x : 1.055 * x ** (1 / 2.4) - 0.055
+  }
+  return [
+    encode(4.0767416621 * lc - 3.3077115913 * mc + 0.2309699292 * sc),
+    encode(-1.2684380046 * lc + 2.6097574011 * mc - 0.3413193965 * sc),
+    encode(-0.0041960863 * lc - 0.7034186147 * mc + 1.707614701 * sc),
+  ]
 }
 
 const VEIL_SINGULAR_EPS = 1e-6

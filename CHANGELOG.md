@@ -13,6 +13,10 @@ All notable changes to the published `@sessile/*` packages (`@sessile/core`, `@s
 - **Legibility Before Displacement (`@sessile/dom`)**: The Route B3 legibility stage now compresses `bgOptics` before the displacement inputs instead of re-reading `refractSmooth`. Chromium evaluates a filter result once per reference, so the old stage ran the whole displacement chain three times per frame.
 - **Risk Deadband (`@sessile/dom`)**: The smoothed risk re-resolves the response only after it moves by `0.02` or settles, so a backdrop scrolling under the glass no longer rewrites the filter and redraws the edge every frame. Settling always commits the exact target.
 
+### Fixed
+
+- **Popover Opening Lands on Open (`@sessile/presets`)**: The opening springs were still ringing at `openDurationSec`, so the last opening frame sat about 1.3px of corner radius (on a 360px panel) and a fraction of morph, dip and blur short of the resting `open` state, and the hand-off to a resting surface stepped. Their residuals now fade out from `POPOVER_MORPH_DEFAULTS.openLandingStart` (normalized `0.7`), so `evaluatePopoverMotion('opening', 1)` equals the `open` state and the geometry matches exactly.
+
 ## [0.3.0] - 2026-11-25
 
 ### Added

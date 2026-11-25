@@ -12,11 +12,13 @@
 
 import {
   DEFAULT_REFRACTION_IOR,
+  LEGIBILITY_STAGES,
   buildColorOpticsMatrix,
   createRefractMapBuilder,
   resolveRefractTiles,
   type GlassFieldState,
   type GlassPrimitive,
+  type LegibilityParams,
   type Rect,
   type RefractMapBuilder,
   type RefractionProfileSpec,
@@ -74,8 +76,27 @@ export interface RefractFilterController {
   mount(target?: Element | null): boolean
   updateConfig(config: Partial<RefractFilterConfig>): void
   updateFrame(frame: RefractFilterFrame): void
+  /**
+   * Attaches (or with `null` detaches) the per-pixel legibility stage between the refracted
+   * backdrop and the self-mask. Only node attributes change, so updates never re-encode the map.
+   */
+  updateLegibility(params: LegibilityParams | null): void
   dispose(): void
 }
+
+interface LegibilityNodes {
+  luminance: Element
+  gain: Element
+  funcs: Element[]
+  composite: Element
+  polarity: LegibilityParams['polarity'] | null
+  tableRevision: number
+}
+
+// Rec. 709 weights replicated into RGB; alpha is pinned to 1 so the multiplier image stays
+// opaque and the arithmetic composite never fabricates alpha where the refracted input is clear.
+const LUMINANCE_MATRIX =
+  '0.2126 0.7152 0.0722 0 0  0.2126 0.7152 0.0722 0 0  0.2126 0.7152 0.0722 0 0  0 0 0 0 1'
 
 interface NormalizedConfig {
   bezel: number
@@ -358,6 +379,7 @@ export function createRefractFilterController(
         config = normalizeConfig(next, config)
       },
       updateFrame: () => {},
+      updateLegibility: () => {},
       dispose: () => {},
     }
   }
@@ -450,6 +472,7 @@ export function createRefractFilterController(
   let prevScaleKey = ''
   let disposed = false
   let mapBuilder: RefractMapBuilder | null = null
+  let legibilityNodes: LegibilityNodes | null = null
 
   const createFloodPiece = (resultName: string): NineSlicePiece => {
     const element = createSvgEl('feFlood')
@@ -643,6 +666,69 @@ export function createRefractFilterController(
   }
 
   rebuildDisplacementStage(config.dispersion > 0)
+
+  const ensureLegibilityNodes = (): LegibilityNodes => {
+    if (legibilityNodes) return legibilityNodes
+    const luminance = createSvgEl('feColorMatrix')
+    luminance.setAttribute('in', 'refractSmooth')
+    luminance.setAttribute('type', 'matrix')
+    luminance.setAttribute('values', LUMINANCE_MATRIX)
+    luminance.setAttribute('result', 'legibleLuminance')
+    const gain = createSvgEl('feComponentTransfer')
+    gain.setAttribute('in', 'legibleLuminance')
+    gain.setAttribute('result', 'legibleGain')
+    const funcs = ['feFuncR', 'feFuncG', 'feFuncB'].map((tag) => {
+      const fn = createSvgEl(tag)
+      fn.setAttribute('type', 'table')
+      gain.appendChild(fn)
+      return fn
+    })
+    const composite = createSvgEl('feComposite')
+    composite.setAttribute('in', 'refractSmooth')
+    composite.setAttribute('in2', 'legibleGain')
+    composite.setAttribute('operator', 'arithmetic')
+    composite.setAttribute('result', 'legible')
+    legibilityNodes = { luminance, gain, funcs, composite, polarity: null, tableRevision: -1 }
+    return legibilityNodes
+  }
+
+  const updateLegibility = (params: LegibilityParams | null): void => {
+    if (disposed) return
+    if (!params) {
+      if (legibilityNodes?.composite.parentNode) {
+        filterEl.removeChild(legibilityNodes.luminance)
+        filterEl.removeChild(legibilityNodes.gain)
+        filterEl.removeChild(legibilityNodes.composite)
+        glassOnlyEl.setAttribute('in', 'refractSmooth')
+      }
+      return
+    }
+    const nodes = ensureLegibilityNodes()
+    if (!nodes.composite.parentNode) {
+      filterEl.insertBefore(nodes.luminance, glassOnlyEl)
+      filterEl.insertBefore(nodes.gain, glassOnlyEl)
+      filterEl.insertBefore(nodes.composite, glassOnlyEl)
+      glassOnlyEl.setAttribute('in', 'legible')
+    }
+    if (nodes.polarity !== params.polarity) {
+      const stage = LEGIBILITY_STAGES[params.polarity]
+      nodes.luminance.setAttribute('color-interpolation-filters', stage.luminanceSpace)
+      for (let i = 0; i < 4; i++) {
+        nodes.composite.setAttribute(`k${i + 1}`, String(stage.k[i]))
+      }
+      nodes.polarity = params.polarity
+    }
+    if (nodes.tableRevision !== params.tableRevision) {
+      let values = ''
+      for (let i = 0; i < params.table.length; i++) {
+        values += (i === 0 ? '' : ' ') + params.table[i]!.toFixed(4)
+      }
+      for (let i = 0; i < nodes.funcs.length; i++) {
+        nodes.funcs[i]!.setAttribute('tableValues', values)
+      }
+      nodes.tableRevision = params.tableRevision
+    }
+  }
 
   const mount = (target?: Element | null): boolean => {
     if (disposed) return false
@@ -877,6 +963,7 @@ export function createRefractFilterController(
     }
     stageNodes = []
     dispNodes = []
+    legibilityNodes = null
     mapBuilder?.reset()
     mapBuilder = null
   }
@@ -892,6 +979,7 @@ export function createRefractFilterController(
     mount,
     updateConfig,
     updateFrame,
+    updateLegibility,
     dispose,
   }
 }

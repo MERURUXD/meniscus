@@ -356,7 +356,7 @@ function toByteChannel(channel: number): number {
 }
 
 /** Formats normalized `[0..1]` RGBA channels into a standard CSS `rgba(...)` string. */
-export function formatRgbaCss(rgba: readonly [number, number, number, number]): string {
+export function formatRgbaCss(rgba: ArrayLike<number>): string {
   const r = toByteChannel(rgba[0])
   const g = toByteChannel(rgba[1])
   const b = toByteChannel(rgba[2])

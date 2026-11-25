@@ -74,6 +74,13 @@ float safePow(float x, float y) {
   return (x <= 1e-6) ? 0.0 : pow(x, y);
 }
 
+// Box-filtered coverage of the band lo <= d <= hi over a pixel footprint of width aa. Lines thinner
+// than a pixel keep the same total alpha at every subpixel offset; a smoothstep around the band
+// centre nearly vanishes or doubles as the edge moves, which reads as shimmer while morphing.
+float bandCoverage(float d, float lo, float hi, float aa) {
+  return clamp(min(d + 0.5 * aa, hi) - max(d - 0.5 * aa, lo), 0.0, aa) / aa;
+}
+
 float computeDirectionalRimWeight(vec2 normal, float focus, float bottomRatio) {
   if (focus < 0.05) {
     return 1.0;
@@ -185,7 +192,7 @@ void main() {
   vec2 normal = sdf.normal;
 
   float aa = 1.0 / max(uDpr, 1.0);
-  float glassMask = smoothstep(0.5 * aa, -0.5 * aa, d);
+  float glassMask = clamp(0.5 - d / aa, 0.0, 1.0);
   float outsideMask = 1.0 - glassMask;
 
   // 1. Outside-only drop shadow (d > 0)
@@ -199,13 +206,9 @@ void main() {
 
   // 2. Dark outer hairline: strictly outside when a uniform CSS inner border is present (d >= 0), otherwise straddling the outer edge (d >= -0.25)
   float hw = max(uHairline.x, 0.5 / max(uDpr, 1.0));
-  float hairlineHalfW = hw * 0.5;
   float hasUniformBorder = step(0.001, uBorderParams.x);
-  float hairlineCenter = mix(-0.25 + hairlineHalfW, hairlineHalfW, hasUniformBorder);
-  float hairlineMinD = mix(-0.25 - 0.5 * aa, -0.15 * aa, hasUniformBorder);
-  float hairlineBand =
-    smoothstep(hairlineHalfW + 0.5 * aa, hairlineHalfW * 0.25, abs(d - hairlineCenter)) *
-    smoothstep(hairlineMinD, hairlineMinD + 0.75 * aa, d);
+  float hairlineLo = mix(-0.25, 0.0, hasUniformBorder);
+  float hairlineBand = bandCoverage(d, hairlineLo, hairlineLo + hw, aa);
   float hairA = 0.0;
   if (hairlineBand > 0.001) {
     float ax = abs(normal.x);
@@ -221,8 +224,8 @@ void main() {
   float borderMask = 0.0;
   float borderA = 0.0;
   vec3 borderRgb = vec3(0.0);
-  if (glassMask > 0.001 && hasUniformBorder > 0.5 && inset < uBorderParams.x + aa) {
-    borderMask = smoothstep(uBorderParams.x + 0.5 * aa, max(0.0, uBorderParams.x - 0.5 * aa), inset) * glassMask;
+  if (hasUniformBorder > 0.5 && d < 0.5 * aa && inset < uBorderParams.x + aa) {
+    borderMask = bandCoverage(d, -uBorderParams.x, 0.0, aa);
     borderA = clamp(borderMask * uBorderColor.a * uOpacity, 0.0, 1.0);
     borderRgb = uBorderColor.rgb * borderA;
   }

@@ -2,6 +2,13 @@
 
 All notable changes to the published `@sessile/*` packages (`@sessile/core`, `@sessile/dom`, `@sessile/presets`, `@sessile/react`) are documented in this file.
 
+## [Unreleased]
+
+### Added
+
+- **Container Backdrop (`@sessile/dom`)**: `GlassSurfaceControllerOptions.backdropTarget: 'container'` paints the backdrop sample and veil tint (legibility film and correction included) on the container itself and creates only the overlay canvas. It is meant for a single resting surface clipped by its own border radius: the host's opacity, filter or mask animations keep sampling the page, where a child backdrop layer would treat the animating host as its Backdrop Root. Refraction bounds default to the container's border box, and `clear` / `dispose` restore the container's own inline styles.
+- **2D-Only Overlay (`@sessile/core`)**: `createGlassOverlayRenderer({ webgl: false })` skips WebGL2 so pages with many resting surfaces stay under the browser's live WebGL context cap.
+
 ## [0.3.0] - 2026-11-25
 
 ### Added

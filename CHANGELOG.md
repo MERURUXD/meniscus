@@ -2,7 +2,7 @@
 
 All notable changes to the published `@sessile/*` packages (`@sessile/core`, `@sessile/dom`, `@sessile/presets`, `@sessile/react`) are documented in this file.
 
-## [Unreleased]
+## [0.3.1] - 2026-11-26
 
 ### Added
 

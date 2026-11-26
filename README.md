@@ -19,6 +19,7 @@ Sessile enables real, interactive HTML elements to morph continuously as physica
   probe.set(coverEl, measureImageTelemetry(coverCanvas)!)
   controller.setLegibility({ foreground: [1, 1, 1], tier: 'regular', probe })
   ```
+- **Resting Surfaces on the Same Pipeline**: `backdropTarget: 'container'` lets a plain element (a button, a toolbar, a dialog) render through the controller with the backdrop filter and tint on the element itself, so its own fade and scale animations keep sampling the page; pair it with `createGlassOverlayRenderer({ context: 'shared' })` when a page holds dozens of them, so every surface draws through one WebGL2 context.
 - **Progressive Enhancement**:
   - **Chromium**: Full live-DOM refractive distortion, chromatic dispersion, and edge optics.
   - **Safari / Firefox**: Liquid SDF contour, frosted backdrop, and physical edge specular highlights.

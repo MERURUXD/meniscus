@@ -413,6 +413,7 @@ function createMock2d(): Mock2dState {
     },
     stroke: () => calls.push(['stroke']),
     createLinearGradient: () => ({ addColorStop() {} }),
+    drawImage: (...a: unknown[]) => calls.push(['drawImage', ...a]),
   }
 
   return { ctx, calls, fillSnapshots }
@@ -795,4 +796,184 @@ test('overlayRenderer: physical 3D rim mode uploads light/bevel uniforms and sha
   assert.deepEqual(physParams, { loc: 'uPhysicalParams', x: 22, y: 0.9, z: 0.4, w: 3 })
 
   renderer.dispose()
+})
+
+test('overlayRenderer: context 2d draws with 2D Canvas without ever requesting WebGL2', () => {
+  const mock = createMockWebGL2()
+  const mock2d = createMock2d()
+  const requested: string[] = []
+  const canvas = {
+    width: 0,
+    height: 0,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    getContext: (kind: string) => {
+      requested.push(kind)
+      return kind === 'webgl2' ? mock.gl : kind === '2d' ? mock2d.ctx : null
+    },
+  } as unknown as HTMLCanvasElement
+
+  const renderer = createGlassOverlayRenderer({ context: '2d' })
+  const caps = renderer.mount(canvas)
+  assert.equal(caps.webgl2, false)
+  assert.deepEqual(requested, ['2d'])
+  renderer.dispose()
+})
+
+interface FakeOffscreen {
+  width: number
+  height: number
+  contexts: string[]
+  listeners: Map<string, (ev: { preventDefault: () => void }) => void>
+  closedBitmaps: number
+}
+
+function installOffscreenCanvas(webgl: MockGlState | null) {
+  const created: FakeOffscreen[] = []
+  class FakeOffscreenCanvas implements FakeOffscreen {
+    contexts: string[] = []
+    listeners = new Map<string, (ev: { preventDefault: () => void }) => void>()
+    closedBitmaps = 0
+    width: number
+    height: number
+    constructor(width: number, height: number) {
+      this.width = width
+      this.height = height
+      created.push(this)
+    }
+    getContext(kind: string) {
+      this.contexts.push(kind)
+      if (kind !== 'webgl2' || !webgl) return null
+      Object.defineProperty(webgl.gl, 'drawingBufferHeight', { get: () => this.height, configurable: true })
+      return webgl.gl
+    }
+    addEventListener(kind: string, fn: (ev: { preventDefault: () => void }) => void) {
+      this.listeners.set(kind, fn)
+    }
+    transferToImageBitmap() {
+      return { source: this, width: this.width, height: this.height, close: () => this.closedBitmaps++ }
+    }
+  }
+  const scope = globalThis as { OffscreenCanvas?: unknown }
+  const previous = scope.OffscreenCanvas
+  scope.OffscreenCanvas = FakeOffscreenCanvas
+  return {
+    created,
+    restore: () => {
+      scope.OffscreenCanvas = previous
+    },
+  }
+}
+
+function createHostCanvas() {
+  const requested: string[] = []
+  const mock2d = createMock2d()
+  const canvas = {
+    width: 0,
+    height: 0,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    getContext: (kind: string) => {
+      requested.push(kind)
+      return kind === '2d' ? mock2d.ctx : null
+    },
+  }
+  const copies = () => mock2d.calls.filter(([name]) => name === 'drawImage')
+  return { canvas: canvas as unknown as HTMLCanvasElement, requested, mock2d, copies }
+}
+
+test('overlayRenderer: shared context draws every host through one WebGL2 context and releases it with the last host', () => {
+  const mock = createMockWebGL2()
+  const offscreen = installOffscreenCanvas(mock)
+  try {
+    const hosts = [createHostCanvas(), createHostCanvas(), createHostCanvas()]
+    const renderers = hosts.map(() => createGlassOverlayRenderer({ context: 'shared' }))
+    for (let i = 0; i < hosts.length; i++) {
+      assert.equal(renderers[i]!.mount(hosts[i]!.canvas).webgl2, true)
+    }
+    assert.equal(offscreen.created.length, 1, 'one surface for every host')
+    assert.deepEqual(offscreen.created[0]!.contexts, ['webgl2'])
+    for (const host of hosts) assert.deepEqual(host.requested, ['2d'])
+    const surface = offscreen.created[0]!
+
+    renderers[0]!.render(makeFrame([createPrimitive(0)]))
+    renderers[1]!.render(makeFrame([createPrimitive(0)], { viewport: { width: 120, height: 90 } }))
+    renderers[2]!.render(makeFrame([createPrimitive(0)], { viewport: { width: 500, height: 100 } }))
+    assert.equal(mock.drawCalls, 3)
+    assert.deepEqual([surface.width, surface.height], [1000, 600], 'the surface only grows')
+    const [, , sy, sw, sh] = hosts[1]!.copies()[0]!.slice(1) as number[]
+    assert.deepEqual([sy, sw, sh], [600 - 180, 240, 180], 'each host copies its bottom-left region')
+    assert.deepEqual([hosts[1]!.canvas.width, hosts[1]!.canvas.height], [240, 180])
+    assert.equal(surface.closedBitmaps, 3, 'every bitmap is closed after the copy')
+
+    renderers[0]!.render(makeFrame([createPrimitive(0)], { opacity: 0 }))
+    assert.equal(hosts[0]!.copies().length, 1, 'an invisible frame only clears the host')
+    assert.equal(mock.drawCalls, 3)
+
+    renderers[0]!.dispose()
+    renderers[1]!.dispose()
+    assert.equal(mock.loseContextCalls, 0, 'stays alive while a host remains')
+    renderers[2]!.dispose()
+    assert.equal(mock.loseContextCalls, 1, 'the last host releases the context')
+
+    const next = createGlassOverlayRenderer({ context: 'shared' })
+    next.mount(createHostCanvas().canvas)
+    assert.equal(offscreen.created.length, 2, 'a later host starts a fresh context')
+    next.dispose()
+  } finally {
+    offscreen.restore()
+  }
+})
+
+test('overlayRenderer: hosts draw with 2D Canvas when the shared context cannot start', () => {
+  const broken = createMockWebGL2({ failLink: true })
+  const offscreen = installOffscreenCanvas(broken)
+  try {
+    const host = createHostCanvas()
+    const renderer = createGlassOverlayRenderer({ context: 'shared' })
+    assert.equal(renderer.mount(host.canvas).webgl2, false)
+    assert.equal(broken.loseContextCalls, 1, 'the failed context is released')
+    renderer.render(makeFrame([createPrimitive(0)]))
+    assert.ok(host.mock2d.calls.some(([name]) => name === 'stroke' || name === 'fill'))
+    assert.equal(host.copies().length, 0)
+    renderer.dispose()
+  } finally {
+    offscreen.restore()
+  }
+
+  const host = createHostCanvas()
+  const renderer = createGlassOverlayRenderer({ context: 'shared' })
+  assert.equal(renderer.mount(host.canvas).webgl2, false, 'no OffscreenCanvas falls back the same way')
+  renderer.dispose()
+})
+
+test('overlayRenderer: shared context loss draws with 2D Canvas until the context is restored', () => {
+  const mock = createMockWebGL2()
+  const offscreen = installOffscreenCanvas(mock)
+  try {
+    const host = createHostCanvas()
+    const renderer = createGlassOverlayRenderer({ context: 'shared' })
+    renderer.mount(host.canvas)
+    const surface = offscreen.created[0]!
+
+    let prevented = false
+    surface.listeners.get('webglcontextlost')?.({ preventDefault: () => (prevented = true) })
+    assert.equal(prevented, true)
+    assert.equal(renderer.capabilities.webgl2, false)
+    assert.ok(renderer.capabilities.fallbackNotice?.includes('lost'))
+
+    renderer.render(makeFrame([createPrimitive(0)]))
+    assert.equal(mock.drawCalls, 0)
+    assert.equal(host.copies().length, 0)
+    assert.ok(host.mock2d.calls.some(([name]) => name === 'stroke' || name === 'fill'), 'the edge is still drawn')
+
+    surface.listeners.get('webglcontextrestored')?.({ preventDefault: () => {} })
+    assert.equal(renderer.capabilities.webgl2, true)
+    renderer.render(makeFrame([createPrimitive(0)]))
+    assert.equal(mock.drawCalls, 1)
+    assert.equal(host.copies().length, 1)
+    renderer.dispose()
+  } finally {
+    offscreen.restore()
+  }
 })

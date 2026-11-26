@@ -7,14 +7,32 @@
 
 export class MockStyleDeclaration {
   private readonly props = new Map<string, string>()
+  private readonly priorities = new Map<string, string>()
 
   private normalizeKey(name: string): string {
     if (name.startsWith('-')) return name.toLowerCase()
     return name.replace(/[A-Z]/g, (m) => `-${m.toLowerCase()}`)
   }
 
-  setProperty(name: string, value: string): void {
-    this.props.set(this.normalizeKey(name), String(value))
+  setProperty(name: string, value: string, priority = ''): void {
+    const k = this.normalizeKey(name)
+    // Like CSSOM, the `background` shorthand resets every background longhand.
+    if (k === 'background') this.removeLonghands(k)
+    this.props.set(k, String(value))
+    this.priorities.set(k, priority)
+  }
+
+  getPropertyPriority(name: string): string {
+    return this.priorities.get(this.normalizeKey(name)) ?? ''
+  }
+
+  private removeLonghands(shorthand: string): void {
+    for (const key of [...this.props.keys()]) {
+      if (key.startsWith(`${shorthand}-`)) {
+        this.props.delete(key)
+        this.priorities.delete(key)
+      }
+    }
   }
 
   getPropertyValue(name: string): string {
@@ -24,7 +42,9 @@ export class MockStyleDeclaration {
   removeProperty(name: string): string {
     const k = this.normalizeKey(name)
     const prev = this.props.get(k) ?? ''
+    if (k === 'background') this.removeLonghands(k)
     this.props.delete(k)
+    this.priorities.delete(k)
     return prev
   }
 

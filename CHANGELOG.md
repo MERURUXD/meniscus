@@ -6,6 +6,8 @@ All notable changes to the published `@sessile/*` packages (`@sessile/core`, `@s
 
 ### Added
 
+- **Container Backdrop (`@sessile/dom`)**: `GlassSurfaceControllerOptions.backdropTarget: 'container'` paints the backdrop sample and veil tint (legibility film and correction included) on the container itself and creates only the overlay canvas. It is meant for a single resting surface clipped by its own border radius: the host's opacity, filter or mask animations keep sampling the page, where a child backdrop layer would treat the animating host as its Backdrop Root. Refraction bounds default to the container's border box, and `clear` / `dispose` restore the container's own inline styles.
+- **Shared Overlay Context (`@sessile/core`)**: `createGlassOverlayRenderer({ context: 'shared' })` draws every shared overlay with one page-wide WebGL2 context on an `OffscreenCanvas`. The surface only grows, each frame is drawn at its bottom-left corner and copied into the host's 2D canvas inside the same `render()` call, so hosts of different sizes never reallocate the drawing buffer. Pages with dozens of surfaces stay under the browser's live WebGL context cap (Chromium evicts the oldest past about 16) while resting and morphing surfaces keep the same shader. The context is created on first mount and released with the last host; without `OffscreenCanvas` or WebGL2, and while the context is lost, hosts draw with 2D Canvas. `context: '2d'` skips WebGL2 entirely.
 - **Shared Edge Compensation (`@sessile/core`)**: `compensateLegibilityEdges(material, params, out)` applies the legibility response to a material's edge alphas (hairline and rim by `hairlineScale`, shadow by `shadowScale`) into a caller buffer. Hosts that draw their own morph overlay use it so the hand-off to a resting surface keeps the same edge.
 
 ### Performance
@@ -15,6 +17,7 @@ All notable changes to the published `@sessile/*` packages (`@sessile/core`, `@s
 
 ### Fixed
 
+- **Subpixel-Stable Edge Lines (`@sessile/core`)**: The WebGL2 overlay's outer hairline, uniform inner border and glass edge now use box-filtered pixel coverage. Lines thinner than a pixel used to keep a smoothstep around their centre, so their total alpha swung by up to 1.7x as the shape moved by a fraction of a pixel: thin edges shimmered while morphing and jumped where a morph handed off to a resting surface at a different subpixel offset.
 - **Popover Opening Lands on Open (`@sessile/presets`)**: The opening springs were still ringing at `openDurationSec`, so the last opening frame sat about 1.3px of corner radius (on a 360px panel) and a fraction of morph, dip and blur short of the resting `open` state, and the hand-off to a resting surface stepped. Their residuals now fade out from `POPOVER_MORPH_DEFAULTS.openLandingStart` (normalized `0.7`), so `evaluatePopoverMotion('opening', 1)` equals the `open` state and the geometry matches exactly.
 
 ## [0.3.0] - 2026-11-25

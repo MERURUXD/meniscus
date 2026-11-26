@@ -88,6 +88,7 @@ export {
   OVERLAY_FRAGMENT_SHADER,
   OVERLAY_VERTEX_SHADER,
   createGlassOverlayRenderer,
+  type GlassOverlayRendererOptions,
 } from './overlayRenderer.ts'
 
 export {

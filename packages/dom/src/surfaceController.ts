@@ -1093,14 +1093,14 @@ export class GlassSurfaceController {
   private wakeLegibility(): void {
     if (this.disposed) return
     this.legibilityLoop ??= createFrameLoop(
-      (dtSec) => {
+      (dtSec, nowMs) => {
         const driver = this.legibility
         const frame = this.lastRenderedFrame
         if (this.disposed || !driver || !frame) return false
         // A host that renders every frame commits through its own `render`; only re-render a
         // static surface, and without re-reading layout through the probe. A commit deferred to
         // such a render keeps the loop alive one more tick in case that render never comes.
-        const pending = driver.advance(dtSec * 1000)
+        const pending = driver.advance(dtSec * 1000, nowMs)
         const deferred = pending && this.renderedSinceTick
         if (pending && !deferred) {
           this.samplingEnabled = false

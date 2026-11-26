@@ -103,8 +103,30 @@ export function createRegionProbe(options: RegionProbeOptions = {}): RegionProbe
   const resizeTarget =
     eventTarget === null ? null : typeof window !== 'undefined' ? window : null
   let covered = new Float64Array(4)
+  // Every surface on the page samples in the same scroll event or frame, so region boxes are
+  // read once per task and shared: with G surfaces over R regions a pass reads R rects, not G x R.
+  // A notification (scroll, resize, set, delete) also drops them, since it reports a move.
+  const boxes = new Map<Element, DOMRectReadOnly>()
+  let boxesQueued = false
+  const dropBoxes = (): void => {
+    boxes.clear()
+    boxesQueued = false
+  }
+  const boxOf = (element: Element): DOMRectReadOnly => {
+    let box = boxes.get(element)
+    if (!box) {
+      box = element.getBoundingClientRect()
+      boxes.set(element, box)
+      if (!boxesQueued) {
+        boxesQueued = true
+        queueMicrotask(dropBoxes)
+      }
+    }
+    return box
+  }
 
   const notify = (): void => {
+    dropBoxes()
     for (const fn of listeners) fn()
   }
   const scrollOptions: AddEventListenerOptions = { capture: true, passive: true }
@@ -115,7 +137,7 @@ export function createRegionProbe(options: RegionProbeOptions = {}): RegionProbe
       if (covered.length < rects.length) covered = new Float64Array(rects.length * 2)
       covered.fill(0, 0, rects.length)
       for (const [element, telemetry] of regions) {
-        const box = element.getBoundingClientRect()
+        const box = boxOf(element)
         if (box.width <= 0 || box.height <= 0) continue
         for (let i = 0; i < rects.length; i++) {
           covered[i]! += sampleRegion(rects[i]!, box, telemetry, acc)

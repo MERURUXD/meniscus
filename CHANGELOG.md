@@ -2,11 +2,11 @@
 
 All notable changes to the published `@sessile/*` packages (`@sessile/core`, `@sessile/dom`, `@sessile/presets`, `@sessile/react`) are documented in this file.
 
-## [Unreleased]
+## [0.3.2] - 2026-11-26
 
 ### Performance
 
-- **Shared Legibility Cadence (`@sessile/dom`)**: Smoothed risk moves past the deadband now commit on the first frame of a shared 100ms slot (`RISK_COMMIT_INTERVAL_MS`), derived from the animation-frame timestamp, so every surface on the page rewrites its filter, veil and edge in the same frame. Surfaces that crossed the deadband in different frames used to keep Chromium repainting a backdrop filter on almost every frame of a scroll; on a library page with ~11 refracting surfaces this cut tint-on scroll GPU time by about a third. Settling and the first real sample still commit at once.
+- **Shared Legibility Cadence (`@sessile/dom`)**: Smoothed risk moves past the deadband now commit on the first frame of a shared 100ms slot, derived from the animation-frame timestamp, so every surface on the page rewrites its filter, veil and edge in the same frame. Surfaces that crossed the deadband in different frames used to keep Chromium repainting a backdrop filter on almost every frame of a scroll; on a library page with ~11 refracting surfaces this cut tint-on scroll GPU time by about a third. Settling and the first real sample still commit at once.
 - **Shared Region Boxes (`@sessile/dom`)**: `createRegionProbe` reads each region's bounding box once per task and drops the boxes on every notification, so G surfaces sampling R regions in one scroll event read R rects instead of G x R.
 
 ## [0.3.1] - 2026-11-26

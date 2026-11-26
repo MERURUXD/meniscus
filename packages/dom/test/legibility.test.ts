@@ -19,7 +19,7 @@ import {
   type OpticalMaterial,
 } from '@sessile/core'
 import { createRegionProbe } from '../src/backdropProbe.ts'
-import { LegibilityDriver } from '../src/legibility.ts'
+import { LegibilityDriver, RISK_COMMIT_INTERVAL_MS } from '../src/legibility.ts'
 import { createRefractFilterController } from '../src/refractFilter.ts'
 import { GlassSurfaceController } from '../src/surfaceController.ts'
 import { MockDocument, type MockElement } from './mockDom.ts'
@@ -264,6 +264,7 @@ test('per-primitive sampling keeps the material continuous while two primitives 
 
   let prev: { film: number; refraction: number } | null = null
   let first: number | null = null
+  let nowMs = 0
   for (let x = 40; x <= 300; x += 2) {
     const gap = Math.max(0, 70 - (x - 40) * 0.5)
     const field: GlassFieldState = {
@@ -274,7 +275,7 @@ test('per-primitive sampling keeps the material continuous while two primitives 
       ],
     }
     driver.sample(field, 0, 0, veil)
-    driver.advance(1e7)
+    driver.advance(1e7, (nowMs += 1e7))
     const params = driver.resolve(veil)
     const now = { film: params.veilRgba[3]!, refraction: params.refractionScale }
     first ??= now.film
@@ -315,6 +316,37 @@ test('region probe maps grid cells, fills uncovered area with the background and
   stop()
   events.dispatchEvent(new Event('scroll'))
   assert.equal(calls, 1)
+})
+
+test('region probe reads each region box once per task however many surfaces sample', async () => {
+  const probe = createRegionProbe({ eventTarget: null, background: CALM })
+  let reads = 0
+  let top = 0
+  const cover = {
+    getBoundingClientRect: () => {
+      reads += 1
+      return rect(0, top, 100, 100)
+    },
+  } as unknown as Element
+  probe.set(cover, BRIGHT)
+  const acc = createTelemetryAccumulator()
+  const out: BackdropTelemetry = { lumaHigh: 0, lumaLow: 0, chroma: 0, detail: 0 }
+  const sampleAt = (y: number) => {
+    acc.reset()
+    probe.sample([rect(0, y, 50, 50)], acc)
+    acc.resolve(out)
+    return out.lumaHigh
+  }
+  for (let i = 0; i < 12; i++) sampleAt(0)
+  assert.equal(reads, 1, 'twelve surfaces in one task share one read')
+
+  top = 200
+  await Promise.resolve()
+  assert.ok(Math.abs(sampleAt(0) - CALM.lumaHigh) < 1e-6, 'a later task sees the region where it moved')
+  assert.equal(reads, 2)
+  probe.invalidate()
+  sampleAt(200)
+  assert.equal(reads, 3, 'a notification drops the shared boxes within the task')
 })
 
 test('fallback path maps risk to film plus affine brightness on the frosted veil', () => {
@@ -448,10 +480,10 @@ test('the first real telemetry snaps the smoother even after empty probe samples
   const driver = new LegibilityDriver({ foreground: WHITE, tier: 'legible', probe })
   const veil = DEFAULT_OPTICAL_MATERIALS.dark.crisp.tintRgba
   driver.sample(SINGLE, 0, 0, veil)
-  driver.advance(16)
+  driver.advance(16, 16)
   probe.set({ getBoundingClientRect: () => rect(0, 0, 1000, 1000) } as unknown as Element, CALM)
   driver.sample(SINGLE, 0, 0, veil)
-  driver.advance(16)
+  driver.advance(16, 32)
   assert.ok(Math.abs(driver.resolve(veil).veilRgba[3]! - veil[3]) < 1e-6, 'no film left over from the assumed risk')
 })
 
@@ -530,6 +562,64 @@ test('a slowly changing backdrop redraws in perceptible steps and settles on the
   assert.ok(maxGap(params.table, exact.table) <= 0.5 / 255, 'settling commits the target, not a deadband short of it')
   assert.ok(maxGap(params.veilRgba, exact.veilRgba) < 1e-3)
   assert.ok(Math.abs(params.blurBoostPx - exact.blurBoostPx) < 1e-3)
+})
+
+test('surfaces under a moving backdrop commit together, at most once per cadence slot', () => {
+  const frames = createScheduler()
+  const doc = new MockDocument()
+  const surfaces = [0.6, 0.9].map((reach) => {
+    const container = doc.createElement('div') as unknown as MockElement
+    doc.body.appendChild(container)
+    const spy = createMaterialSpy()
+    const controller = new GlassSurfaceController({
+      container: container as unknown as HTMLElement,
+      document: doc as unknown as Document,
+      env: CHROME_ENV,
+      theme: 'dark',
+      mode: 'refract',
+      overlayRenderer: spy.renderer,
+      scheduler: frames.scheduler,
+      legibility: { foreground: WHITE, tier: 'legible' },
+    })
+    controller.render({ field: SINGLE })
+    controller.setBackdropTelemetry(CALM)
+    return { controller, spy, reach }
+  })
+  frames.run(600, 8)
+
+  const stepMs = 8
+  const steps = 120
+  const commitFrames = surfaces.map(() => [] as number[])
+  for (let i = 1; i <= steps; i++) {
+    const before = surfaces.map((s) => s.spy.materials.length)
+    for (const { controller, reach } of surfaces) {
+      // A backdrop scrolling quickly under the glass: risk crosses the deadband most frames.
+      const k = reach * (0.5 + 0.5 * Math.sin(i / 6))
+      controller.setBackdropTelemetry({ ...CALM, lumaHigh: CALM.lumaHigh + 0.8 * k, lumaLow: CALM.lumaLow + 0.4 * k, detail: CALM.detail + 0.4 * k })
+    }
+    frames.run(1, stepMs)
+    surfaces.forEach((s, j) => {
+      if (s.spy.materials.length > before[j]!) commitFrames[j]!.push(i)
+    })
+  }
+  const slots = Math.ceil((steps * stepMs) / RISK_COMMIT_INTERVAL_MS) + 1
+  for (const [j, list] of commitFrames.entries()) {
+    assert.ok(list.length > 2, `surface ${j} follows the moving backdrop`)
+    assert.ok(list.length <= slots, `surface ${j} commits at most once per slot (${list.length} commits, ${slots} slots)`)
+  }
+  const [a, b] = commitFrames as [number[], number[]]
+  const shared = a.filter((frame) => b.includes(frame)).length
+  assert.ok(shared >= Math.min(a.length, b.length) - 1, `both surfaces rewrite their layers in the same frames (${shared} shared)`)
+})
+
+test('a backdrop that turns risky reaches the layers within one cadence slot of the attack', () => {
+  const { controller, frames } = setup(CHROME_ENV, SINGLE)
+  controller.setBackdropTelemetry(CALM)
+  frames.run(600)
+  const calmFilm = controller.getLegibilityParams()!.veilRgba[3]!
+  controller.setBackdropTelemetry(BRIGHT)
+  frames.run(Math.ceil((90 + RISK_COMMIT_INTERVAL_MS) / 16))
+  assert.ok(controller.getLegibilityParams()!.veilRgba[3]! > calmFilm + 0.05, 'the film thickens before a slot plus the attack')
 })
 
 function rect(x: number, y: number, width: number, height: number): DOMRect {

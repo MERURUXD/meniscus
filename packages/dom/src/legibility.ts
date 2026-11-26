@@ -40,6 +40,16 @@ const RISK_CHANNELS = 3
  * filter (Chromium rebuilds it) and redraws the edge overlay.
  */
 const RISK_DEADBAND = 0.02
+/**
+ * Moves past the deadband commit only on the first frame of a slot of a shared clock. Every
+ * surface derives the slot from the same animation-frame timestamp, so a page of glass rewrites
+ * its layers in the same frame, at most this often. Each frame that writes to a backdrop-filter
+ * host costs Chromium a repaint of the effect: on a library page with ~11 refracting surfaces,
+ * unsynchronised commits during a wheel scroll doubled GPU and main-thread time, while one
+ * batched write per ~100ms stays close to the tint-free baseline. The wait adds at most one slot
+ * to the 90ms attack.
+ */
+export const RISK_COMMIT_INTERVAL_MS = 100
 
 export class LegibilityDriver {
   readonly params: LegibilityParams = createLegibilityParams()
@@ -64,6 +74,9 @@ export class LegibilityDriver {
   private readonly rects: Rect[] = []
   private injected: BackdropTelemetry | null = null
   private primed = false
+  /** Set by `advance` (or a snap) and consumed by the next `resolve`. */
+  private commitDue = false
+  private tickSlot = Number.NaN
   /** `true` once the smoothed risk has reached its target; the frame loop may then sleep. */
   settled = true
 
@@ -125,31 +138,42 @@ export class LegibilityDriver {
       // does not open with a film that then takes a full release to fade.
       this.smoother.reset(this.target)
       this.primed = true
+      this.commitDue = true
     }
   }
 
   /**
-   * Advances smoothing by `dtMs`; returns whether the layers need the response re-resolved.
-   * Comparing against the committed risk rather than the pre-step value also reports the snap
-   * `sample` applies outside the loop.
+   * Advances smoothing by `dtMs` at animation-frame time `nowMs`; returns whether the layers need
+   * the response re-resolved. A due commit stays due until `resolve` consumes it, so a commit
+   * deferred to a host render that never comes is still made on a later tick.
    */
-  advance(dtMs: number): boolean {
+  advance(dtMs: number, nowMs: number): boolean {
     this.settled = this.smoother.step(this.target, dtMs)
-    return this.pendingCommit()
+    const distance = this.distanceFromCommitted()
+    const slot = Math.floor(nowMs / RISK_COMMIT_INTERVAL_MS)
+    const slotStarted = slot !== this.tickSlot
+    this.tickSlot = slot
+    // Settling commits the exact target at once so nothing rests a deadband short.
+    if (distance > 0 && (this.settled || (distance >= RISK_DEADBAND && slotStarted))) {
+      this.commitDue = true
+    }
+    return this.commitDue
   }
 
-  /** Small moves wait in the deadband; settling commits the exact target so nothing rests short. */
-  private pendingCommit(): boolean {
+  private distanceFromCommitted(): number {
     const values = this.smoother.values
     let distance = 0
     for (let i = 0; i < RISK_CHANNELS; i++) {
       distance = Math.max(distance, Math.abs(values[i]! - this.committed[i]!))
     }
-    return distance > 0 && (distance >= RISK_DEADBAND || this.settled)
+    return distance
   }
 
   resolve(baseVeil: ArrayLike<number>): LegibilityParams {
-    if (this.pendingCommit()) this.committed.set(this.smoother.values)
+    if (this.commitDue) {
+      this.committed.set(this.smoother.values)
+      this.commitDue = false
+    }
     const values = this.committed
     this.smoothedRisk.luma = values[0]!
     this.smoothedRisk.chroma = values[1]!

@@ -1,6 +1,6 @@
 {
   "name": "@sessile/presets",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "type": "module",
   "license": "MPL-2.0",
   "description": "Optional interaction presets (morphing menu, segmented pill, drag-merge) built on Sessile.",

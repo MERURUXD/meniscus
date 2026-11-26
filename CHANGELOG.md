@@ -8,6 +8,12 @@ All notable changes to the published `@sessile/*` packages (`@sessile/core`, `@s
 
 - **Container Backdrop (`@sessile/dom`)**: `GlassSurfaceControllerOptions.backdropTarget: 'container'` paints the backdrop sample and veil tint (legibility film and correction included) on the container itself and creates only the overlay canvas. It is meant for a single resting surface clipped by its own border radius: the host's opacity, filter or mask animations keep sampling the page, where a child backdrop layer would treat the animating host as its Backdrop Root. Refraction bounds default to the container's border box, and `clear` / `dispose` restore the container's own inline styles.
 - **Shared Overlay Context (`@sessile/core`)**: `createGlassOverlayRenderer({ context: 'shared' })` draws every shared overlay with one page-wide WebGL2 context on an `OffscreenCanvas`. The surface only grows, each frame is drawn at its bottom-left corner and copied into the host's 2D canvas inside the same `render()` call, so hosts of different sizes never reallocate the drawing buffer. Pages with dozens of surfaces stay under the browser's live WebGL context cap (Chromium evicts the oldest past about 16) while resting and morphing surfaces keep the same shader. The context is created on first mount and released with the last host; without `OffscreenCanvas` or WebGL2, and while the context is lost, hosts draw with 2D Canvas. `context: '2d'` skips WebGL2 entirely.
+- **Shared Edge Compensation (`@sessile/core`)**: `compensateLegibilityEdges(material, params, out)` applies the legibility response to a material's edge alphas (hairline and rim by `hairlineScale`, shadow by `shadowScale`) into a caller buffer. Hosts that draw their own morph overlay use it so the hand-off to a resting surface keeps the same edge.
+
+### Performance
+
+- **Legibility Before Displacement (`@sessile/dom`)**: The Route B3 legibility stage now compresses `bgOptics` before the displacement inputs instead of re-reading `refractSmooth`. Chromium evaluates a filter result once per reference, so the old stage ran the whole displacement chain three times per frame.
+- **Risk Deadband (`@sessile/dom`)**: The smoothed risk re-resolves the response only after it moves by `0.02` or settles, so a backdrop scrolling under the glass no longer rewrites the filter and redraws the edge every frame. Settling always commits the exact target.
 
 ### Fixed
 

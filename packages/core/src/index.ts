@@ -149,6 +149,7 @@ export {
   LEGIBILITY_STAGES,
   LEGIBILITY_TABLE_SIZE,
   TELEMETRY_STRIDE,
+  compensateLegibilityEdges,
   computeBackdropRisk,
   contrastRatio,
   createAsymmetricSmoother,

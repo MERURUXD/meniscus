@@ -10,11 +10,13 @@
 
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { DEFAULT_OPTICAL_MATERIALS, type OpticalMaterial } from '../src/contracts.ts'
 import {
   LEGIBILITY_LIMIT_MARGIN,
   LEGIBILITY_POLICIES,
   TELEMETRY_STRIDE,
   LEGIBILITY_STAGES,
+  compensateLegibilityEdges,
   computeBackdropRisk,
   contrastRatio,
   createAsymmetricSmoother,
@@ -204,6 +206,26 @@ test('material response is identity at zero risk and reaches the tier floors at 
   assert.ok(Math.abs(busy.saturationScale - policy.saturationFloor) < 1e-6)
   assert.ok(busy.veilRgba[3]! > DARK_VEIL[3]!, 'film thickens the veil')
   assert.ok(busy.veilRgba[0]! < DARK_VEIL[0]!, 'film darkens toward the safe extreme for light text')
+})
+
+test('edge compensation scales alphas only and clears optional keys left by a previous material', () => {
+  const base: OpticalMaterial = DEFAULT_OPTICAL_MATERIALS.dark.frosted
+  const lit: OpticalMaterial = { ...base, borderWidth: 1.5, rimShade: 0.4, hairlineSideAlpha: 0.6, shadowAlpha: 0.3 }
+  const out: OpticalMaterial = { ...base }
+  const params = { hairlineScale: 1.25, shadowScale: 4 }
+
+  assert.equal(compensateLegibilityEdges(lit, params, out), out, 'writes into the caller buffer')
+  assert.ok(Math.abs(out.hairlineSideAlpha - 0.75) < 1e-9)
+  assert.ok(Math.abs(out.rimOpacity - Math.min(1, base.rimOpacity * 1.25)) < 1e-9)
+  assert.equal(out.shadowAlpha, 1, 'clamped to an alpha')
+  assert.equal(out.shadowBlur, base.shadowBlur, 'geometry stays put')
+  assert.equal(out.borderWidth, 1.5)
+  assert.equal(lit.hairlineSideAlpha, 0.6, 'source untouched')
+
+  compensateLegibilityEdges(base, { hairlineScale: 1, shadowScale: 1 }, out)
+  assert.equal(out.borderWidth, undefined)
+  assert.equal(out.rimShade, undefined)
+  assert.equal(out.shadowAlpha, base.shadowAlpha)
 })
 
 test('fallback stage maps the estimated tail onto the backdrop limit without clamping inside', () => {

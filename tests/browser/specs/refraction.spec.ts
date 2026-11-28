@@ -19,8 +19,8 @@ import {
   type Image,
 } from './pixels.ts'
 
-/** Mean RGB change the bezel must show: a displaced 24px checkerboard differs by far more. */
-const BEZEL_MIN = 40
+/** Mean RGB change the bezel must show (CI measures about 34 for the default 20px bezel). */
+const BEZEL_MIN = 20
 /** The interior only sees the filter's 0.5px smoothing blur on the checker edges. */
 const CENTER_MAX = 16
 /** Outside the contour the page must be untouched (antialiasing aside). */

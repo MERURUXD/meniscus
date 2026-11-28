@@ -26,7 +26,7 @@ test('a refract request resolves to refract on Chromium and frosted elsewhere', 
   browserName,
 }) => {
   const info = await page.evaluate(async (pane) => {
-    const id = window.harness.mount({ mode: 'refract' })
+    const id = window.harness.mount({ mode: 'refract', material: { blur: 12 } })
     await window.harness.render(id, [pane])
     return window.harness.inspect(id)
   }, PANE)
@@ -35,12 +35,13 @@ test('a refract request resolves to refract on Chromium and frosted elsewhere', 
   if (browserName === 'chromium') {
     expect(info.effectiveMode).toBe('refract')
     expect(info.refract?.visibility).toBe('visible')
-    expect(info.refract?.backdropFilter).toContain('url(#sessile-test-filter-')
+    expect(info.refract?.backdropFilter).toMatch(/^url\(/)
+    expect(info.refract?.backdropFilter).toContain('sessile-test-filter-')
   } else {
     expect(info.effectiveMode).toBe('frosted')
     expect(info.refract?.visibility).not.toBe('visible')
     expect(info.filter.mounted).toBe(false)
-    expect(info.veil?.backdropFilter).toContain('blur(')
+    expect(info.veil?.backdropFilter).toContain('blur(12px)')
   }
 })
 

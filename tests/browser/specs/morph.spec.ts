@@ -1,14 +1,16 @@
 /**
  * Multi-primitive morphing: two glass circles stay separate when apart, fuse through an `smin`
  * bridge when they meet, and the spring-driven transition runs (and can be interrupted) inside
- * the controller's real requestAnimationFrame loop.
+ * the controller's real requestAnimationFrame loop. The bridge is measured through the veil's
+ * tint in every engine, and through the blur as well on Chromium (see fallback.spec.ts).
  *
  * SPDX-License-Identifier: MPL-2.0
  */
 
 import { expect, test, type Page } from '@playwright/test'
-import { GAP } from './geometry.ts'
+import { FROST, GAP, TINT_MIN } from './geometry.ts'
 import {
+  blueShift,
   lumaStdDev,
   meanDiff,
   meanDiffOver,
@@ -29,7 +31,7 @@ test.beforeEach(async ({ page }) => {
 })
 
 async function mountFrosted(page: Page): Promise<number> {
-  return page.evaluate(() => window.harness.mount({ mode: 'frosted', material: { blur: 12 } }))
+  return page.evaluate((material) => window.harness.mount({ mode: 'frosted', material }), FROST)
 }
 
 async function renderGap(page: Page, id: number, gap: number): Promise<void> {
@@ -48,11 +50,17 @@ function expectGapUntouched(shot: Image, reference: Image): void {
   expect(record('gap change', meanDiff(shot, reference, GAP))).toBeLessThan(3)
 }
 
-function expectGapBridged(shot: Image, reference: Image): void {
-  expect(record('gap stddev', lumaStdDev(shot, GAP))).toBeLessThan(lumaStdDev(reference, GAP) * 0.3)
+function expectGapBridged(shot: Image, reference: Image, browserName: string): void {
+  expect(record('gap tint', blueShift(shot, GAP))).toBeGreaterThan(TINT_MIN)
+  if (browserName === 'chromium') {
+    expect(record('gap stddev', lumaStdDev(shot, GAP))).toBeLessThan(lumaStdDev(reference, GAP) * 0.3)
+  }
 }
 
-test('separate circles leave the gap alone and fuse into one blob when they meet', async ({ page }) => {
+test('separate circles leave the gap alone and fuse into one blob when they meet', async ({
+  page,
+  browserName,
+}) => {
   const reference = await stableScreenshot(page)
   record('page gap stddev', lumaStdDev(reference, GAP))
   const id = await mountFrosted(page)
@@ -63,17 +71,15 @@ test('separate circles leave the gap alone and fuse into one blob when they meet
 
   await renderGap(page, id, MERGED)
   expect(await veilSubpaths(page, id)).toBe(1)
-  await expect
-    .poll(async () => lumaStdDev(await screenshot(page), GAP))
-    .toBeLessThan(lumaStdDev(reference, GAP) * 0.3)
-  expectGapBridged(await stableScreenshot(page), reference)
+  await expect.poll(async () => blueShift(await screenshot(page), GAP)).toBeGreaterThan(TINT_MIN)
+  expectGapBridged(await stableScreenshot(page), reference, browserName)
 
   await renderGap(page, id, APART)
   expect(await veilSubpaths(page, id)).toBe(2)
   expectGapUntouched(await stableScreenshot(page), reference)
 })
 
-test('a spring-driven merge runs in the frame loop until it settles', async ({ page }) => {
+test('a spring-driven merge runs in the frame loop until it settles', async ({ page, browserName }) => {
   const reference = await stableScreenshot(page)
   const id = await mountFrosted(page)
 
@@ -87,7 +93,7 @@ test('a spring-driven merge runs in the frame loop until it settles', async ({ p
   expect(result.frames).toBeGreaterThanOrEqual(10)
   expect(Math.abs(result.finalGap - MERGED)).toBeLessThan(1)
   expect(await veilSubpaths(page, id)).toBe(1)
-  expectGapBridged(await stableScreenshot(page), reference)
+  expectGapBridged(await stableScreenshot(page), reference, browserName)
 })
 
 test('interrupting the merge mid-flight springs back apart', async ({ page }) => {

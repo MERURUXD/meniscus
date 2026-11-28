@@ -8,15 +8,13 @@ const PORT = 5199
  * pixel regions in the specs map 1:1 onto screenshot pixels. Specs compare against the bare
  * page in the same browser instead of stored golden images, so browser upgrades do not need
  * re-baselining.
+ *
+ * Playwright screenshots from Firefox and WebKit on Linux contain no `backdrop-filter` output
+ * at all (checked with a plain `blur()` div and no Sessile code, headless and headed under
+ * Xvfb), so blur itself is only measured in pixels on Chromium; elsewhere the specs check the
+ * filter the engine accepted and measure the veil's tint, which is ordinary painting.
  */
 const viewport = { width: 800, height: 600 }
-
-/**
- * Headless Firefox and WebKit on Linux paint no `backdrop-filter` at all, not even a plain
- * `blur()` with no Sessile code involved, so the fallback would go untested. CI runs them
- * headed under Xvfb instead (`SESSILE_BROWSER_HEADED=1`).
- */
-const headedFallback = process.env.SESSILE_BROWSER_HEADED === '1'
 
 export default defineConfig({
   testDir: './specs',
@@ -42,11 +40,11 @@ export default defineConfig({
     },
     {
       name: 'firefox',
-      use: { ...devices['Desktop Firefox'], viewport, deviceScaleFactor: 1, headless: !headedFallback },
+      use: { ...devices['Desktop Firefox'], viewport, deviceScaleFactor: 1 },
     },
     {
       name: 'webkit',
-      use: { ...devices['Desktop Safari'], viewport, deviceScaleFactor: 1, headless: !headedFallback },
+      use: { ...devices['Desktop Safari'], viewport, deviceScaleFactor: 1 },
     },
   ],
   webServer: {

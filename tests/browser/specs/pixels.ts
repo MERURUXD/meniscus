@@ -99,6 +99,19 @@ export function lumaStdDev(image: Image, region: Region): number {
   return Math.sqrt(Math.max(0, sumSq / count - mean * mean))
 }
 
+/**
+ * Mean of blue minus red (-255 to 255) inside `region`. The checkerboard is neutral grey (0), and
+ * a blue veil tint shifts it strongly whether or not the backdrop under it is blurred, so this
+ * measures where the veil paints in every engine.
+ */
+export function blueShift(image: Image, region: Region): number {
+  let sum = 0
+  const count = forEachPixel(image, region, (o) => {
+    sum += image.data[o + 2]! - image.data[o]!
+  })
+  return sum / count
+}
+
 /** Logs a measured value next to the test, so CI output shows how much margin each threshold has. */
 export function record(name: string, value: number): number {
   const rounded = Math.round(value * 100) / 100

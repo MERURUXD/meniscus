@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: MPL-2.0
  */
 
+import type { OpticalMaterial } from '@sessile/core'
 import type { PrimitiveSpec } from '../fixtures/harness.ts'
 import type { Region } from './pixels.ts'
 
@@ -37,3 +38,13 @@ export const FAR: Region = { x: 20, y: 20, width: 100, height: 100 }
 
 /** Halfway between the two circles of the morph scene (centered at x = 400). */
 export const GAP: Region = { x: 392, y: 290, width: 16, height: 20 }
+
+/**
+ * The frosted material the fallback specs mount: a 12px blur plus a half-opaque blue tint. Blur is
+ * only visible in Chromium's screenshots; the tint is ordinary painting, so it shows the veil's
+ * coverage and clip in every engine.
+ */
+export const FROST: Partial<OpticalMaterial> = { blur: 12, tintRgba: [0.2, 0.4, 0.9, 0.5] }
+
+/** `blueShift` a FROST veil must reach over the checkerboard (it measures about 90). */
+export const TINT_MIN = 40

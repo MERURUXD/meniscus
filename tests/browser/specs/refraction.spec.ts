@@ -7,7 +7,6 @@
  */
 
 import { expect, test, type Page } from '@playwright/test'
-import { PNG } from 'pngjs'
 import type { MountOptions, PrimitiveSpec } from '../fixtures/harness.ts'
 import { BEZEL, CENTER, FAR, OUTSIDE_CORNERS, PANE } from './geometry.ts'
 import {
@@ -75,7 +74,6 @@ for (const nineSlice of [true, false]) {
     expect(info.filter.mapImages).toBe(info.filter.feImages)
 
     const shot = await refractedShot(page, reference)
-    await test.info().attach(`refracted-${label}`, { body: PNG.sync.write(shot), contentType: 'image/png' })
     expect(record('bezel', meanDiffOver(shot, reference, BEZEL))).toBeGreaterThan(BEZEL_MIN)
     expect(record('center', meanDiff(shot, reference, CENTER))).toBeLessThan(CENTER_MAX)
     expect(record('outside corners', meanDiffOver(shot, reference, OUTSIDE_CORNERS))).toBeLessThan(

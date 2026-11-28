@@ -5,6 +5,7 @@
  * SPDX-License-Identifier: MPL-2.0
  */
 
+import { type BackdropVeilOptics, type GlassFieldState, type Rect } from '@sessile/core'
 import {
   LEGIBILITY_SMOOTHING,
   computeBackdropRisk,
@@ -14,14 +15,11 @@ import {
   resolveLegibilityGoal,
   resolveLegibilityParams,
   type BackdropTelemetry,
-  type BackdropVeilOptics,
-  type GlassFieldState,
   type LegibilityGoal,
   type LegibilityParams,
   type LegibilityRisk,
   type LegibilityTarget,
-  type Rect,
-} from '@sessile/core'
+} from '@sessile/core/legibility'
 import type { BackdropProbe } from './backdropProbe.ts'
 
 export interface GlassLegibilityOptions extends LegibilityTarget {

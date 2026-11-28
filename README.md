@@ -30,8 +30,8 @@ Sessile enables real, interactive HTML elements to morph continuously as physica
 | --- | --- |
 | `@sessile/core` | Zero-dependency pure TypeScript kernel: N-primitive SDF field, Snell 1D LUT & 9-slice tile cache, optics parser/interpolator, area-preserving spring physics, stored-PNG displacement map builder, Marching Squares contour extractor, WebGL2/2D edge renderer, and the adaptive legibility solver with backdrop telemetry. |
 | `@sessile/dom` | Framework-agnostic headless DOM surface controller managing the 3-layer hybrid architecture, switchable 9-slice / bounded full-map Route B3 SVG filter, per-pixel legibility filter stage and backdrop probes, capability detection, `ResizeObserver`, and `requestAnimationFrame` frame sync. |
-| `@sessile/react` | Thin React bindings (`<GlassField>`, `<GlassPrimitive>`, `useGlassMorph`, `useElasticPress`). |
-| `@sessile/presets` | Optional interaction presets (morphing popover/menu, area-preserving segmented pill, velocity-stretched drag-and-merge) decoupled from the core material engine. |
+| `@sessile/react` | Thin React bindings: `useElasticPress` and `useReducedMotion`; the declarative `<GlassField>`, `<GlassPrimitive>` and `useGlassMorph` live in `@sessile/react/experimental`. |
+| `@sessile/presets` | Optional interaction presets decoupled from the core material engine: the morphing popover/menu, plus the area-preserving segmented pill and velocity-stretched drag-and-merge in `@sessile/presets/experimental`. |
 | `@sessile/playground` | Interactive online lab showcasing multi-primitive fusion, optics tuning, degradation comparison, a colorful cover-wall legibility stress test, and production presets. |
 | `tests/browser` | Private Playwright suite rendering the glass in real Chromium, Firefox and WebKit, compared pixel by pixel against the bare page. |
 
@@ -43,6 +43,17 @@ Pre-release (`0.x`, see [CHANGELOG.md](CHANGELOG.md)). APIs may change between m
 pnpm add @sessile/core @sessile/dom @sessile/presets
 pnpm add @sessile/react   # React 19 bindings, optional
 ```
+
+### Entry Points
+
+Each package's main entry is its stable API. Optional, experimental and internal modules ship as subpaths:
+
+- `@sessile/core/overlay` and `@sessile/core/legibility`: the WebGL2/2D edge renderer and the adaptive legibility solver.
+- `@sessile/dom/legibility`: backdrop probes for the legibility solver.
+- `@sessile/react/experimental` and `@sessile/presets/experimental`: components and presets whose API may still change in any minor release.
+- `@sessile/core/internal` and `@sessile/dom/internal`: helpers shared between the `@sessile/*` packages, with no semver guarantee.
+
+Hosts that orchestrate their own morph layers build on the low-level functions in the main entries (`extractFieldContourPath`, `interpolateVeilOptics`, `createRefractFilterController`, `buildBackdropFilterCss`, `computeClampedRefractBounds`, the popover motion helpers). These are part of the stable API alongside `GlassSurfaceController`.
 
 ## Development
 

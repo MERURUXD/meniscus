@@ -15,23 +15,25 @@
 import {
   DEFAULT_OPTICAL_MATERIALS,
   clamp,
-  compensateLegibilityEdges,
   computeFieldBounds,
-  createGlassOverlayRenderer,
   extractFieldContourPath,
   tryParseCssRgba,
-  type BackdropTelemetry,
   type BackdropVeilOptics,
   type GlassFieldState,
   type GlassPrimitive,
   type IGlassOverlayRenderer,
-  type LegibilityParams,
   type OpticalMaterial,
   type Rect,
   type RendererCapabilities,
   type Size,
   type ThemeMode,
 } from '@sessile/core'
+import {
+  compensateLegibilityEdges,
+  type BackdropTelemetry,
+  type LegibilityParams,
+} from '@sessile/core/legibility'
+import { createGlassOverlayRenderer } from '@sessile/core/overlay'
 import {
   createFrameLoop,
   detectSurfaceCapabilities,

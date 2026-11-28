@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { TELEMETRY_STRIDE, measureTelemetryGrid, type BackdropTelemetry } from '@sessile/core'
+import {
+  TELEMETRY_STRIDE,
+  measureTelemetryGrid,
+  type BackdropTelemetry,
+} from '@sessile/core/legibility'
 import { COVER_SIZE, createCoverSpecs, paintCover } from '../src/components/coverArt.ts'
 
 const WALL_SEED = 0x5e551e

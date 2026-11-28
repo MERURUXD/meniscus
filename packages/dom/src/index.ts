@@ -2,6 +2,12 @@
  * Public entry point for `@sessile/dom`.
  * Framework-agnostic headless Live-DOM glass surface driver built on `@sessile/core`.
  *
+ * Two levels are public and stable here: `GlassSurfaceController` for resting and simple
+ * animated surfaces, and the building blocks hosts use to drive their own morph layers
+ * (`createRefractFilterController`, `buildBackdropFilterCss`, `computeClampedRefractBounds`,
+ * the CSS surface readers and the frame helpers). Backdrop probes for the legibility solver
+ * ship as `@sessile/dom/legibility`; `@sessile/dom/internal` carries no semver guarantee.
+ *
  * SPDX-License-Identifier: MPL-2.0
  */
 
@@ -13,7 +19,6 @@ export {
   observeElementResize,
   observeReducedMotion,
   prefersReducedMotion,
-  resetCapabilityCache,
   resolveEffectiveRenderMode,
   scheduleAnimationFrame,
   supportsSvgBackdropRefraction,
@@ -28,10 +33,7 @@ export {
 export {
   buildBackdropFilterCss,
   buildMaterialFromCssSurface,
-  formatOpaqueSolidCss,
   formatRgbaCss,
-  parseCssBackdropBlur,
-  parseCssBackdropSaturate,
   readElementGlassSurface,
   resolveElementTheme,
   type BuildBackdropFilterCssParams,
@@ -42,12 +44,7 @@ export {
 } from './cssSurface.ts'
 
 export {
-  DEFAULT_MAX_REFRACT_MAP_PIXELS,
-  SVG_NS,
-  computeAutoBezel,
   createRefractFilterController,
-  resolveEffectiveMapScale,
-  resolveFieldBezel,
   type RefractFilterConfig,
   type RefractFilterController,
   type RefractFilterControllerOptions,
@@ -56,7 +53,6 @@ export {
 
 export {
   GlassSurfaceController,
-  computeAutoSurfaceBounds,
   computeClampedRefractBounds,
   createGlassSurfaceController,
   type GlassSurfaceCapabilities,
@@ -67,13 +63,6 @@ export {
   type SurfaceFrameProducer,
 } from './surfaceController.ts'
 
-export {
-  createRegionProbe,
-  measureImageTelemetry,
-  type BackdropProbe,
-  type MeasureImageTelemetryOptions,
-  type RegionProbe,
-  type RegionProbeOptions,
-} from './backdropProbe.ts'
+export type { BackdropProbe } from './backdropProbe.ts'
 
 export type { GlassLegibilityOptions } from './legibility.ts'

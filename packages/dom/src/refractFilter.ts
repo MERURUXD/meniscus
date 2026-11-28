@@ -10,19 +10,16 @@
  * SPDX-License-Identifier: MPL-2.0
  */
 
+import { type GlassFieldState, type GlassPrimitive, type Rect } from '@sessile/core'
 import {
   DEFAULT_REFRACTION_IOR,
-  LEGIBILITY_STAGES,
   buildColorOpticsMatrix,
   createRefractMapBuilder,
   resolveRefractTiles,
-  type GlassFieldState,
-  type GlassPrimitive,
-  type LegibilityParams,
-  type Rect,
   type RefractMapBuilder,
   type RefractionProfileSpec,
-} from '@sessile/core'
+} from '@sessile/core/internal'
+import { LEGIBILITY_STAGES, type LegibilityParams } from '@sessile/core/legibility'
 
 export const SVG_NS = 'http://www.w3.org/2000/svg'
 export const DEFAULT_MAX_REFRACT_MAP_PIXELS = 96_000

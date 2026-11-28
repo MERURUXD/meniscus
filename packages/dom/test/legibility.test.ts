@@ -9,15 +9,17 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   DEFAULT_OPTICAL_MATERIALS,
+  type GlassFieldState,
+  type IGlassOverlayRenderer,
+  type OpticalMaterial,
+} from '@sessile/core'
+import {
   createLegibilityParams,
   createTelemetryAccumulator,
   resolveLegibilityGoal,
   resolveLegibilityParams,
   type BackdropTelemetry,
-  type GlassFieldState,
-  type IGlassOverlayRenderer,
-  type OpticalMaterial,
-} from '@sessile/core'
+} from '@sessile/core/legibility'
 import { createRegionProbe } from '../src/backdropProbe.ts'
 import { LegibilityDriver, RISK_COMMIT_INTERVAL_MS } from '../src/legibility.ts'
 import { createRefractFilterController } from '../src/refractFilter.ts'

@@ -9,6 +9,7 @@ import {
   type ReactElement,
   type ReactNode,
 } from 'react'
+import { type Size, type ThemeMode } from '@sessile/core'
 import {
   LEGIBILITY_POLICIES,
   linearToSrgb,
@@ -20,24 +21,21 @@ import {
   type ForegroundPolarity,
   type LegibilityParams,
   type LegibilityTier,
-  type Size,
-  type ThemeMode,
-} from '@sessile/core'
+} from '@sessile/core/legibility'
 import {
   GlassSurfaceController,
   createFrameLoop,
-  createRegionProbe,
   observeElementResize,
   type FrameLoop,
-  type RegionProbe,
   type SurfaceRenderMode,
 } from '@sessile/dom'
-import { GlassField } from '@sessile/react'
+import { createRegionProbe, type RegionProbe } from '@sessile/dom/legibility'
+import { GlassField } from '@sessile/react/experimental'
 import {
   createDragMergeController,
   type DragMergeController,
   type DragMergeState,
-} from '@sessile/presets'
+} from '@sessile/presets/experimental'
 import {
   ControlPanel,
   ControlSection,

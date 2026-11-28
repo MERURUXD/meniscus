@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { createDragMergeController } from '../src/index.ts'
+import { createDragMergeController } from '../src/entries/experimental.ts'
 
 test('createDragMergeController: hitTest corner precision & stacking priority', () => {
   const ctrl = createDragMergeController({

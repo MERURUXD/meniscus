@@ -2,6 +2,44 @@
 
 All notable changes to the published `@sessile/*` packages (`@sessile/core`, `@sessile/dom`, `@sessile/presets`, `@sessile/react`) are documented in this file.
 
+## [Unreleased]
+
+Planned as `0.4.0`.
+
+### Breaking
+
+- **Narrowed Entry Points (all packages)**: Each package's main entry now holds only its stable API. Optional modules, the experimental components and helpers that only sibling packages need moved to subpath exports; nothing was removed, and behavior is unchanged. A test now pins the runtime export list of every entry point.
+
+| Entry | Holds |
+| --- | --- |
+| `@sessile/core` | Contracts and defaults, N-primitive SDF field, contour extraction, spring and timeline physics, CSS optics parsing and interpolation |
+| `@sessile/core/overlay` | `createGlassOverlayRenderer` (WebGL2 / 2D edge renderer) |
+| `@sessile/core/legibility` | Legibility solver, backdrop telemetry and the sRGB luminance helpers (`linearToSrgb`, `srgbToLinear`, `srgbLuma`, `relativeLuminance`, `contrastRatio`) |
+| `@sessile/core/internal` | Displacement-map builder, refraction LUTs and tile cache, shader sources, bevel and color-matrix builders. No semver guarantee |
+| `@sessile/dom` | `GlassSurfaceController`, capability and frame helpers, CSS surface readers, and the morph-layer building blocks (`createRefractFilterController`, `buildBackdropFilterCss`, `computeClampedRefractBounds`, `formatRgbaCss`) |
+| `@sessile/dom/legibility` | `createRegionProbe`, `measureImageTelemetry` |
+| `@sessile/dom/internal` | `resetCapabilityCache`, bezel and map-scale helpers, `computeAutoSurfaceBounds`, backdrop CSS parsers. No semver guarantee |
+| `@sessile/react` | `useElasticPress`, `useReducedMotion` |
+| `@sessile/react/experimental` | `GlassField`, `GlassPrimitive`, `useGlassField`, `useOptionalGlassField`, `useGlassMorph` |
+| `@sessile/presets` | Morphing popover |
+| `@sessile/presets/experimental` | Segmented pill, drag-merge |
+
+Migration: change the import path of each moved name. The type checker names every one. For example:
+
+```diff
+-import { createGlassOverlayRenderer, compensateLegibilityEdges, type LegibilityParams } from '@sessile/core'
++import { createGlassOverlayRenderer } from '@sessile/core/overlay'
++import { compensateLegibilityEdges, type LegibilityParams } from '@sessile/core/legibility'
+-import { createRegionProbe } from '@sessile/dom'
++import { createRegionProbe } from '@sessile/dom/legibility'
+```
+
+Types that appear in the controller and overlay contracts (`IGlassOverlayRenderer`, `RendererCapabilities`, `GlassLegibilityOptions`, `BackdropProbe`, `RefractionProfileName`, `BezelHeightProfileName`) stay importable from the main entries.
+
+### Changed
+
+- **`sideEffects: false` (all packages)**: No module runs code on import, so bundlers may drop any export a host never uses.
+
 ## [0.3.2] - 2026-11-26
 
 ### Performance

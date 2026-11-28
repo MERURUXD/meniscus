@@ -20,7 +20,8 @@ import {
   observeElementResize,
   type FrameLoop,
 } from '@sessile/dom'
-import { GlassField, useElasticPress } from '@sessile/react'
+import { useElasticPress } from '@sessile/react'
+import { GlassField } from '@sessile/react/experimental'
 import {
   POPOVER_MORPH_DEFAULTS,
   createPopoverMorphController,

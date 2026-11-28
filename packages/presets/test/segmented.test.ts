@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { evaluateFieldDistance } from '@sessile/core'
-import { createSegmentedPillController, type SegmentItem } from '../src/index.ts'
+import { createSegmentedPillController, type SegmentItem } from '../src/entries/experimental.ts'
 
 const TABS: SegmentItem[] = [
   { id: 'overview', rect: { x: 8, y: 8, width: 84, height: 36 } },

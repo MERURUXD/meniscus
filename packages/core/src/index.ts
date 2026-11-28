@@ -2,6 +2,12 @@
  * Public entry point for `@sessile/core`.
  * Zero-dependency Live-DOM continuous glass morphing kernel.
  *
+ * Only the stable surface lives here. Optional modules ship as subpaths so bundles that never
+ * import them pay nothing: `@sessile/core/overlay` (WebGL2/2D edge renderer) and
+ * `@sessile/core/legibility` (adaptive legibility solver and backdrop telemetry).
+ * `@sessile/core/internal` serves the sibling `@sessile/*` packages and carries no semver
+ * guarantee.
+ *
  * SPDX-License-Identifier: MPL-2.0
  */
 
@@ -47,49 +53,7 @@ export {
   formatRoundedRectPath,
 } from './contour.ts'
 
-export {
-  buildRefractMapDataUrl,
-  createRefractMapBuilder,
-  type RefractMapBuilder,
-  type RefractMapParams,
-  type RefractMapResult,
-} from './refractMap.ts'
-
-export {
-  MAX_REFRACT_TILE_PX,
-  clearRefractTilesCache,
-  resolveRefractTiles,
-  type RefractTileParams,
-  type RefractTilesResult,
-} from './refractTiles.ts'
-
-export {
-  BEZEL_HEIGHT_PROFILES,
-  CAUSTIC_FOLD_LIMIT,
-  DEFAULT_REFRACTION_IOR,
-  DEFAULT_REFRACTION_SAMPLES,
-  NORMAL_FLOOR,
-  computeRefractionProfileLut,
-  getRefractionProfileKey,
-  resolveRefractionProfileLut,
-  sampleRefractionLut,
-  traceBezelRay,
-  type BezelHeightFn,
-  type BezelHeightProfileName,
-  type BezelRayTrace,
-  type BezelRayTraceInput,
-  type RefractionProfileLut,
-  type RefractionProfileName,
-  type RefractionProfileOptions,
-  type RefractionProfileSpec,
-} from './refractProfile.ts'
-
-export {
-  OVERLAY_FRAGMENT_SHADER,
-  OVERLAY_VERTEX_SHADER,
-  createGlassOverlayRenderer,
-  type GlassOverlayRendererOptions,
-} from './overlayRenderer.ts'
+export type { BezelHeightProfileName, RefractionProfileName } from './refractProfile.ts'
 
 export {
   clamp,
@@ -122,9 +86,6 @@ export {
 } from './physics.ts'
 
 export {
-  buildCircularBevelTable,
-  buildColorOpticsMatrix,
-  buildContourAlphaDataUrl,
   interpolateCssGlassSurfaceToMaterial,
   interpolateOpticalMaterial,
   interpolateVeilOptics,
@@ -135,43 +96,7 @@ export {
   tryParseCssRgba,
   resolveOpticalMaterial,
   type BackdropVeilOptics,
-  type CircularBevelTable,
   type ExtractedCssGlassSurface,
   type ParseCssGlassSurfaceInput,
   type ParsedBoxShadowLayer,
 } from './optics.ts'
-
-export {
-  LEGIBILITY_CALM_KNEE,
-  LEGIBILITY_LIMIT_MARGIN,
-  LEGIBILITY_POLICIES,
-  LEGIBILITY_SMOOTHING,
-  LEGIBILITY_STAGES,
-  LEGIBILITY_TABLE_SIZE,
-  TELEMETRY_STRIDE,
-  compensateLegibilityEdges,
-  computeBackdropRisk,
-  contrastRatio,
-  createAsymmetricSmoother,
-  createLegibilityParams,
-  createTelemetryAccumulator,
-  linearToSrgb,
-  measureTelemetryGrid,
-  relativeLuminance,
-  srgbLuma,
-  resolveLegibilityGoal,
-  resolveLegibilityParams,
-  srgbToLinear,
-  type AsymmetricSmoother,
-  type AsymmetricSmootherOptions,
-  type BackdropTelemetry,
-  type BackdropTelemetryAccumulator,
-  type BackdropTelemetryGrid,
-  type ForegroundPolarity,
-  type LegibilityGoal,
-  type LegibilityParams,
-  type LegibilityPolicy,
-  type LegibilityRisk,
-  type LegibilityTarget,
-  type LegibilityTier,
-} from './legibility.ts'

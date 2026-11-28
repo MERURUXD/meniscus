@@ -14,17 +14,28 @@
     "url": "https://github.com/MERURUXD/sessile/issues"
   },
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./legibility": "./src/entries/legibility.ts",
+    "./internal": "./src/entries/internal.ts"
   },
   "files": [
     "dist"
   ],
+  "sideEffects": false,
   "publishConfig": {
     "access": "public",
     "exports": {
       ".": {
         "types": "./dist/index.d.ts",
         "default": "./dist/index.js"
+      },
+      "./legibility": {
+        "types": "./dist/entries/legibility.d.ts",
+        "default": "./dist/entries/legibility.js"
+      },
+      "./internal": {
+        "types": "./dist/entries/internal.d.ts",
+        "default": "./dist/entries/internal.js"
       }
     }
   },

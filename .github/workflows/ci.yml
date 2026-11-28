@@ -30,3 +30,6 @@ jobs:
       - run: pnpm lint
       - run: pnpm test
       - run: pnpm build
+      # Packs every package the way the release workflow does, so line-ending, version or
+      # packaging problems show up on the PR instead of at release time.
+      - run: pnpm release:check

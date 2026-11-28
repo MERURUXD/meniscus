@@ -11,6 +11,13 @@ const PORT = 5199
  */
 const viewport = { width: 800, height: 600 }
 
+/**
+ * Headless Firefox and WebKit on Linux paint no `backdrop-filter` at all, not even a plain
+ * `blur()` with no Sessile code involved, so the fallback would go untested. CI runs them
+ * headed under Xvfb instead (`SESSILE_BROWSER_HEADED=1`).
+ */
+const headedFallback = process.env.SESSILE_BROWSER_HEADED === '1'
+
 export default defineConfig({
   testDir: './specs',
   fullyParallel: true,
@@ -35,11 +42,11 @@ export default defineConfig({
     },
     {
       name: 'firefox',
-      use: { ...devices['Desktop Firefox'], viewport, deviceScaleFactor: 1 },
+      use: { ...devices['Desktop Firefox'], viewport, deviceScaleFactor: 1, headless: !headedFallback },
     },
     {
       name: 'webkit',
-      use: { ...devices['Desktop Safari'], viewport, deviceScaleFactor: 1 },
+      use: { ...devices['Desktop Safari'], viewport, deviceScaleFactor: 1, headless: !headedFallback },
     },
   ],
   webServer: {

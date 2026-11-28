@@ -53,7 +53,9 @@ import {
   formatRgbaCss,
   resolveElementTheme,
 } from './cssSurface.ts'
-import { LegibilityDriver, type GlassLegibilityOptions } from './legibility.ts'
+// Type-only on purpose: the solver arrives through `createGlassLegibility`, so surfaces that
+// never enable legibility do not bundle it.
+import type { GlassLegibility } from './legibility.ts'
 import {
   createRefractFilterController,
   resolveEffectiveMapScale,
@@ -191,8 +193,8 @@ export interface GlassSurfaceControllerOptions {
   overlayRenderer?: IGlassOverlayRenderer
   scheduler?: Partial<FrameScheduler>
   ResizeObserverCtor?: typeof ResizeObserver
-  /** Adaptive backdrop legibility for a fixed foreground; see `setLegibility`. */
-  legibility?: GlassLegibilityOptions | null
+  /** Adaptive backdrop legibility from `createGlassLegibility`; see `setLegibility`. */
+  legibility?: GlassLegibility | null
   /**
    * Where the backdrop sample and veil tint are painted (default `'layers'`).
    * `'container'` writes `backdrop-filter` and `background` onto `container` itself, for a
@@ -490,7 +492,7 @@ export class GlassSurfaceController {
   private readonly loopScheduler: Partial<FrameScheduler> | undefined
 
   private readonly positioning: 'absolute' | 'fixed'
-  private legibility: LegibilityDriver | null = null
+  private legibility: GlassLegibility | null = null
   private legibilityLoop: FrameLoop | null = null
   private stopProbeObserver: (() => void) | null = null
   private readonly baseVeilRgba = new Float32Array(4)
@@ -1009,7 +1011,7 @@ export class GlassSurfaceController {
    * `render`: the driver commits risk only when the response actually reaches the layers.
    */
   private sampleLegibility(
-    driver: LegibilityDriver,
+    driver: GlassLegibility,
     frame: GlassSurfaceFrame,
     material: OpticalMaterial,
     refractPath: boolean,
@@ -1047,16 +1049,17 @@ export class GlassSurfaceController {
   }
 
   /**
-   * Enables adaptive legibility for a fixed foreground, or disables it with `null`. The glass
-   * yields: per-pixel compression in the Route B3 filter on Chromium, film plus affine
+   * Enables adaptive legibility, or disables it with `null`. Create the state with
+   * `createGlassLegibility` from `@sessile/dom/legibility`, one per surface. The glass yields:
+   * per-pixel compression in the Route B3 filter on Chromium, film plus affine
    * brightness/contrast on the `backdrop-filter` fallback, and alpha-only edge compensation.
    */
-  setLegibility(options: GlassLegibilityOptions | null): void {
+  setLegibility(legibility: GlassLegibility | null): void {
     if (this.disposed) return
     this.legibilityLoop?.stop()
     this.stopProbeObserver?.()
     this.stopProbeObserver = null
-    this.legibility = options ? new LegibilityDriver(options) : null
+    this.legibility = legibility
     if (this.legibility?.probe?.observe) {
       this.stopProbeObserver = this.legibility.probe.observe(() => this.onBackdropInvalidated())
     }

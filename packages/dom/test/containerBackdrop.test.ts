@@ -8,6 +8,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { DEFAULT_OPTICAL_MATERIALS, type GlassFieldState, type IGlassOverlayRenderer } from '@sessile/core'
+import { createGlassLegibility } from '../src/legibility.ts'
 import { createRefractFilterController } from '../src/refractFilter.ts'
 import { GlassSurfaceController } from '../src/surfaceController.ts'
 import { MockDocument, MockResizeObserver, type MockElement } from './mockDom.ts'
@@ -65,7 +66,7 @@ function setup(env: typeof CHROME_ENV, legible = false, prepare?: (container: Mo
     filterId: 'host-lens',
     backdropTarget: 'container',
     overlayRenderer: spy.renderer,
-    legibility: legible ? { foreground: [1, 1, 1], tier: 'legible' } : null,
+    legibility: legible ? createGlassLegibility({ foreground: [1, 1, 1], tier: 'legible' }) : null,
     ResizeObserverCtor: MockResizeObserver as unknown as typeof ResizeObserver,
   })
   // Border box in padding-box coordinates, the frame a resting single-rect host renders.

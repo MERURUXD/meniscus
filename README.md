@@ -33,6 +33,7 @@ Sessile enables real, interactive HTML elements to morph continuously as physica
 | `@sessile/react` | Thin React bindings (`<GlassField>`, `<GlassPrimitive>`, `useGlassMorph`, `useElasticPress`). |
 | `@sessile/presets` | Optional interaction presets (morphing popover/menu, area-preserving segmented pill, velocity-stretched drag-and-merge) decoupled from the core material engine. |
 | `@sessile/playground` | Interactive online lab showcasing multi-primitive fusion, optics tuning, degradation comparison, a colorful cover-wall legibility stress test, and production presets. |
+| `tests/browser` | Private Playwright suite rendering the glass in real Chromium, Firefox and WebKit, compared pixel by pixel against the bare page. |
 
 ## Status
 
@@ -53,6 +54,7 @@ pnpm dev          # start the playground
 pnpm typecheck    # TypeScript across the workspace
 pnpm lint         # oxlint over packages, apps, and scripts
 pnpm test         # node --test across the workspace
+pnpm test:browser # Playwright rendering tests in Chromium, Firefox and WebKit (tests/browser)
 pnpm bench        # CLI performance benchmarks (--quick, --json, --filter)
 pnpm build        # build every package and the playground
 ```

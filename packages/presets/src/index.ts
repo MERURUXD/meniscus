@@ -2,6 +2,9 @@
  * Public entry point for `@sessile/presets`.
  * Framework-agnostic interaction presets built on `@sessile/core`.
  *
+ * The morphing popover is the stable preset. Segmented pill and drag-merge ship as
+ * `@sessile/presets/experimental` until a production host adopts them.
+ *
  * SPDX-License-Identifier: MPL-2.0
  */
 
@@ -28,24 +31,3 @@ export {
   type PopoverPlacement,
   type PopoverReopenOrigin,
 } from './popover.ts'
-
-export {
-  SEGMENTED_PILL_DEFAULTS,
-  createSegmentedPillController,
-  type SegmentItem,
-  type SegmentedPillController,
-  type SegmentedPillOptions,
-  type SegmentedPillState,
-} from './segmented.ts'
-
-export {
-  DRAG_MERGE_DEFAULTS,
-  createDragMergeController,
-  type DragMergeController,
-  type DragMergeLink,
-  type DragMergeNodeInput,
-  type DragMergeNodePatch,
-  type DragMergeNodeState,
-  type DragMergeOptions,
-  type DragMergeState,
-} from './dragMerge.ts'

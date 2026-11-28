@@ -20,14 +20,14 @@ import {
   observeElementResize,
   type FrameLoop,
 } from '@sessile/dom'
-import { GlassField } from '@sessile/react'
+import { GlassField } from '@sessile/react/experimental'
 import {
   DRAG_MERGE_DEFAULTS,
   createDragMergeController,
   type DragMergeController,
   type DragMergeNodeInput,
   type DragMergeState,
-} from '@sessile/presets'
+} from '@sessile/presets/experimental'
 import {
   ControlPanel,
   ControlSection,

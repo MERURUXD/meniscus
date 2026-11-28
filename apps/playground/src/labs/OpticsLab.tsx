@@ -24,7 +24,7 @@ import {
   observeElementResize,
   type GlassSurfaceCapabilities,
 } from '@sessile/dom'
-import { GlassField } from '@sessile/react'
+import { GlassField } from '@sessile/react/experimental'
 import {
   ControlPanel,
   ControlSection,

@@ -7,7 +7,8 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { inflateSync } from 'node:zlib'
-import { resolveRefractionProfileLut, type GlassFieldState } from '@sessile/core'
+import { type GlassFieldState } from '@sessile/core'
+import { resolveRefractionProfileLut } from '@sessile/core/internal'
 import {
   DEFAULT_MAX_REFRACT_MAP_PIXELS,
   SVG_NS,

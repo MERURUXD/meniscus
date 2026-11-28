@@ -10,20 +10,20 @@
 import {
   DEFAULT_OPTICAL_MATERIALS,
   DEFAULT_SPRINGS,
-  createGlassOverlayRenderer,
   createSpringChannel,
   type GlassFieldState,
   type OpticalMaterial,
   type RendererCapabilities,
 } from '@sessile/core'
+import { createGlassOverlayRenderer } from '@sessile/core/overlay'
 import {
   createGlassSurfaceController,
-  resetCapabilityCache,
   supportsSvgBackdropRefraction,
   type GlassSurfaceController,
   type GlassSurfaceFrame,
   type SurfaceRenderMode,
 } from '@sessile/dom'
+import { resetCapabilityCache } from '@sessile/dom/internal'
 
 export interface PrimitiveSpec {
   x: number

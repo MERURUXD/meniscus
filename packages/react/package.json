@@ -14,17 +14,23 @@
     "url": "https://github.com/MERURUXD/sessile/issues"
   },
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./experimental": "./src/entries/experimental.ts"
   },
   "files": [
     "dist"
   ],
+  "sideEffects": false,
   "publishConfig": {
     "access": "public",
     "exports": {
       ".": {
         "types": "./dist/index.d.ts",
         "default": "./dist/index.js"
+      },
+      "./experimental": {
+        "types": "./dist/entries/experimental.d.ts",
+        "default": "./dist/entries/experimental.js"
       }
     }
   },

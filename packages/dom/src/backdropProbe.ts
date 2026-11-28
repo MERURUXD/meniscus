@@ -9,14 +9,14 @@
  * SPDX-License-Identifier: MPL-2.0
  */
 
+import { type Rect } from '@sessile/core'
 import {
   TELEMETRY_STRIDE,
   measureTelemetryGrid,
   type BackdropTelemetry,
   type BackdropTelemetryAccumulator,
   type BackdropTelemetryGrid,
-  type Rect,
-} from '@sessile/core'
+} from '@sessile/core/legibility'
 
 /** Plugin contract the surface controller samples while legibility is active. */
 export interface BackdropProbe {

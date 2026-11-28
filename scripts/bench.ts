@@ -12,21 +12,21 @@
 
 import { performance } from 'node:perf_hooks'
 import {
-  buildRefractMapDataUrl,
-  clearRefractTilesCache,
-  computeRefractionProfileLut,
   evaluateFieldSdf,
   extractFieldContourPath,
   prepareField,
-  resolveRefractTiles,
-  resolveRefractionProfileLut,
   type GlassFieldState,
   type GlassPrimitive,
 } from '../packages/core/src/index.ts'
 import {
-  createRefractFilterController,
-  resolveEffectiveMapScale,
-} from '../packages/dom/src/index.ts'
+  buildRefractMapDataUrl,
+  clearRefractTilesCache,
+  computeRefractionProfileLut,
+  resolveRefractTiles,
+  resolveRefractionProfileLut,
+} from '../packages/core/src/entries/internal.ts'
+import { createRefractFilterController } from '../packages/dom/src/index.ts'
+import { resolveEffectiveMapScale } from '../packages/dom/src/entries/internal.ts'
 
 const FRAME_BUDGET_60FPS_MS = 1000 / 60
 

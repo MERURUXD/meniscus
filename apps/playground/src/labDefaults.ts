@@ -10,7 +10,8 @@ import {
   type ThemeMode,
 } from '@sessile/core'
 import type { RefractFilterConfig, SurfaceRenderMode } from '@sessile/dom'
-import type { DragMergeNodeInput, PopoverPlacement } from '@sessile/presets'
+import type { PopoverPlacement } from '@sessile/presets'
+import type { DragMergeNodeInput } from '@sessile/presets/experimental'
 
 export type LabId = 'drag-merge' | 'segmented-dock' | 'popover-menu' | 'cover-wall'
 

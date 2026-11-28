@@ -14,14 +14,15 @@ import {
   observeElementResize,
   type FrameLoop,
 } from '@sessile/dom'
-import { GlassField, useElasticPress } from '@sessile/react'
+import { useElasticPress } from '@sessile/react'
+import { GlassField } from '@sessile/react/experimental'
 import {
   SEGMENTED_PILL_DEFAULTS,
   createSegmentedPillController,
   type SegmentItem,
   type SegmentedPillController,
   type SegmentedPillState,
-} from '@sessile/presets'
+} from '@sessile/presets/experimental'
 import {
   ControlPanel,
   ControlSection,

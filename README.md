@@ -57,6 +57,10 @@ pnpm bench        # CLI performance benchmarks (--quick, --json, --filter)
 pnpm build        # build every package and the playground
 ```
 
+## Releasing
+
+Releases are published to npm by the `release` workflow from a `vX.Y.Z` tag on `main`; see [RELEASING.md](RELEASING.md).
+
 ## License
 
 [MPL-2.0](LICENSE). Each published package ships its own copy of the license text.

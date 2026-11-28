@@ -16,6 +16,7 @@ Sessile 是面向现代浏览器的 **Live-DOM 动态玻璃材料连续形变引
 - `packages/react`（`@sessile/react`）：轻量 React 绑定层，不强依赖第三方动画库（如 `motion/react`）。
 - `packages/presets`（`@sessile/presets`）：可选的交互预设（如 Popover/Menu 展开、Segmented 滑块、拖拽融合），不得将菜单/业务语义反向污染进 `core` 或 `dom`。
 - `apps/playground`（`@sessile/playground`）：交互式在线展示与调参实验室。
+- `tests/browser`（`@sessile/browser-tests`，私有不发布）：Playwright 真实浏览器渲染测试。与同一浏览器里的裸页面逐像素比较，不存基准截图；首次运行前执行 `pnpm --filter @sessile/browser-tests exec playwright install chromium firefox webkit`。
 
 ## 开发与边界约定
 
@@ -32,6 +33,7 @@ pnpm install --frozen-lockfile
 pnpm dev          # 启动 Playground 开发服务器
 pnpm typecheck    # 全工作区 TypeScript 检查
 pnpm test         # 全工作区测试
+pnpm test:browser # 真实浏览器渲染测试（Playwright：Chromium / Firefox / WebKit）
 pnpm lint         # oxlint 检查
 pnpm build        # 全工作区构建
 ```

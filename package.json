@@ -14,7 +14,8 @@
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck && tsc -p tsconfig.scripts.json --noEmit",
     "test": "pnpm -r test",
-    "lint": "oxlint packages apps scripts",
+    "test:browser": "pnpm --filter @sessile/browser-tests test:browser",
+    "lint": "oxlint packages apps scripts tests",
     "release:version": "node scripts/release-version.ts",
     "release:check": "node scripts/release-check.ts"
   },

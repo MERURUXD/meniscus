@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>sessile browser fixture</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: #000;
+      }
+      /*
+       * A hard-edged checkerboard: any displacement inside the glass moves edges and shows up as a
+       * large pixel difference, while an undisplaced region stays identical to the bare page.
+       */
+      #backdrop {
+        position: fixed;
+        inset: 0;
+        background: repeating-conic-gradient(#101010 0 25%, #f0f0f0 0 50%) 0 0 / 24px 24px;
+      }
+      body[data-backdrop='flat'] #backdrop {
+        background: #7a8a9a;
+      }
+      #stage {
+        position: absolute;
+        inset: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="backdrop"></div>
+    <div id="stage"></div>
+    <script type="module" src="./harness.ts"></script>
+  </body>
+</html>

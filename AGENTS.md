@@ -54,24 +54,23 @@ pnpm release:check # 按发布方式打包并检查 tarball（CI 每个 PR 都�
 ## 提交与 PR
 
 - **提交信息**：Conventional Commits，`type(scope)` 用英文，描述用简体中文，例如 `fix(dom): 九宫格折射图在圆形与胶囊上不再出现接缝`；正文用中文说明为什么改、改了什么。一个提交只做一件事。破坏性变更在类型后加 `!`，正文写 `BREAKING CHANGE:` 和迁移方法，并同步 CHANGELOG。
-- **可直接推送到 `main`**（检查通过、改动在单个包内且约 150 行以内）：bug 修复、性能修复、小功能、文案与样式、只改测试 / 文档 / 工具、依赖补丁版本升级。
-- **必须开 PR**：跨包功能、大型重构、公开导出 API 变化、SDF / shader 数学、Stored-PNG 格式、Chromium 折射与回退管线、破坏性变更、依赖次版本及以上升级。拿不准时按风险判断。
+- **通过 PR 合入**：所有改动都从分支开 PR 合入 `main`，不直接推送到 `main`。一个 PR 只做一件事，CI（检查与浏览器测试）通过后再请求审查。
+- **高风险改动**：跨包功能、大型重构、公开导出 API 变化、SDF / shader 数学、Stored-PNG 格式、Chromium 折射与回退管线、破坏性变更、依赖次版本及以上升级。这类 PR 要补足测试，并在 Merge Danger 里写清楚影响；拿不准时按高风险处理。
 - **PR 标题**：Conventional Commits 前缀加中文概述，例如 `test(browser): 在真实 Chromium、Firefox、WebKit 里测玻璃的渲染`。
 - **PR 正文**（中文，三节）：
   - `## Summary`：先用一个 `diff` 代码块列出改了哪些文件、各改了什么，再用一两段话说明改动和原因。
   - `## Evidence`：验证结果（命令、测试数量、CI 运行、实测数据）；没验证的单独写 `**未验证：**`。
   - `## Merge Danger`：`**Door:**` 写 `two-way`（可轻易回退）或 `one-way`（发布、格式或 API 一旦放出难以收回）；`**Blast Radius:**` 写合并后影响到谁、影响什么。
 - **只写仓库里的事**：PR 标题、正文和提交信息要让任何读仓库的人都看得懂：写改了什么、为什么改、怎么验证的，原因用代码和仓库里的事实说明。不要提仓库外的讨论、评审或审计文档及其条目编号、聊天记录、任务或某人的请求，也不要列下游项目的内部文件；影响面写成使用方升级时会遇到的变化。
-- **合并**：PR 用 squash merge，合并提交标题与 PR 标题一致。
-- **代码审查意见**（Codex 等）：逐条核实，按根因归并，修掉成立的，说明不采纳的理由；同一问题连续两轮相关意见时先重新评估设计。大型重构或仍有未解决的高风险时不要自动合并。
+- **合并**：由维护者 squash merge，合并提交标题与 PR 标题一致，所以 PR 标题要能直接当提交标题用。
+- **代码审查意见**（人工或 Codex 等自动审查）：逐条核实，按根因归并，修掉成立的，在对应讨论里说明不采纳的理由；同一问题连续两轮相关意见时先重新评估设计。
 
 ## 发版
 
-详见 [RELEASING.md](RELEASING.md)。要点：
+发版由维护者进行，流程见 [RELEASING.md](RELEASING.md)。普通 PR 不改版本号、不推标签；用户可见的改动写进 CHANGELOG 的 `Unreleased` 一节。
 
-- 四个发布包共用一个版本号。准备发版的提交是 `chore(release): prepare vX.Y.Z`，只改版本号（`pnpm release:version X.Y.Z`）和 CHANGELOG。
-- 合并到 `main` 后在合并提交上打 `vX.Y.Z` 标签并推送，由 CI 打包、检查并带 provenance 发布到 npm。不从本地机器发布。
-- 推送发版标签、发布到 npm 需要维护者明确同意。
+- 四个发布包共用一个版本号。发版 PR 是 `chore(release): prepare vX.Y.Z`，只改版本号（`pnpm release:version X.Y.Z`）和 CHANGELOG。
+- 发版 PR 合并后，维护者在合并提交上推 `vX.Y.Z` 标签，由 CI 打包、检查并带 provenance 发布到 npm，不从本地机器发布。
 - `.gitattributes` 强制 LF；`release:check` 会拒绝含 CR 的 tarball。
 
 ## 审查重点

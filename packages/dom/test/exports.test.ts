@@ -32,6 +32,7 @@ const ENTRIES: ReadonlyArray<readonly [string, object, readonly string[]]> = [
     'supportsSvgBackdropRefraction',
   ]],
   ['@sessile/dom/legibility', entry1, [
+    'createGlassLegibility',
     'createRegionProbe',
     'measureImageTelemetry',
   ]],

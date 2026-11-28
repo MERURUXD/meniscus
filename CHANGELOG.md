@@ -17,7 +17,7 @@ Planned as `0.4.0`.
 | `@sessile/core/legibility` | Legibility solver, backdrop telemetry and the sRGB luminance helpers (`linearToSrgb`, `srgbToLinear`, `srgbLuma`, `relativeLuminance`, `contrastRatio`) |
 | `@sessile/core/internal` | Displacement-map builder, refraction LUTs and tile cache, shader sources, bevel and color-matrix builders. No semver guarantee |
 | `@sessile/dom` | `GlassSurfaceController`, capability and frame helpers, CSS surface readers, and the morph-layer building blocks (`createRefractFilterController`, `buildBackdropFilterCss`, `computeClampedRefractBounds`, `formatRgbaCss`) |
-| `@sessile/dom/legibility` | `createRegionProbe`, `measureImageTelemetry` |
+| `@sessile/dom/legibility` | `createGlassLegibility`, `createRegionProbe`, `measureImageTelemetry` |
 | `@sessile/dom/internal` | `resetCapabilityCache`, bezel and map-scale helpers, `computeAutoSurfaceBounds`, backdrop CSS parsers. No semver guarantee |
 | `@sessile/react` | `useElasticPress`, `useReducedMotion` |
 | `@sessile/react/experimental` | `GlassField`, `GlassPrimitive`, `useGlassField`, `useOptionalGlassField`, `useGlassMorph` |
@@ -35,6 +35,14 @@ Migration: change the import path of each moved name. The type checker names eve
 ```
 
 Types that appear in the controller and overlay contracts (`IGlassOverlayRenderer`, `RendererCapabilities`, `GlassLegibilityOptions`, `BackdropProbe`, `RefractionProfileName`, `BezelHeightProfileName`) stay importable from the main entries.
+
+- **Injected Legibility (`@sessile/dom`)**: `GlassSurfaceController` no longer builds the legibility state from plain options. Create it with `createGlassLegibility` from `@sessile/dom/legibility` and pass the result to the `legibility` option or `setLegibility`, one per surface. The controller now imports the solver as a type only, so a bundle that renders glass without legibility drops it: `GlassSurfaceController` alone went from 96.9 KB to 89.5 KB minified (32.8 KB to 30.0 KB gzip).
+
+```diff
++import { createGlassLegibility } from '@sessile/dom/legibility'
+-controller.setLegibility({ foreground, tier, probe })
++controller.setLegibility(createGlassLegibility({ foreground, tier, probe }))
+```
 
 ### Changed
 

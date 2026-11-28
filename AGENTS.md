@@ -21,7 +21,7 @@ Sessile 是面向现代浏览器的 **Live-DOM 动态玻璃材料连续形变引
 ## 开发与边界约定
 
 - **语言约定**：代码注释与 JSDoc 统一使用简洁、规范、通用的英文（聚焦“为什么”：数学推导、数值稳定、零 GC 缓冲复用与浏览器行为约束）；回复与交付说明优先使用清晰一致的语言；提交信息和 PR 标题遵循 Conventional Commits（例如 `feat(core): ...`、`fix(dom): ...`），范围建议取 `core`、`dom`、`react`、`presets`、`playground`、`deps`。
-- **入口边界**：各包主入口只放稳定 API；可选模块（`core/overlay`、`core/legibility`、`dom/legibility`）、实验性组件（`react/experimental`、`presets/experimental`）和只给兄弟包用的辅助（`core/internal`、`dom/internal`，无 semver 保证）走子路径。增删导出时同步更新各包 `test/exports.test.ts` 快照和 CHANGELOG。
+- **入口边界**：各包主入口只放稳定 API；可选模块（`core/overlay`、`core/legibility`、`dom/legibility`）、实验性组件（`react/experimental`、`presets/experimental`）和只给兄弟包用的辅助（`core/internal`、`dom/internal`，无 semver 保证）走子路径。增删导出时同步更新各包 `test/exports.test.ts` 快照和 CHANGELOG。`GlassSurfaceController` 只能以类型引用可读性模块，求解器由宿主通过 `createGlassLegibility` 注入。
 - **零依赖边界**：严禁在 `@sessile/core` 中引入 React、特定前端框架或重型运行时库。
 - **渐进增强契约**：`backdrop-filter: url(#svg)` 仅在 Chromium 完整支持；所有上层渲染与降级逻辑必须保持在 Safari / Firefox 下具备液态轮廓、磨砂底色与物理高光边，禁止以全屏截图替代实时 DOM。
 - **性能与 GC 约束**：每帧热路径（SDF 求值、轮廓提取、Stored-PNG 生成）应尽量复用预分配 `TypedArray` 缓冲，避免 60/120fps 下频繁触发垃圾回收。

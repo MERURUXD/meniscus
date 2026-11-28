@@ -1,5 +1,7 @@
 /**
- * `@sessile/dom/legibility`: backdrop probes that feed `GlassSurfaceController.setLegibility`.
+ * `@sessile/dom/legibility`: adaptive legibility for `GlassSurfaceController.setLegibility` and
+ * the backdrop probes that feed it. Kept off the main entry so surfaces that never enable
+ * legibility skip the solver.
  *
  * SPDX-License-Identifier: MPL-2.0
  */
@@ -13,4 +15,8 @@ export {
   type RegionProbeOptions,
 } from '../backdropProbe.ts'
 
-export type { GlassLegibilityOptions } from '../legibility.ts'
+export {
+  createGlassLegibility,
+  type GlassLegibility,
+  type GlassLegibilityOptions,
+} from '../legibility.ts'

@@ -21,7 +21,7 @@
  * SPDX-License-Identifier: MPL-2.0
  */
 
-import { execFileSync } from 'node:child_process'
+import { execFileSync, execSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, relative, resolve } from 'node:path'
@@ -50,6 +50,24 @@ function fail(message: string): void {
 
 function git(args: string[]): string {
   return execFileSync('git', args, { cwd: ROOT, encoding: 'utf8' }).trim()
+}
+
+/**
+ * Runs pnpm without a shell. Under `pnpm release:check`, `npm_execpath` is pnpm's own JS entry
+ * point, so launching it through the current Node also works on Windows, where the `pnpm.cmd`
+ * shim cannot be started by `execFile`. Outside pnpm, Windows falls back to the shim through
+ * the shell; the arguments are fixed flags and an absolute path, quoted below.
+ */
+function runPnpm(args: string[], cwd: string): void {
+  const stdio: ['ignore', 'ignore', 'inherit'] = ['ignore', 'ignore', 'inherit']
+  const entry = process.env.npm_execpath
+  if (entry && /pnpm/i.test(entry) && /\.(c?js|mjs)$/i.test(entry)) {
+    execFileSync(process.execPath, [entry, ...args], { cwd, stdio })
+  } else if (process.platform === 'win32') {
+    execSync(['pnpm', ...args].map((arg) => `"${arg}"`).join(' '), { cwd, stdio })
+  } else {
+    execFileSync('pnpm', args, { cwd, stdio })
+  }
 }
 
 function listFiles(dir: string): string[] {
@@ -187,7 +205,7 @@ function main(): void {
   try {
     for (const pkg of packages) {
       // `prepack` wipes dist/ and rebuilds it, so the tarball never carries a stale build.
-      execFileSync('pnpm', ['pack', '--pack-destination', outDir], { cwd: pkg.path, stdio: ['ignore', 'ignore', 'inherit'] })
+      runPnpm(['pack', '--pack-destination', outDir], pkg.path)
       const file = tarballName(pkg)
       const tarball = join(outDir, file)
       if (!existsSync(tarball)) {

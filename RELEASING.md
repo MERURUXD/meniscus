@@ -41,6 +41,9 @@ The workflow authenticates to npm with OIDC, so no npm token is stored in GitHub
 | Repository | `sessile` |
 | Workflow filename | `release.yml` |
 | Environment | leave empty |
+| Allowed actions | tick **`npm publish`** (new publishers default to `npm stage publish` only, which this workflow does not use) |
+
+npm does not check the configuration when you save it, and a new publisher expires if it has not published within two days, so set it up right before pushing the first release tag. `repository.url` in each `package.json` already matches this repository, which npm requires.
 
 Provenance is attached automatically, and the npm page of each version links back to the commit and workflow run that built it.
 

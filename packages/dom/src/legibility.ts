@@ -49,7 +49,38 @@ const RISK_DEADBAND = 0.02
  */
 export const RISK_COMMIT_INTERVAL_MS = 100
 
-export class LegibilityDriver {
+/**
+ * One surface's adaptive legibility state, created by `createGlassLegibility` from
+ * `@sessile/dom/legibility` and handed to `GlassSurfaceController.setLegibility`.
+ *
+ * The controller only sees this contract, so a page that never enables legibility never loads
+ * the solver. Each instance keeps smoothing history for one surface: give every controller its
+ * own, and pass a fresh one to reset that history.
+ */
+export interface GlassLegibility {
+  readonly params: LegibilityParams
+  readonly probe: BackdropProbe | null
+  /** `true` once the smoothed risk has reached its target; the frame loop may then sleep. */
+  readonly settled: boolean
+  setTelemetry(telemetry: BackdropTelemetry | null): void
+  sample(
+    field: GlassFieldState,
+    originX: number,
+    originY: number,
+    baseVeil: ArrayLike<number>,
+    optics?: BackdropVeilOptics,
+    saturation?: number,
+  ): void
+  advance(dtMs: number, nowMs: number): boolean
+  resolve(baseVeil: ArrayLike<number>): LegibilityParams
+}
+
+/** Creates the legibility state for one surface with a fixed foreground. */
+export function createGlassLegibility(options: GlassLegibilityOptions): GlassLegibility {
+  return new LegibilityDriver(options)
+}
+
+export class LegibilityDriver implements GlassLegibility {
   readonly params: LegibilityParams = createLegibilityParams()
   readonly probe: BackdropProbe | null
   private readonly goal: LegibilityGoal

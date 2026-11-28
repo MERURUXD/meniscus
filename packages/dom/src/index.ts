@@ -5,8 +5,8 @@
  * Two levels are public and stable here: `GlassSurfaceController` for resting and simple
  * animated surfaces, and the building blocks hosts use to drive their own morph layers
  * (`createRefractFilterController`, `buildBackdropFilterCss`, `computeClampedRefractBounds`,
- * the CSS surface readers and the frame helpers). Backdrop probes for the legibility solver
- * ship as `@sessile/dom/legibility`; `@sessile/dom/internal` carries no semver guarantee.
+ * the CSS surface readers and the frame helpers). Adaptive legibility (`createGlassLegibility`)
+ * and its backdrop probes ship as `@sessile/dom/legibility`; `@sessile/dom/internal` carries no semver guarantee.
  *
  * SPDX-License-Identifier: MPL-2.0
  */
@@ -65,4 +65,4 @@ export {
 
 export type { BackdropProbe } from './backdropProbe.ts'
 
-export type { GlassLegibilityOptions } from './legibility.ts'
+export type { GlassLegibility, GlassLegibilityOptions } from './legibility.ts'

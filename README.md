@@ -49,7 +49,7 @@ pnpm add @sessile/react   # React 19 bindings, optional
 Each package's main entry is its stable API. Optional, experimental and internal modules ship as subpaths:
 
 - `@sessile/core/overlay` and `@sessile/core/legibility`: the WebGL2/2D edge renderer and the adaptive legibility solver.
-- `@sessile/dom/legibility`: backdrop probes for the legibility solver.
+- `@sessile/dom/legibility`: `createGlassLegibility` for `GlassSurfaceController.setLegibility`, and the backdrop probes that feed it.
 - `@sessile/react/experimental` and `@sessile/presets/experimental`: components and presets whose API may still change in any minor release.
 - `@sessile/core/internal` and `@sessile/dom/internal`: helpers shared between the `@sessile/*` packages, with no semver guarantee.
 

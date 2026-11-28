@@ -29,7 +29,7 @@ import {
   type FrameLoop,
   type SurfaceRenderMode,
 } from '@sessile/dom'
-import { createRegionProbe, type RegionProbe } from '@sessile/dom/legibility'
+import { createGlassLegibility, createRegionProbe, type RegionProbe } from '@sessile/dom/legibility'
 import { GlassField } from '@sessile/react/experimental'
 import {
   createDragMergeController,
@@ -251,7 +251,7 @@ export function CoverWallLab({
 
   useEffect(() => {
     if (!surfaceCtrl || tier === 'off') return
-    surfaceCtrl.setLegibility({ foreground, tier, probe })
+    surfaceCtrl.setLegibility(createGlassLegibility({ foreground, tier, probe }))
     return () => surfaceCtrl.setLegibility(null)
   }, [surfaceCtrl, probe, tier, foreground])
 

@@ -6,6 +6,7 @@
  */
 
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import test from 'node:test'
 import {
   DEFAULT_OPTICAL_MATERIALS,
@@ -21,7 +22,7 @@ import {
   type BackdropTelemetry,
 } from '@sessile/core/legibility'
 import { createRegionProbe } from '../src/backdropProbe.ts'
-import { LegibilityDriver, RISK_COMMIT_INTERVAL_MS } from '../src/legibility.ts'
+import { LegibilityDriver, RISK_COMMIT_INTERVAL_MS, createGlassLegibility } from '../src/legibility.ts'
 import { createRefractFilterController } from '../src/refractFilter.ts'
 import { GlassSurfaceController } from '../src/surfaceController.ts'
 import { MockDocument, type MockElement } from './mockDom.ts'
@@ -127,7 +128,7 @@ function setup(env: typeof CHROME_ENV, field: GlassFieldState) {
     mode: 'refract',
     overlayRenderer: spy.renderer,
     scheduler: frames.scheduler,
-    legibility: { foreground: WHITE, tier: 'legible' },
+    legibility: createGlassLegibility({ foreground: WHITE, tier: 'legible' }),
   })
   controller.render({ field })
   return { doc, controller, frames, spy }
@@ -441,7 +442,7 @@ test('the controller samples the probe at the primitive viewport rect, including
     mode: 'refract',
     overlayRenderer: createMaterialSpy().renderer,
     scheduler: frames.scheduler,
-    legibility: { foreground: WHITE, tier: 'legible', probe: counted },
+    legibility: createGlassLegibility({ foreground: WHITE, tier: 'legible', probe: counted }),
   })
   controller.render({ field: SINGLE })
   const sampledByRender = samples
@@ -581,7 +582,7 @@ test('surfaces under a moving backdrop commit together, at most once per cadence
       mode: 'refract',
       overlayRenderer: spy.renderer,
       scheduler: frames.scheduler,
-      legibility: { foreground: WHITE, tier: 'legible' },
+      legibility: createGlassLegibility({ foreground: WHITE, tier: 'legible' }),
     })
     controller.render({ field: SINGLE })
     controller.setBackdropTelemetry(CALM)
@@ -627,3 +628,14 @@ test('a backdrop that turns risky reaches the layers within one cadence slot of 
 function rect(x: number, y: number, width: number, height: number): DOMRect {
   return { x, y, width, height, left: x, top: y, right: x + width, bottom: y + height } as DOMRect
 }
+
+test('the controller reaches the legibility solver only through the injected state', () => {
+  // A value import here would pull the solver into every bundle that renders glass, even with
+  // legibility off. Hosts opt in by importing `createGlassLegibility` themselves.
+  const source = readFileSync(new URL('../src/surfaceController.ts', import.meta.url), 'utf8')
+  const imports = [...source.matchAll(/^import\s+(type\s+)?\{[^}]*\}\s+from\s+'([^']+)'/gm)]
+  for (const [statement, typeOnly, from] of imports) {
+    if (from === './legibility.ts') assert.ok(typeOnly, statement)
+  }
+  assert.ok(imports.some(([, , from]) => from === './legibility.ts'))
+})
